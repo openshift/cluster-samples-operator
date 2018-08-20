@@ -1,0 +1,13 @@
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: samplesresources.samplesoperator.config.openshift.io
+spec:
+  group: samplesoperator.config.openshift.io
+  names:
+    kind: SamplesResource
+    listKind: SamplesResourceList
+    plural: samplesresources
+    singular: samplesresource
+  scope: Namespaced
+  version: v1alpha1
