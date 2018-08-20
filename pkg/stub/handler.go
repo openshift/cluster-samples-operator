@@ -3,7 +3,7 @@ package stub
 import (
 	"context"
 
-	"github.com/openshift/cluster-samples-operator-tmp/pkg/apis/samplesoperator/v1alpha1"
+	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
