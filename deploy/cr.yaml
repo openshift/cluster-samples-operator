@@ -1,0 +1,4 @@
+apiVersion: "samplesoperator.config.openshift.io/v1alpha1"
+kind: "SamplesResource"
+metadata:
+  name: "example"
