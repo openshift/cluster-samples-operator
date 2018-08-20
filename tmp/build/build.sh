@@ -11,8 +11,8 @@ fi
 
 BIN_DIR="$(pwd)/tmp/_output/bin"
 mkdir -p ${BIN_DIR}
-PROJECT_NAME="cluster-samples-operator-tmp"
-REPO_PATH="github.com/openshift/cluster-samples-operator-tmp"
+PROJECT_NAME="cluster-samples-operator"
+REPO_PATH="github.com/openshift/cluster-samples-operator"
 BUILD_PATH="${REPO_PATH}/cmd/${PROJECT_NAME}"
 echo "building "${PROJECT_NAME}"..."
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ${BIN_DIR}/${PROJECT_NAME} $BUILD_PATH

@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-samples-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: cluster-samples-operator
+  template:
+    metadata:
+      labels:
+        name: cluster-samples-operator
+    spec:
+      containers:
+        - name: cluster-samples-operator
+          image: docker.io/gmontero/ose-cluster-samples-operator:v0.0.1
+          ports:
+          - containerPort: 60000
+            name: metrics
+          command:
+          - cluster-samples-operator
+          imagePullPolicy: Always
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: OPERATOR_NAME
+              value: "cluster-samples-operator"
