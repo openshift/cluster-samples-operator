@@ -1,4 +1,8 @@
-apiVersion: "samplesoperator.config.openshift.io/v1alpha1"
-kind: "SamplesResource"
+apiVersion: samplesoperator.config.openshift.io/v1alpha1
+kind: SamplesResource
 metadata:
-  name: "example"
+  name: openshift-samples
+spec:
+  installtype: centos
+  architectures:
+    - x86_64

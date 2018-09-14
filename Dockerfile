@@ -14,4 +14,4 @@ RUN useradd cluster-samples-operator
 USER cluster-samples-operator
 
 ENTRYPOINT []
-CMD ["/usr/local/bin/cluster-samples-operator"]
+CMD ["/usr/bin/cluster-samples-operator"]
