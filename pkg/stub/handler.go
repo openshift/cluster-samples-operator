@@ -37,12 +37,11 @@ import (
 )
 
 const (
-	x86OfficialContentRootDir    = "/opt/openshift/arch/x86_64/official"
-	x86CommunityContentRootDir   = "/opt/openshift/arch/x86_64/community"
-	ppc64OfficialContentRootDir  = "/opt/openshift/arch/ppc64le/official"
-	ppc64CommunityContentRootDir = "/opt/openshift/arch/ppc64le/community"
-	x86                          = "x86_64"
-	ppc                          = "ppc64le"
+	x86OCPContentRootDir   = "/opt/openshift/operator/ocp-x86_64"
+	x86OKDContentRootDir   = "/opt/openshift/operator/okd-x86_64"
+	ppc64OCPContentRootDir = "/opt/openshift/operator/ocp-ppc64le"
+	x86                    = "x86_64"
+	ppc                    = "ppc64le"
 )
 
 func NewHandler() sdk.Handler {
@@ -497,18 +496,18 @@ func (h *Handler) GetBaseDir(arch string, opcfg *v1alpha1.SamplesResource) (dir 
 	case x86:
 		switch opcfg.Spec.InstallType {
 		case v1alpha1.RHELSamplesDistribution:
-			dir = x86OfficialContentRootDir
+			dir = x86OCPContentRootDir
 		case v1alpha1.CentosSamplesDistribution:
-			dir = x86CommunityContentRootDir
+			dir = x86OKDContentRootDir
 		default:
 			err = fmt.Errorf("invalid install type %s specified, should be rhel or centos", string(opcfg.Spec.InstallType))
 		}
 	case ppc:
 		switch opcfg.Spec.InstallType {
-		case v1alpha1.RHELSamplesDistribution:
-			dir = ppc64OfficialContentRootDir
 		case v1alpha1.CentosSamplesDistribution:
-			dir = ppc64CommunityContentRootDir
+			err = fmt.Errorf("ppc64le architecture and centos install are not currently supported")
+		case v1alpha1.RHELSamplesDistribution:
+			dir = ppc64OCPContentRootDir
 		default:
 			err = fmt.Errorf("invalid install type %s specified, should be rhel or centos", string(opcfg.Spec.InstallType))
 		}
