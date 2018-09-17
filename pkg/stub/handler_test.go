@@ -55,7 +55,6 @@ func TestWithArchDist(t *testing.T) {
 	h, sr, event := setup()
 	sr.Spec.Architectures = []string{
 		x86,
-		ppc,
 	}
 	distlist := []v1alpha1.SamplesDistributionType{
 		v1alpha1.CentosSamplesDistribution,
@@ -63,12 +62,23 @@ func TestWithArchDist(t *testing.T) {
 	}
 
 	for _, dist := range distlist {
+		mimic(&h, dist, x86OKDContentRootDir)
 		sr.Spec.InstallType = dist
 		err := h.Handle(nil, event)
 		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
 		h.samplesResource = nil
 		sr.Status.Conditions = []v1alpha1.SamplesResourceCondition{}
 	}
+
+	mimic(&h, v1alpha1.RHELSamplesDistribution, ppc64OCPContentRootDir)
+	sr.Spec.InstallType = v1alpha1.RHELSamplesDistribution
+	sr.Spec.Architectures = []string{
+		ppc,
+	}
+	err := h.Handle(nil, event)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
+	h.samplesResource = nil
+	sr.Status.Conditions = []v1alpha1.SamplesResourceCondition{}
 
 }
 
@@ -93,7 +103,6 @@ func TestWithArch(t *testing.T) {
 	h, sr, event := setup()
 	sr.Spec.Architectures = []string{
 		x86,
-		ppc,
 	}
 	err := h.Handle(nil, event)
 	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
@@ -116,7 +125,7 @@ func TestSkipped(t *testing.T) {
 	sr.Spec.SkippedImagestreams = iskeys
 	sr.Spec.SkippedTemplates = tkeys
 
-	mimic(&h, v1alpha1.CentosSamplesDistribution)
+	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OCPContentRootDir)
 
 	err := h.Handle(nil, event)
 	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
@@ -156,7 +165,12 @@ func TestProcessed(t *testing.T) {
 		iskeys := getISKeys()
 		tkeys := getTKeys()
 
-		mimic(&h, dist)
+		if dist == v1alpha1.CentosSamplesDistribution {
+			mimic(&h, dist, x86OKDContentRootDir)
+		}
+		if dist == v1alpha1.RHELSamplesDistribution {
+			mimic(&h, dist, x86OCPContentRootDir)
+		}
 
 		err := h.Handle(nil, event)
 		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
@@ -302,7 +316,7 @@ func TestImageGetError(t *testing.T) {
 		h, sr, event := setup()
 		event.Object = sr
 
-		mimic(&h, v1alpha1.CentosSamplesDistribution)
+		mimic(&h, v1alpha1.CentosSamplesDistribution, x86OKDContentRootDir)
 
 		fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 		fakeisclient.geterrors = map[string]error{"foo": iserr}
@@ -322,7 +336,7 @@ func TestTemplateGetEreror(t *testing.T) {
 		h, sr, event := setup()
 		event.Object = sr
 
-		mimic(&h, v1alpha1.CentosSamplesDistribution)
+		mimic(&h, v1alpha1.CentosSamplesDistribution, x86OKDContentRootDir)
 
 		faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 		faketclient.geterrors = map[string]error{"bo": terr}
@@ -354,16 +368,16 @@ func TestSameCR(t *testing.T) {
 func TestBadTopDirList(t *testing.T) {
 	h, sr, event := setup()
 	fakefinder := h.filefinder.(*fakeResourceFileLister)
-	fakefinder.errors = map[string]error{x86CommunityContentRootDir: fmt.Errorf("badtopdir")}
+	fakefinder.errors = map[string]error{x86OKDContentRootDir: fmt.Errorf("badtopdir")}
 	err := h.Handle(nil, event)
 	validate(false, err, "badtopdir", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesUpdateFailed}, t)
 }
 
 func TestBadSubDirList(t *testing.T) {
 	h, sr, event := setup()
-	mimic(&h, v1alpha1.CentosSamplesDistribution)
+	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OKDContentRootDir)
 	fakefinder := h.filefinder.(*fakeResourceFileLister)
-	fakefinder.errors = map[string]error{x86CommunityContentRootDir + "/imagestreams": fmt.Errorf("badsubdir")}
+	fakefinder.errors = map[string]error{x86OKDContentRootDir + "/imagestreams": fmt.Errorf("badsubdir")}
 	err := h.Handle(nil, event)
 	validate(false, err, "badsubdir", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesUpdateFailed}, t)
 }
@@ -394,12 +408,10 @@ func getTKeys() []string {
 	return []string{"bo", "go"}
 }
 
-func mimic(h *Handler, dist v1alpha1.SamplesDistributionType) {
-	topdir := x86CommunityContentRootDir
+func mimic(h *Handler, dist v1alpha1.SamplesDistributionType, topdir string) {
 	registry1 := "docker.io"
 	registry2 := "docker.io"
 	if dist == v1alpha1.RHELSamplesDistribution {
-		topdir = x86OfficialContentRootDir
 		registry1 = "registry.access.redhat.com"
 		registry2 = "registry.redhat.io"
 	}
