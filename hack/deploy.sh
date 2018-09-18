@@ -9,15 +9,15 @@ make build-image
 NAMESPACE=$(
     oc --context="$SYSTEM_ADMIN_CONTEXT" apply \
         -o go-template --template="{{.metadata.name}}" \
-        -f ./deploy/namespace.yaml
+        -f ./deploy/01-namespace.yaml
 )
 
 oc --context="$SYSTEM_ADMIN_CONTEXT" apply -f deploy/openshift-rbac.yaml
-oc --context="$SYSTEM_ADMIN_CONTEXT" apply -f deploy/crd.yaml 
-oc --context="$SYSTEM_ADMIN_CONTEXT" -n "$NAMESPACE" apply -f ./deploy/rbac.yaml
-oc --context="$SYSTEM_ADMIN_CONTEXT" -n "$NAMESPACE" apply -f ./deploy/crd.yaml
+oc --context="$SYSTEM_ADMIN_CONTEXT" apply -f deploy/00-crd.yaml 
+oc --context="$SYSTEM_ADMIN_CONTEXT" -n "$NAMESPACE" apply -f ./deploy/02-rbac.yaml
+oc --context="$SYSTEM_ADMIN_CONTEXT" -n "$NAMESPACE" apply -f ./deploy/00-crd.yaml
 oc --context="$SYSTEM_ADMIN_CONTEXT" -n "$NAMESPACE" apply -f ./deploy/cr.yaml
 oc --context="$SYSTEM_ADMIN_CONTEXT" -n "$NAMESPACE" delete --ignore-not-found deploy/cluster-samples-operator
-cat ./deploy/operator.yaml |
+cat ./deploy/03-operator.yaml |
     sed 's/imagePullPolicy: Always/imagePullPolicy: Never/' |
     oc --context="$SYSTEM_ADMIN_CONTEXT" -n "$NAMESPACE" apply -f -
