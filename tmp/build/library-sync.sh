@@ -35,8 +35,12 @@ pushd official
 mv * ..
 popd # official
 rmdir official
-popd # okd-x86_64
+popd # ocp-ppc64le
 popd # operator
-mv operator ..
+tar cvf ../t.tar operator
 popd # library-master
-rmdir library-master
+git rm -r operator
+tar xvf t.tar
+git add operator
+rm t.tar
+rm -rf library-master
