@@ -202,6 +202,24 @@ func TestProcessed(t *testing.T) {
 				t.Fatalf("t did not reach client %s: %#v", key, h)
 			}
 		}
+
+		// make sure registries are updated after already updating from the defaults
+		_, sr, _ = setup()
+		event.Object = sr
+		sr.Spec.SamplesRegistry = "bar.io"
+		sr.ResourceVersion = "2"
+		sr.Spec.InstallType = dist
+		err = h.Handle(nil, event)
+		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
+		is, _ = fakeisclient.Get("", "foo", metav1.GetOptions{})
+		if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, sr.Spec.SamplesRegistry) {
+			t.Fatalf("stream repo not updated %#v, %#v", is, h)
+		}
+		is, _ = fakeisclient.Get("", "bar", metav1.GetOptions{})
+		if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, sr.Spec.SamplesRegistry) {
+			t.Fatalf("stream repo not updated %#v, %#v", is, h)
+		}
+
 	}
 
 }
@@ -322,7 +340,11 @@ func TestImageGetError(t *testing.T) {
 		fakeisclient.geterrors = map[string]error{"foo": iserr}
 
 		err := h.Handle(nil, event)
-		validate(false, err, "getstreamerror", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesUpdateFailed}, t)
+		if !kerrors.IsNotFound(iserr) {
+			validate(false, err, "getstreamerror", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesUpdateFailed}, t)
+		} else {
+			validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
+		}
 	}
 
 }
@@ -697,7 +719,7 @@ func (f *fakeImageStreamClientWrapper) Create(namespace string, stream *imagev1.
 		return nil, nil
 	}
 	f.upsertkeys[stream.Name] = true
-	err, _ := f.geterrors[stream.Name]
+	err, _ := f.upserterrors[stream.Name]
 	if err != nil {
 		return nil, err
 	}

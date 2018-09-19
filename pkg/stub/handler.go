@@ -388,12 +388,7 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 			}
 
 			if _, isok := h.skippedImagestreams[imagestream.Name]; !isok {
-				if opcfg.Spec.InstallType == v1alpha1.CentosSamplesDistribution {
-					h.updateDockerPullSpec([]string{"docker.io"}, imagestream, opcfg)
-				}
-				if opcfg.Spec.InstallType == v1alpha1.RHELSamplesDistribution {
-					h.updateDockerPullSpec([]string{"registry.redhat.io", "registry.access.redhat.com"}, imagestream, opcfg)
-				}
+				h.updateDockerPullSpec([]string{"docker.io", "registry.redhat.io", "registry.access.redhat.com", "quay.io"}, imagestream, opcfg)
 				is, err := h.imageclientwrapper.Get("openshift", imagestream.Name, metav1.GetOptions{})
 				if err != nil && !kerrors.IsNotFound(err) {
 					return h.processError(opcfg, v1alpha1.SamplesUpdateFailed, err, "unexpected imagestream get error: %v")
@@ -460,23 +455,27 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 
 func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.ImageStream, opcfg *v1alpha1.SamplesResource) {
 	if len(opcfg.Spec.SamplesRegistry) > 0 {
-		replaced := false
-		for _, old := range oldies {
-			if strings.HasPrefix(imagestream.Spec.DockerImageRepository, old) {
-				imagestream.Spec.DockerImageRepository = strings.Replace(imagestream.Spec.DockerImageRepository, old, opcfg.Spec.SamplesRegistry, 1)
-				replaced = true
-				break
+		if !strings.HasPrefix(imagestream.Spec.DockerImageRepository, opcfg.Spec.SamplesRegistry) {
+			// if not one of our 4 defaults ...
+			replaced := false
+			for _, old := range oldies {
+				if strings.HasPrefix(imagestream.Spec.DockerImageRepository, old) {
+					imagestream.Spec.DockerImageRepository = strings.Replace(imagestream.Spec.DockerImageRepository, old, opcfg.Spec.SamplesRegistry, 1)
+					replaced = true
+					break
+				}
 			}
-		}
-		if !replaced {
-			opcfg.Spec.SamplesRegistry = opcfg.Spec.SamplesRegistry + "/" + imagestream.Spec.DockerImageRepository
+			if !replaced {
+				imagestream.Spec.DockerImageRepository = opcfg.Spec.SamplesRegistry + "/" + imagestream.Spec.DockerImageRepository
+			}
 		}
 
 		for _, tagref := range imagestream.Spec.Tags {
 			replaced := false
 			for _, old := range oldies {
 				if tagref.From != nil && tagref.From.Kind == "DockerImage" {
-					if strings.HasPrefix(tagref.From.Name, old) {
+					if !strings.HasPrefix(tagref.From.Name, opcfg.Spec.SamplesRegistry) &&
+						strings.HasPrefix(tagref.From.Name, old) {
 						tagref.From.Name = strings.Replace(tagref.From.Name, old, opcfg.Spec.SamplesRegistry, 1)
 						replaced = true
 						break
