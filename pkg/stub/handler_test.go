@@ -26,13 +26,13 @@ func TestWrongSampleResourceName(t *testing.T) {
 	h, sr, event := setup()
 	sr.Name = "foo"
 	err := h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{}, t)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{}, []corev1.ConditionStatus{}, t)
 }
 
 func TestNoArchOrDist(t *testing.T) {
 	h, sr, event := setup()
 	err := h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
 }
 
 func TestWithDist(t *testing.T) {
@@ -41,52 +41,63 @@ func TestWithDist(t *testing.T) {
 		v1alpha1.RHELSamplesDistribution,
 	}
 
-	h, sr, event := setup()
 	for _, dist := range distlist {
+		h, sr, event := setup()
 		sr.Spec.InstallType = dist
 		err := h.Handle(nil, event)
-		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
-		h.samplesResource = nil
-		sr.Status.Conditions = []v1alpha1.SamplesResourceCondition{}
+		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
+		//sr.Status.Conditions = []v1alpha1.SamplesResourceCondition{}
 	}
 }
 
 func TestWithArchDist(t *testing.T) {
-	h, sr, event := setup()
-	sr.Spec.Architectures = []string{
-		x86,
-	}
 	distlist := []v1alpha1.SamplesDistributionType{
 		v1alpha1.CentosSamplesDistribution,
 		v1alpha1.RHELSamplesDistribution,
 	}
 
 	for _, dist := range distlist {
+		h, sr, event := setup()
+		sr.Spec.Architectures = []string{
+			x86,
+		}
 		mimic(&h, dist, x86OKDContentRootDir)
 		sr.Spec.InstallType = dist
 		err := h.Handle(nil, event)
-		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
-		h.samplesResource = nil
-		sr.Status.Conditions = []v1alpha1.SamplesResourceCondition{}
+		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
+		//sr.Status.Conditions = []v1alpha1.SamplesResourceCondition{}
 	}
 
+	h, sr, event := setup()
 	mimic(&h, v1alpha1.RHELSamplesDistribution, ppc64OCPContentRootDir)
 	sr.Spec.InstallType = v1alpha1.RHELSamplesDistribution
 	sr.Spec.Architectures = []string{
 		ppc,
 	}
 	err := h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
-	h.samplesResource = nil
-	sr.Status.Conditions = []v1alpha1.SamplesResourceCondition{}
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
 
+	// verify cannot change arch and distro
+	_, sr, _ = setup()
+	event.Object = sr
+	sr.ResourceVersion = "2"
+	sr.Spec.InstallType = v1alpha1.CentosSamplesDistribution
+	sr.Spec.Architectures = []string{
+		x86,
+	}
+	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OCPContentRootDir)
+	err = h.Handle(nil, event)
+	validate(false, err, "cannot change installtype from", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse}, t)
+	sr.Spec.InstallType = v1alpha1.RHELSamplesDistribution
+	err = h.Handle(nil, event)
+	validate(false, err, "cannot change architectures from", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse}, t)
 }
 
 func TestWithBadDist(t *testing.T) {
 	h, sr, event := setup()
 	sr.Spec.InstallType = v1alpha1.SamplesDistributionType("foo")
 	err := h.Handle(nil, event)
-	validate(false, err, "invalid install type", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesUpdateFailed}, t)
+	validate(false, err, "invalid install type", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionUnknown}, t)
 }
 
 func TestWithBadDistPPCArch(t *testing.T) {
@@ -96,7 +107,7 @@ func TestWithBadDistPPCArch(t *testing.T) {
 		ppc,
 	}
 	err := h.Handle(nil, event)
-	validate(false, err, "invalid install type", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesUpdateFailed}, t)
+	validate(false, err, "invalid install type", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionUnknown}, t)
 }
 
 func TestWithArch(t *testing.T) {
@@ -105,7 +116,7 @@ func TestWithArch(t *testing.T) {
 		x86,
 	}
 	err := h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
 }
 
 func TestWithBadArch(t *testing.T) {
@@ -114,7 +125,7 @@ func TestWithBadArch(t *testing.T) {
 		"bad",
 	}
 	err := h.Handle(nil, event)
-	validate(false, err, "architecture bad unsupported", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesUpdateFailed}, t)
+	validate(false, err, "architecture bad unsupported", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionUnknown}, t)
 }
 
 func TestSkipped(t *testing.T) {
@@ -128,7 +139,7 @@ func TestSkipped(t *testing.T) {
 	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OCPContentRootDir)
 
 	err := h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	for _, key := range iskeys {
@@ -173,7 +184,7 @@ func TestProcessed(t *testing.T) {
 		}
 
 		err := h.Handle(nil, event)
-		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
+		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
 
 		fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 		for _, key := range iskeys {
@@ -210,7 +221,7 @@ func TestProcessed(t *testing.T) {
 		sr.ResourceVersion = "2"
 		sr.Spec.InstallType = dist
 		err = h.Handle(nil, event)
-		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
+		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid, v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue}, t)
 		is, _ = fakeisclient.Get("", "foo", metav1.GetOptions{})
 		if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, sr.Spec.SamplesRegistry) {
 			t.Fatalf("stream repo not updated %#v, %#v", is, h)
@@ -234,16 +245,16 @@ func TestCreateDeleteSecretBeforeCR(t *testing.T) {
 	}
 
 	err := h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{}, t)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{}, []corev1.ConditionStatus{}, t)
 
 	event.Deleted = true
 	err = h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{}, t)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{}, []corev1.ConditionStatus{}, t)
 
 	event.Deleted = false
 	event.Object = sr
 	err = h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
 
 }
 
@@ -251,8 +262,9 @@ func TestCreateDeleteSecretAfterCR(t *testing.T) {
 	h, sr, event := setup()
 
 	err := h.Handle(nil, event)
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue}
 	conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}
-	validate(true, err, "", sr, conditions, t)
+	validate(true, err, "", sr, conditions, statuses, t)
 
 	event.Object = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -262,18 +274,14 @@ func TestCreateDeleteSecretAfterCR(t *testing.T) {
 	}
 	err = h.Handle(nil, event)
 	conditions = append(conditions, v1alpha1.ImportCredentialsExist)
-	validate(true, err, "", sr, conditions, t)
+	statuses = append(statuses, corev1.ConditionTrue)
+	validate(true, err, "", sr, conditions, statuses, t)
 
 	event.Deleted = true
 	err = h.Handle(nil, event)
-	validate(true, err, "", sr, conditions, t)
+	statuses[1] = corev1.ConditionFalse
+	validate(true, err, "", sr, conditions, statuses, t)
 
-	for _, c := range sr.Status.Conditions {
-		if c.Type == v1alpha1.ImportCredentialsExist &&
-			c.Status != corev1.ConditionFalse {
-			t.Fatalf("deleted secret condition not processed: %#v", sr)
-		}
-	}
 }
 
 func setup() (Handler, *v1alpha1.SamplesResource, sdk.Event) {
@@ -288,8 +296,9 @@ func TestIgnoreSameSecret(t *testing.T) {
 	h, sr, event := setup()
 
 	err := h.Handle(nil, event)
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue}
 	conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}
-	validate(true, err, "", sr, conditions, t)
+	validate(true, err, "", sr, conditions, statuses, t)
 
 	event.Object = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -298,19 +307,21 @@ func TestIgnoreSameSecret(t *testing.T) {
 		},
 	}
 	err = h.Handle(nil, event)
+	statuses = append(statuses, corev1.ConditionTrue)
 	conditions = append(conditions, v1alpha1.ImportCredentialsExist)
-	validate(true, err, "", sr, conditions, t)
+	validate(true, err, "", sr, conditions, statuses, t)
 
 	err = h.Handle(nil, event)
 	// secret should be ignored, no additional conditions added
-	validate(true, err, "", sr, conditions, t)
+	validate(true, err, "", sr, conditions, statuses, t)
 }
 
 func TestSecretAPIError(t *testing.T) {
 	h, sr, event := setup()
 	err := h.Handle(nil, event)
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue}
 	conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}
-	validate(true, err, "", sr, conditions, t)
+	validate(true, err, "", sr, conditions, statuses, t)
 
 	event.Object = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -321,8 +332,9 @@ func TestSecretAPIError(t *testing.T) {
 	fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
 	fakesecretclient.err = fmt.Errorf("problemchangingsecret")
 	err = h.Handle(nil, event)
-	conditions = append(conditions, v1alpha1.SecretUpdateFailed)
-	validate(false, err, "problemchangingsecret", sr, conditions, t)
+	statuses = append(statuses, corev1.ConditionUnknown)
+	conditions = append(conditions, v1alpha1.ImportCredentialsExist)
+	validate(false, err, "problemchangingsecret", sr, conditions, statuses, t)
 }
 
 func TestImageGetError(t *testing.T) {
@@ -341,9 +353,9 @@ func TestImageGetError(t *testing.T) {
 
 		err := h.Handle(nil, event)
 		if !kerrors.IsNotFound(iserr) {
-			validate(false, err, "getstreamerror", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesUpdateFailed}, t)
+			validate(false, err, "getstreamerror", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionUnknown}, t)
 		} else {
-			validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, t)
+			validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
 		}
 	}
 
@@ -364,7 +376,7 @@ func TestTemplateGetEreror(t *testing.T) {
 		faketclient.geterrors = map[string]error{"bo": terr}
 
 		err := h.Handle(nil, event)
-		validate(false, err, "gettemplateerror", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesUpdateFailed}, t)
+		validate(false, err, "gettemplateerror", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionUnknown}, t)
 	}
 
 }
@@ -373,18 +385,19 @@ func TestDeletedCR(t *testing.T) {
 	h, sr, event := setup()
 	event.Deleted = true
 	err := h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{}, t)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{}, []corev1.ConditionStatus{}, t)
 }
 
 func TestSameCR(t *testing.T) {
 	h, sr, event := setup()
 	sr.ResourceVersion = "a"
 	condtions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue}
 	err := h.Handle(nil, event)
-	validate(true, err, "", sr, condtions, t)
+	validate(true, err, "", sr, condtions, statuses, t)
 	err = h.Handle(nil, event)
 	// conditions array should not change
-	validate(true, err, "", sr, condtions, t)
+	validate(true, err, "", sr, condtions, statuses, t)
 }
 
 func TestBadTopDirList(t *testing.T) {
@@ -392,7 +405,7 @@ func TestBadTopDirList(t *testing.T) {
 	fakefinder := h.filefinder.(*fakeResourceFileLister)
 	fakefinder.errors = map[string]error{x86OKDContentRootDir: fmt.Errorf("badtopdir")}
 	err := h.Handle(nil, event)
-	validate(false, err, "badtopdir", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesUpdateFailed}, t)
+	validate(false, err, "badtopdir", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionUnknown}, t)
 }
 
 func TestBadSubDirList(t *testing.T) {
@@ -401,7 +414,7 @@ func TestBadSubDirList(t *testing.T) {
 	fakefinder := h.filefinder.(*fakeResourceFileLister)
 	fakefinder.errors = map[string]error{x86OKDContentRootDir + "/imagestreams": fmt.Errorf("badsubdir")}
 	err := h.Handle(nil, event)
-	validate(false, err, "badsubdir", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesUpdateFailed}, t)
+	validate(false, err, "badsubdir", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionUnknown}, t)
 }
 
 func TestBadTopLevelStatus(t *testing.T) {
@@ -413,7 +426,10 @@ func TestBadTopLevelStatus(t *testing.T) {
 	conditions := []v1alpha1.SamplesResourceConditionType{
 		v1alpha1.SamplesExist,
 	}
-	validate(false, err, "badsdkupdate", sr, conditions, t)
+	statuses := []corev1.ConditionStatus{
+		corev1.ConditionUnknown,
+	}
+	validate(false, err, "badsdkupdate", sr, conditions, statuses, t)
 	for _, c := range sr.Status.Conditions {
 		if c.Type == v1alpha1.SamplesExist &&
 			c.Status != corev1.ConditionUnknown {
@@ -521,44 +537,31 @@ func mimic(h *Handler, dist v1alpha1.SamplesDistributionType, topdir string) {
 
 }
 
-func validate(succeed bool, err error, errstr string, sr *v1alpha1.SamplesResource, conditions []v1alpha1.SamplesResourceConditionType, t *testing.T) {
+func validate(succeed bool, err error, errstr string, sr *v1alpha1.SamplesResource, conditions []v1alpha1.SamplesResourceConditionType, statuses []corev1.ConditionStatus, t *testing.T) {
 	if succeed && err != nil {
 		t.Fatal(err)
+	}
+	if len(conditions) != len(statuses) {
+		t.Fatalf("bad input conditions %#v statuses %#v", conditions, statuses)
 	}
 	if !succeed {
 		if err == nil {
 			t.Fatalf("error should have been reported")
 		}
 		if !strings.Contains(err.Error(), errstr) {
-			t.Fatalf("unexpected error %v", sr)
+			t.Fatalf("unexpected error %v", err)
 		}
 	}
 	if sr != nil {
-		if len(sr.Status.Conditions) == 0 && len(conditions) > 0 {
-			t.Fatalf("status was not updated %v", sr)
+		if len(sr.Status.Conditions) != len(conditions) {
+			t.Fatalf("condition arrays different lengths got %v\n expected %v", sr, conditions)
 		}
 		for i, c := range conditions {
-			switch c {
-			case v1alpha1.ImportCredentialsExist:
-				fallthrough
-
-			case v1alpha1.SamplesExist:
-				if c != sr.Status.Conditions[i].Type {
-					t.Fatalf("unexpected status %#v expected %#v", sr.Status.Conditions, conditions)
-				}
-
-			case v1alpha1.SamplesUpdateFailed:
-				if sr.Status.Conditions[i].Type != v1alpha1.SamplesExist &&
-					sr.Status.Conditions[i].Status != corev1.ConditionUnknown {
-					t.Fatalf("unexpected status %#v expected %#v", sr.Status.Conditions, conditions)
-				}
-			case v1alpha1.SecretUpdateFailed:
-				if sr.Status.Conditions[i].Type != v1alpha1.ImportCredentialsExist &&
-					sr.Status.Conditions[i].Status != corev1.ConditionUnknown {
-					t.Fatalf("unexpected status %#v expected %#v", sr.Status.Conditions, conditions)
-				}
-			default:
-				t.Fatalf("unexpected test input %#v", c)
+			if sr.Status.Conditions[i].Type != c {
+				t.Fatalf("conditions in wrong order or different types have %#v\n expected %#v", sr.Status.Conditions, conditions)
+			}
+			if sr.Status.Conditions[i].Status != statuses[i] {
+				t.Fatalf("unexpected for succeed %v have status condition %#v expected condition %#v and status %#v", succeed, sr.Status.Conditions[i], c, statuses[i])
 			}
 		}
 	}
@@ -597,6 +600,7 @@ func NewTestHandler() Handler {
 		upserterrors: map[string]error{},
 	}
 	h.secretclientwrapper = &fakeSecretClientWrapper{}
+	h.configmapclientwrapper = &fakeConfigMapClientWrapper{maps: map[string]*corev1.ConfigMap{}}
 
 	return h
 }
@@ -777,6 +781,27 @@ func (f *fakeTemplateClientWrapper) Update(namespace string, t *templatev1.Templ
 	return f.Create(namespace, t)
 }
 
+type fakeConfigMapClientWrapper struct {
+	maps map[string]*corev1.ConfigMap
+	err  error
+}
+
+func (f *fakeConfigMapClientWrapper) Create(namespace string, cm *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.maps[cm.Name] = cm
+	return cm, nil
+}
+
+func (f *fakeConfigMapClientWrapper) Get(namespace, name string) (*corev1.ConfigMap, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	cm, _ := f.maps[name]
+	return cm, nil
+}
+
 type fakeSecretClientWrapper struct {
 	err error
 }
@@ -795,11 +820,11 @@ func (f *fakeSecretClientWrapper) Update(namespace string, s *corev1.Secret) (*c
 	return s, nil
 }
 
-func (f *fakeSecretClientWrapper) Delete(name, namespace string, opts *metav1.DeleteOptions) error {
+func (f *fakeSecretClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
 	return f.err
 }
 
-func (f *fakeSecretClientWrapper) Get(name, namespace string) (*corev1.Secret, error) {
+func (f *fakeSecretClientWrapper) Get(namespace, name string) (*corev1.Secret, error) {
 	return nil, f.err
 }
 
