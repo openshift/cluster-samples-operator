@@ -42,6 +42,7 @@ const (
 	ppc64OCPContentRootDir = "/opt/openshift/operator/ocp-ppc64le"
 	x86                    = "x86_64"
 	ppc                    = "ppc64le"
+	installtypekey         = "installtype"
 )
 
 func NewHandler() sdk.Handler {
@@ -59,6 +60,7 @@ func NewHandler() sdk.Handler {
 	h.imageclientwrapper = &defaultImageStreamClientWrapper{h: &h}
 	h.templateclientwrapper = &defaultTemplateClientWrapper{h: &h}
 	h.secretclientwrapper = &defaultSecretClientWrapper{h: &h}
+	h.configmapclientwrapper = &defaultConfigMapClientWrapper{h: &h}
 
 	h.namespace = getNamespace()
 
@@ -88,9 +90,10 @@ type Handler struct {
 	imageclient *imagev1client.ImageV1Client
 	coreclient  *corev1client.CoreV1Client
 
-	imageclientwrapper    ImageStreamClientWrapper
-	templateclientwrapper TemplateClientWrapper
-	secretclientwrapper   SecretClientWrapper
+	imageclientwrapper     ImageStreamClientWrapper
+	templateclientwrapper  TemplateClientWrapper
+	secretclientwrapper    SecretClientWrapper
+	configmapclientwrapper ConfigMapClientWrapper
 
 	fileimagegetter    ImageStreamFromFileGetter
 	filetemplategetter TemplateFromFileGetter
@@ -104,45 +107,142 @@ type Handler struct {
 	mutex *sync.Mutex
 }
 
-func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus corev1.ConditionStatus, condition v1alpha1.SamplesResourceConditionType) error {
-	status := srcfg.Condition(condition)
+func (h *Handler) StatusUpdate(condition v1alpha1.SamplesResourceConditionType, srcfg *v1alpha1.SamplesResource) error {
+	if condition == v1alpha1.SamplesExist {
+		cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
+		if err != nil && !kerrors.IsNotFound(err) {
+			// just return error to sdk for retry
+			return err
+		}
+		if cm != nil {
+			// just return ... we only update the config map once
+			return nil
+		}
+		cm = &corev1.ConfigMap{}
+		cm.Name = v1alpha1.SamplesResourceName
+		cm.Data = map[string]string{}
+		if len(srcfg.Spec.InstallType) == 0 {
+			cm.Data[installtypekey] = string(v1alpha1.CentosSamplesDistribution)
+		} else {
+			cm.Data[installtypekey] = string(srcfg.Spec.InstallType)
+		}
+		if len(srcfg.Spec.Architectures) == 0 {
+			cm.Data[x86] = x86
+		} else {
+			for _, arch := range srcfg.Spec.Architectures {
+				switch arch {
+				case x86:
+					cm.Data[x86] = x86
+				case ppc:
+					cm.Data[ppc] = ppc
+				}
+			}
+		}
+		_, err = h.configmapclientwrapper.Create(h.namespace, cm)
+		if err != nil {
+			// just return error to sdk for retry
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
+	// if we have not had a valid SamplesResource processed, allow caller to try with
+	// the srcfg contents
+	if h.samplesResource == nil || !h.samplesResource.ConditionTrue(v1alpha1.SamplesExist) {
+		return nil
+	}
+	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
+	if cm == nil || err != nil {
+		// just return error to sdk for retry
+		return err
+	}
+
+	installtype, ok := cm.Data[installtypekey]
+	if !ok {
+		err = fmt.Errorf("could	not find the installtype in the config map %#v", cm.Data)
+		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
+	}
+	switch srcfg.Spec.InstallType {
+	case "", v1alpha1.CentosSamplesDistribution:
+		if installtype != string(v1alpha1.CentosSamplesDistribution) {
+			err = fmt.Errorf("cannot change installtype from %s to %s", installtype, srcfg.Spec.InstallType)
+			return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+		}
+	case v1alpha1.RHELSamplesDistribution:
+		if installtype != string(v1alpha1.RHELSamplesDistribution) {
+			err = fmt.Errorf("cannot change installtype from %s to %s", installtype, srcfg.Spec.InstallType)
+			return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+		}
+	}
+
+	_, hasx86 := cm.Data[x86]
+	_, hasppc := cm.Data[ppc]
+
+	wantsx86 := false
+	wantsppc := false
+	if len(srcfg.Spec.Architectures) == 0 {
+		wantsx86 = true
+	}
+	for _, arch := range srcfg.Spec.Architectures {
+		switch arch {
+		case x86:
+			wantsx86 = true
+		case ppc:
+			wantsppc = true
+		}
+	}
+
+	if wantsx86 != hasx86 ||
+		wantsppc != hasppc {
+		err = fmt.Errorf("cannot change architectures from %#v to %#v", cm.Data, srcfg.Spec.Architectures)
+		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+	}
+
+	return h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.ConfigurationValid)
+}
+
+func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus corev1.ConditionStatus, conditionType v1alpha1.SamplesResourceConditionType) error {
+	condition := srcfg.Condition(conditionType)
 	// decision was made to not spam master if
 	// duplicate events come it (i.e. status does not
 	// change)
-	if status.Status != newStatus {
+	if condition.Status != newStatus {
 		now := kapis.Now()
-		status.LastUpdateTime = now
-		status.Status = newStatus
-		status.LastTransitionTime = now
-		srcfg.ConditionUpdate(status)
+		condition.LastUpdateTime = now
+		condition.Status = newStatus
+		condition.LastTransitionTime = now
+		srcfg.ConditionUpdate(condition)
 		err := h.sdkwrapper.Update(srcfg)
 		if err != nil {
 			if !kerrors.IsConflict(err) {
-				return h.processError(srcfg, v1alpha1.SamplesUpdateFailed, err, "failed adding success condition to config: %v")
+				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "failed adding success condition to config: %v")
 			}
 			logrus.Printf("got conflict error %#v on success status update, going retry", err)
 			srcfg, err = h.sdkwrapper.Get(srcfg.Name, srcfg.Namespace)
 			if err != nil {
-				return h.processError(srcfg, v1alpha1.SamplesUpdateFailed, err, "failed to retrieve samples resource after update conflict: %v")
+				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "failed to retrieve samples resource after update conflict: %v")
 			}
-			status = srcfg.Condition(condition)
-			status.LastTransitionTime = now
-			status.LastUpdateTime = now
-			status.Status = newStatus
-			srcfg.ConditionUpdate(status)
+			condition = srcfg.Condition(conditionType)
+			condition.LastTransitionTime = now
+			condition.LastUpdateTime = now
+			condition.Status = newStatus
+			srcfg.ConditionUpdate(condition)
 			err = h.sdkwrapper.Update(srcfg)
 			if err != nil {
 				// just give up this time
-				return h.processError(srcfg, v1alpha1.SamplesUpdateFailed, err, "failed to update status after conflict retry: %v")
+				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "failed to update status after conflict retry: %v")
 			}
 		}
+
+		err = h.StatusUpdate(conditionType, srcfg)
 
 		logrus.Println("")
 		logrus.Println("")
 		logrus.Println("")
 		logrus.Println("")
 	}
-	h.samplesResource = srcfg
 	return nil
 }
 
@@ -166,7 +266,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded() error {
 		err := h.sdkwrapper.Create(srcfg)
 		if err != nil {
 			if !kerrors.IsAlreadyExists(err) {
-				return h.processError(srcfg, v1alpha1.SamplesUpdateFailed, err, "failed creating default resource: %v")
+				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "failed creating default resource: %v")
 			}
 			logrus.Println("got already exists error on create default, just going to forgo this time vs. retry")
 			// just return the raw error and initiate the sdk's requeue/ratelimiter setup
@@ -193,7 +293,7 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 	if deleted {
 		err := h.secretclientwrapper.Delete("openshift", secret.Name, &metav1.DeleteOptions{})
 		if err != nil && !kerrors.IsNotFound(err) {
-			return h.processError(samplesResource, v1alpha1.SecretUpdateFailed, err, "failed to delete before create dockerconfig secret the openshift namespace: %v")
+			return h.processError(samplesResource, v1alpha1.ImportCredentialsExist, corev1.ConditionUnknown, err, "failed to delete before create dockerconfig secret the openshift namespace: %v")
 		}
 		logrus.Printf("registry dockerconfig secret %s was deleted", secret.Name)
 		newStatus = corev1.ConditionFalse
@@ -214,7 +314,7 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 
 		s, err := h.secretclientwrapper.Get("openshift", secret.Name)
 		if err != nil && !kerrors.IsNotFound(err) {
-			return h.processError(samplesResource, v1alpha1.SecretUpdateFailed, err, "failed to get registry dockerconfig secret in openshift namespace : %v")
+			return h.processError(samplesResource, v1alpha1.ImportCredentialsExist, corev1.ConditionUnknown, err, "failed to get registry dockerconfig secret in openshift namespace : %v")
 		}
 		if err != nil {
 			s = nil
@@ -227,7 +327,7 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 			_, err = h.secretclientwrapper.Create("openshift", &secretToCreate)
 		}
 		if err != nil {
-			return h.processError(samplesResource, v1alpha1.SecretUpdateFailed, err, "failed to create/update registry dockerconfig secret in openshif namespace : %v")
+			return h.processError(samplesResource, v1alpha1.ImportCredentialsExist, corev1.ConditionUnknown, err, "failed to create/update registry dockerconfig secret in openshif namespace : %v")
 		}
 		newStatus = corev1.ConditionTrue
 		h.registrySecret = secret
@@ -278,6 +378,11 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			if newVersion <= currVersion {
 				return nil
 			}
+
+			err := h.SpecValidation(srcfg)
+			if err != nil {
+				return err
+			}
 		}
 
 		// if the secret event came in before the samples resource event,
@@ -301,20 +406,22 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		for _, arch := range srcfg.Spec.Architectures {
 			dir, err := h.GetBaseDir(arch, srcfg)
 			if err != nil {
-				return h.processError(srcfg, v1alpha1.SamplesUpdateFailed, err, "error determining distro/type : %v")
+				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error determining distro/type : %v")
 			}
 			files, err := h.filefinder.List(dir)
 			if err != nil {
-				return h.processError(srcfg, v1alpha1.SamplesUpdateFailed, err, "error reading in content : %v")
+				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
 			}
 			err = h.processFiles(dir, files, srcfg)
 			if err != nil {
-				return h.processError(srcfg, v1alpha1.SamplesUpdateFailed, err, "error processing content : %v")
+				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error processing content : %v")
 			}
 
 		}
 
-		return h.GoodConditionUpdate(srcfg, newStatus, v1alpha1.SamplesExist)
+		err := h.GoodConditionUpdate(srcfg, newStatus, v1alpha1.SamplesExist)
+		h.samplesResource = srcfg
+		return err
 	}
 	return nil
 }
@@ -328,7 +435,7 @@ func (h *Handler) buildSkipFilters(opcfg *v1alpha1.SamplesResource) {
 	}
 }
 
-func (h *Handler) processError(opcfg *v1alpha1.SamplesResource, ctype v1alpha1.SamplesResourceConditionType, err error, msg string, args ...interface{}) error {
+func (h *Handler) processError(opcfg *v1alpha1.SamplesResource, ctype v1alpha1.SamplesResourceConditionType, cstatus corev1.ConditionStatus, err error, msg string, args ...interface{}) error {
 	log := ""
 	if args == nil {
 		log = fmt.Sprintf(msg, err)
@@ -336,22 +443,14 @@ func (h *Handler) processError(opcfg *v1alpha1.SamplesResource, ctype v1alpha1.S
 		log = fmt.Sprintf(msg, err, args)
 	}
 	logrus.Println(log)
-	var status *v1alpha1.SamplesResourceCondition
-	switch ctype {
-	case v1alpha1.SecretUpdateFailed:
-		status = opcfg.Condition(v1alpha1.ImportCredentialsExist)
-	case v1alpha1.SamplesUpdateFailed:
-		status = opcfg.Condition(v1alpha1.SamplesExist)
-	default:
-		return err
-	}
+	status := opcfg.Condition(ctype)
 	// decision was made to not spam master if
 	// duplicate events come it (i.e. status does not
 	// change)
-	if status.Status != corev1.ConditionUnknown {
+	if status.Status != cstatus {
 		now := kapis.Now()
 		status.LastUpdateTime = now
-		status.Status = corev1.ConditionUnknown
+		status.Status = cstatus
 		status.LastTransitionTime = now
 		status.Message = log
 		opcfg.ConditionUpdate(status)
@@ -372,7 +471,7 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 			logrus.Printf("processing subdir %s from dir %s", file.Name(), dir)
 			subfiles, err := h.filefinder.List(dir + "/" + file.Name())
 			if err != nil {
-				return h.processError(opcfg, v1alpha1.SamplesUpdateFailed, err, "error reading in content: %v")
+				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content: %v")
 			}
 			err = h.processFiles(dir+"/"+file.Name(), subfiles, opcfg)
 			if err != nil {
@@ -384,19 +483,14 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 		if strings.HasSuffix(dir, "imagestreams") {
 			imagestream, err := h.fileimagegetter.Get(dir + "/" + file.Name())
 			if err != nil {
-				return h.processError(opcfg, v1alpha1.SamplesUpdateFailed, err, "%v error reading file %s", dir+"/"+file.Name())
+				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", dir+"/"+file.Name())
 			}
 
 			if _, isok := h.skippedImagestreams[imagestream.Name]; !isok {
-				if opcfg.Spec.InstallType == v1alpha1.CentosSamplesDistribution {
-					h.updateDockerPullSpec([]string{"docker.io"}, imagestream, opcfg)
-				}
-				if opcfg.Spec.InstallType == v1alpha1.RHELSamplesDistribution {
-					h.updateDockerPullSpec([]string{"registry.redhat.io", "registry.access.redhat.com"}, imagestream, opcfg)
-				}
+				h.updateDockerPullSpec([]string{"docker.io", "registry.redhat.io", "registry.access.redhat.com", "quay.io"}, imagestream, opcfg)
 				is, err := h.imageclientwrapper.Get("openshift", imagestream.Name, metav1.GetOptions{})
 				if err != nil && !kerrors.IsNotFound(err) {
-					return h.processError(opcfg, v1alpha1.SamplesUpdateFailed, err, "unexpected imagestream get error: %v")
+					return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "unexpected imagestream get error: %v")
 				}
 
 				if kerrors.IsNotFound(err) {
@@ -407,14 +501,14 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 				if is == nil {
 					_, err = h.imageclientwrapper.Create("openshift", imagestream)
 					if err != nil {
-						return h.processError(opcfg, v1alpha1.SamplesUpdateFailed, err, "imagestream create error: %v")
+						return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "imagestream create error: %v")
 					}
 					logrus.Printf("created imagestream %s", imagestream.Name)
 				} else {
 					imagestream.ResourceVersion = is.ResourceVersion
 					_, err = h.imageclientwrapper.Update("openshift", imagestream)
 					if err != nil {
-						return h.processError(opcfg, v1alpha1.SamplesUpdateFailed, err, "imagestream update error: %v")
+						return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "imagestream update error: %v")
 					}
 					logrus.Printf("updated imagestream %s", is.Name)
 				}
@@ -424,13 +518,13 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 		if strings.HasSuffix(dir, "templates") {
 			template, err := h.filetemplategetter.Get(dir + "/" + file.Name())
 			if err != nil {
-				return h.processError(opcfg, v1alpha1.SamplesUpdateFailed, err, "%v error reading file %s", dir+"/"+file.Name())
+				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", dir+"/"+file.Name())
 			}
 
 			if _, tok := h.skippedTemplates[template.Name]; !tok {
 				t, err := h.templateclientwrapper.Get("openshift", template.Name, metav1.GetOptions{})
 				if err != nil && !kerrors.IsNotFound(err) {
-					return h.processError(opcfg, v1alpha1.SamplesUpdateFailed, err, "unexpected template get error: %v")
+					return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "unexpected template get error: %v")
 				}
 
 				if kerrors.IsNotFound(err) {
@@ -441,14 +535,14 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 				if t == nil {
 					_, err = h.templateclientwrapper.Create("openshift", template)
 					if err != nil {
-						return h.processError(opcfg, v1alpha1.SamplesUpdateFailed, err, "template create error: %v")
+						return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "template create error: %v")
 					}
 					logrus.Printf("created template %s", template.Name)
 				} else {
 					template.ResourceVersion = t.ResourceVersion
 					_, err = h.templateclientwrapper.Update("openshift", template)
 					if err != nil {
-						return h.processError(opcfg, v1alpha1.SamplesUpdateFailed, err, "template update error: %v")
+						return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "template update error: %v")
 					}
 					logrus.Printf("updated template %s", t.Name)
 				}
@@ -458,33 +552,44 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 	return nil
 }
 
-func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.ImageStream, opcfg *v1alpha1.SamplesResource) {
-	if len(opcfg.Spec.SamplesRegistry) > 0 {
-		replaced := false
+func (h *Handler) coreUpdateDockerPullSpec(oldreg, newreg string, oldies []string) string {
+	// see if the imagestream on file (i.e. the openshift/library content) is
+	// of the form "reg/repo/img" or "repo/img"
+	hasRegistry := false
+	if strings.Count(oldreg, "/") == 2 {
+		hasRegistry = true
+	}
+	if hasRegistry {
 		for _, old := range oldies {
-			if strings.HasPrefix(imagestream.Spec.DockerImageRepository, old) {
-				imagestream.Spec.DockerImageRepository = strings.Replace(imagestream.Spec.DockerImageRepository, old, opcfg.Spec.SamplesRegistry, 1)
-				replaced = true
-				break
+			if strings.HasPrefix(oldreg, old) {
+				oldreg = strings.Replace(oldreg, old, newreg, 1)
+			} else {
+				// the content from openshift/library has something odd in in ... replace the registry piece
+				parts := strings.Split(oldreg, "/")
+				oldreg = newreg + "/" + parts[1] + "/" + parts[2]
 			}
 		}
-		if !replaced {
-			opcfg.Spec.SamplesRegistry = opcfg.Spec.SamplesRegistry + "/" + imagestream.Spec.DockerImageRepository
+	} else {
+		oldreg = newreg + "/" + oldreg
+	}
+
+	return oldreg
+}
+
+func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.ImageStream, opcfg *v1alpha1.SamplesResource) {
+	if len(opcfg.Spec.SamplesRegistry) > 0 {
+		if !strings.HasPrefix(imagestream.Spec.DockerImageRepository, opcfg.Spec.SamplesRegistry) {
+			// if not one of our 4 defaults ...
+			imagestream.Spec.DockerImageRepository = h.coreUpdateDockerPullSpec(imagestream.Spec.DockerImageRepository,
+				opcfg.Spec.SamplesRegistry,
+				oldies)
 		}
 
 		for _, tagref := range imagestream.Spec.Tags {
-			replaced := false
-			for _, old := range oldies {
-				if tagref.From != nil && tagref.From.Kind == "DockerImage" {
-					if strings.HasPrefix(tagref.From.Name, old) {
-						tagref.From.Name = strings.Replace(tagref.From.Name, old, opcfg.Spec.SamplesRegistry, 1)
-						replaced = true
-						break
-					}
-				}
-			}
-			if !replaced {
-				tagref.From.Name = opcfg.Spec.SamplesRegistry + "/" + tagref.From.Name
+			if !strings.HasPrefix(tagref.From.Name, opcfg.Spec.SamplesRegistry) {
+				tagref.From.Name = h.coreUpdateDockerPullSpec(tagref.From.Name,
+					opcfg.Spec.SamplesRegistry,
+					oldies)
 			}
 		}
 	}
@@ -588,6 +693,23 @@ func (g *defaultTemplateClientWrapper) Create(namespace string, t *templatev1.Te
 
 func (g *defaultTemplateClientWrapper) Update(namespace string, t *templatev1.Template) (*templatev1.Template, error) {
 	return g.h.tempclient.Templates(namespace).Update(t)
+}
+
+type ConfigMapClientWrapper interface {
+	Get(namespace, name string) (*corev1.ConfigMap, error)
+	Create(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error)
+}
+
+type defaultConfigMapClientWrapper struct {
+	h *Handler
+}
+
+func (g *defaultConfigMapClientWrapper) Get(namespace, name string) (*corev1.ConfigMap, error) {
+	return g.h.coreclient.ConfigMaps(namespace).Get(name, metav1.GetOptions{})
+}
+
+func (g *defaultConfigMapClientWrapper) Create(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	return g.h.coreclient.ConfigMaps(namespace).Create(s)
 }
 
 type SecretClientWrapper interface {

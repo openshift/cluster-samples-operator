@@ -80,12 +80,21 @@ type SamplesResourceConditionType string
 // the valid conditions of the SamplesResource
 
 const (
-	SamplesUpdateFailed    SamplesResourceConditionType = "SamplesResourceUpdateFailed"
-	SecretUpdateFailed     SamplesResourceConditionType = "SecretUpdateFailed"
+	// ImportCredentialsExists represents the state of any credentials specified by
+	// the SamplesRegistry field in the Spec.
 	ImportCredentialsExist SamplesResourceConditionType = "ImportCredentialsExists"
-	SamplesExist           SamplesResourceConditionType = "SamplesExists"
+	// SamplesExist represents whether an incoming SamplesResource has been successfully
+	// processed or not all, or whether the last SamplesResource to come in has been
+	// successfully processed.
+	SamplesExist SamplesResourceConditionType = "SamplesExists"
+	// ConfigurationValid represents whether the latest SamplesResource to come in
+	// tried to make a support configuration change.  Currently, changes to the
+	// InstallType and Architectures list after initial processing is not allowed.
+	ConfigurationValid SamplesResourceConditionType = "ConfigurationValid"
 )
 
+// SamplesResourceCondition captures various conditions of the SamplesResource
+// as entries are processed.
 type SamplesResourceCondition struct {
 	// Type of condition.
 	Type SamplesResourceConditionType `json:"type" protobuf:"bytes,1,opt,name=type,casttype=SamplesResourceConditionType"`
@@ -126,8 +135,7 @@ func (s *SamplesResource) Condition(c SamplesResourceConditionType) *SamplesReso
 		}
 	}
 	newCondition := SamplesResourceCondition{
-		Type:   c,
-		Status: corev1.ConditionUnknown,
+		Type: c,
 	}
 	s.Status.Conditions = append(s.Status.Conditions, newCondition)
 	return &newCondition
