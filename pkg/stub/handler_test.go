@@ -438,6 +438,62 @@ func TestBadTopLevelStatus(t *testing.T) {
 	}
 }
 
+func TestUnsupportedDistroChange(t *testing.T) {
+	h, sr, event := setup()
+	err := h.Handle(nil, event)
+	conditions := []v1alpha1.SamplesResourceConditionType{
+		v1alpha1.SamplesExist,
+	}
+	statuses := []corev1.ConditionStatus{
+		corev1.ConditionTrue,
+	}
+	validate(true, err, "", sr, conditions, statuses, t)
+
+	_, sr, event = setup()
+	sr.Spec.InstallType = v1alpha1.RHELSamplesDistribution
+	sr.ResourceVersion = "2"
+	err = h.Handle(nil, event)
+	// returned sr will only have the latest condition, since
+	// we do not update the cached copy in the error case, only
+	// etcd is updated
+	conditions = []v1alpha1.SamplesResourceConditionType{
+		v1alpha1.ConfigurationValid,
+	}
+	statuses = []corev1.ConditionStatus{
+		corev1.ConditionFalse,
+	}
+	validate(false, err, "cannot change installtype", sr, conditions, statuses, t)
+
+}
+
+func TestUnsupportedArchChange(t *testing.T) {
+	h, sr, event := setup()
+	err := h.Handle(nil, event)
+	conditions := []v1alpha1.SamplesResourceConditionType{
+		v1alpha1.SamplesExist,
+	}
+	statuses := []corev1.ConditionStatus{
+		corev1.ConditionTrue,
+	}
+	validate(true, err, "", sr, conditions, statuses, t)
+
+	_, sr, event = setup()
+	sr.Spec.Architectures = []string{ppc}
+	sr.ResourceVersion = "2"
+	err = h.Handle(nil, event)
+	// returned sr will only have the latest condition, since
+	// we do not update the cached copy in the error case, only
+	// etcd is updated
+	conditions = []v1alpha1.SamplesResourceConditionType{
+		v1alpha1.ConfigurationValid,
+	}
+	statuses = []corev1.ConditionStatus{
+		corev1.ConditionFalse,
+	}
+	validate(false, err, "cannot change architecture", sr, conditions, statuses, t)
+
+}
+
 func getISKeys() []string {
 	return []string{"foo", "bar"}
 }
