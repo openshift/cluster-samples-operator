@@ -114,6 +114,10 @@ func (h *Handler) StatusUpdate(condition v1alpha1.SamplesResourceConditionType, 
 			// just return error to sdk for retry
 			return err
 		}
+		if kerrors.IsNotFound(err) {
+			// 4.0 testing showed that we were getting empty ConfigMaps
+			cm = nil
+		}
 		if cm != nil {
 			// just return ... we only update the config map once
 			return nil
@@ -154,9 +158,13 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
 		return nil
 	}
 	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
-	if cm == nil || err != nil {
+	if err != nil && !kerrors.IsNotFound(err) {
 		// just return error to sdk for retry
 		return err
+	}
+	if kerrors.IsNotFound(err) {
+		err = fmt.Errorf("ConfigMap %s does not exist, but it should, so cannot validate config change", v1alpha1.SamplesResourceName)
+		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
 	}
 
 	installtype, ok := cm.Data[installtypekey]
@@ -175,6 +183,9 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
 			err = fmt.Errorf("cannot change installtype from %s to %s", installtype, srcfg.Spec.InstallType)
 			return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 		}
+	default:
+		err = fmt.Errorf("trying to change installtype, which is not allowed, but also specificed an unsupported installtype %s", srcfg.Spec.InstallType)
+		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
 
 	_, hasx86 := cm.Data[x86]
@@ -191,6 +202,10 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
 			wantsx86 = true
 		case ppc:
 			wantsppc = true
+		default:
+			err = fmt.Errorf("trying to change architecture, which is not allowed, but also specified an unsupported architecture %s", arch)
+			return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+
 		}
 	}
 
