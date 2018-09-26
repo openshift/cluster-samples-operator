@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
-
 	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
@@ -23,7 +21,6 @@ import (
 
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -869,18 +866,14 @@ func (g *defaultSDKWrapper) Create(samplesResource *v1alpha1.SamplesResource) er
 }
 
 func (g *defaultSDKWrapper) Get(name, namespace string) (*v1alpha1.SamplesResource, error) {
-	resourceClient, _, err := k8sclient.GetResourceClient("samplesoperator.config.openshift.io/v1alpha1", "SamplesResource", namespace)
+	sr := v1alpha1.SamplesResource{}
+	sr.Kind = "SamplesResource"
+	sr.APIVersion = "samplesoperator.config.openshift.io/v1alpha1"
+	sr.Name = name
+	sr.Namespace = namespace
+	err := sdk.Get(&sr, sdk.WithGetOptions(&metav1.GetOptions{}))
 	if err != nil {
 		return nil, err
 	}
-	uobj, err := resourceClient.Get(name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-	obj := k8sutil.RuntimeObjectFromUnstructured(uobj)
-	sr, ok := obj.(*v1alpha1.SamplesResource)
-	if !ok {
-		return nil, fmt.Errorf("runtime obj #%v not SamplesResource", obj)
-	}
-	return sr, nil
+	return &sr, nil
 }
