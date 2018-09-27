@@ -19,10 +19,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 
-	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	restclient "k8s.io/client-go/rest"
 
@@ -37,8 +38,6 @@ const (
 	x86OCPContentRootDir   = "/opt/openshift/operator/ocp-x86_64"
 	x86OKDContentRootDir   = "/opt/openshift/operator/okd-x86_64"
 	ppc64OCPContentRootDir = "/opt/openshift/operator/ocp-ppc64le"
-	x86                    = "x86_64"
-	ppc                    = "ppc64le"
 	installtypekey         = "installtype"
 )
 
@@ -101,6 +100,8 @@ type Handler struct {
 	skippedTemplates    map[string]bool
 	skippedImagestreams map[string]bool
 
+	deleteInProgress bool
+
 	mutex *sync.Mutex
 }
 
@@ -128,14 +129,14 @@ func (h *Handler) StatusUpdate(condition v1alpha1.SamplesResourceConditionType, 
 			cm.Data[installtypekey] = string(srcfg.Spec.InstallType)
 		}
 		if len(srcfg.Spec.Architectures) == 0 {
-			cm.Data[x86] = x86
+			cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
 		} else {
 			for _, arch := range srcfg.Spec.Architectures {
 				switch arch {
-				case x86:
-					cm.Data[x86] = x86
-				case ppc:
-					cm.Data[ppc] = ppc
+				case v1alpha1.X86Architecture:
+					cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
+				case v1alpha1.PPCArchitecture:
+					cm.Data[v1alpha1.PPCArchitecture] = v1alpha1.PPCArchitecture
 				}
 			}
 		}
@@ -185,8 +186,8 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
 		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
 
-	_, hasx86 := cm.Data[x86]
-	_, hasppc := cm.Data[ppc]
+	_, hasx86 := cm.Data[v1alpha1.X86Architecture]
+	_, hasppc := cm.Data[v1alpha1.PPCArchitecture]
 
 	wantsx86 := false
 	wantsppc := false
@@ -195,9 +196,9 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
 	}
 	for _, arch := range srcfg.Spec.Architectures {
 		switch arch {
-		case x86:
+		case v1alpha1.X86Architecture:
 			wantsx86 = true
-		case ppc:
+		case v1alpha1.PPCArchitecture:
 			wantsppc = true
 		default:
 			err = fmt.Errorf("trying to change architecture, which is not allowed, but also specified an unsupported architecture %s", arch)
@@ -213,6 +214,46 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
 	}
 
 	return h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.ConfigurationValid)
+}
+
+func (h *Handler) AddFinalizer(srcfg *v1alpha1.SamplesResource) {
+	hasFinalizer := false
+	for _, f := range srcfg.Finalizers {
+		if f == v1alpha1.SamplesResourceFinalizer {
+			hasFinalizer = true
+			break
+		}
+	}
+	if !hasFinalizer {
+		srcfg.Finalizers = append(srcfg.Finalizers, v1alpha1.SamplesResourceFinalizer)
+	}
+}
+
+func (h *Handler) RemoveFinalizer(srcfg *v1alpha1.SamplesResource) {
+	newFinalizers := []string{}
+	for _, f := range srcfg.Finalizers {
+		if f == v1alpha1.SamplesResourceFinalizer {
+			continue
+		}
+		newFinalizers = append(newFinalizers, f)
+	}
+	srcfg.Finalizers = newFinalizers
+}
+
+func (h *Handler) NeedsFinalizing(srcfg *v1alpha1.SamplesResource) bool {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	if h.deleteInProgress {
+		return false
+	}
+	h.deleteInProgress = true
+	for _, f := range srcfg.Finalizers {
+		if f == v1alpha1.SamplesResourceFinalizer {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus corev1.ConditionStatus, conditionType v1alpha1.SamplesResourceConditionType) error {
@@ -258,36 +299,81 @@ func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus
 	return nil
 }
 
+// copied from k8s.io/kubernetes/test/utils/
+func (h *Handler) IsRetryableAPIError(err error) bool {
+	// These errors may indicate a transient error that we can retry in tests.
+	if kerrors.IsInternalError(err) || kerrors.IsTimeout(err) || kerrors.IsServerTimeout(err) ||
+		kerrors.IsTooManyRequests(err) || utilnet.IsProbableEOF(err) || utilnet.IsConnectionReset(err) {
+		return true
+	}
+	// If the error sends the Retry-After header, we respect it as an explicit confirmation we should retry.
+	if _, shouldRetry := kerrors.SuggestsClientDelay(err); shouldRetry {
+		return true
+	}
+	return false
+}
+
 func (h *Handler) CreateDefaultResourceIfNeeded() error {
 	// coordinate with event handler processing
 	// where it will set h.sampleResource
 	// when it completely updates all imagestreams/templates/statuses
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
-	if h.samplesResource == nil {
-		// "4a" in the "startup" workflow, just create default
-		// resource and set up that way
-		srcfg := &v1alpha1.SamplesResource{}
-		srcfg.Name = v1alpha1.SamplesResourceName
-		srcfg.Namespace = h.namespace
-		srcfg.Kind = "SamplesResource"
-		srcfg.APIVersion = "samplesoperator.config.openshift.io/v1alpha1"
-		srcfg.Spec.Architectures = append(srcfg.Spec.Architectures, x86)
-		srcfg.Spec.InstallType = v1alpha1.CentosSamplesDistribution
-		logrus.Println("creating default SamplesResource")
-		err := h.sdkwrapper.Create(srcfg)
-		if err != nil {
-			if !kerrors.IsAlreadyExists(err) {
-				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "failed creating default resource: %v")
+	deleteInProgress := h.deleteInProgress
+
+	var err error
+	var srcfg *v1alpha1.SamplesResource
+	if deleteInProgress {
+		err = wait.PollImmediate(3*time.Second, 30*time.Second, func() (bool, error) {
+			sr, e := h.sdkwrapper.Get(v1alpha1.SamplesResourceName, h.namespace)
+			if kerrors.IsNotFound(e) {
+				return true, nil
 			}
-			logrus.Println("got already exists error on create default, just going to forgo this time vs. retry")
-			// just return the raw error and initiate the sdk's requeue/ratelimiter setup
+			if err != nil && h.IsRetryableAPIError(err) {
+				return false, nil
+			}
+			if err != nil {
+				return false, err
+			}
+			// based on 4.0 testing, we've been seeing empty resources returned
+			// in the not found case, but just in case ...
+			if sr == nil {
+				return true, nil
+			}
+			// means still found ... will return wait.ErrWaitTimeout if this continues
+			return false, nil
+		})
+		if err != nil {
+			return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "issues waiting for delete to complete: %v")
+		}
+		h.samplesResource = nil
+	} else {
+		srcfg = h.samplesResource
+	}
+	if srcfg != nil {
+		logrus.Println("SampleResource already received, not creating default")
+		return nil
+	}
+	// "4a" in the "startup" workflow, just create default
+	// resource and set up that way
+	srcfg = &v1alpha1.SamplesResource{}
+	srcfg.Name = v1alpha1.SamplesResourceName
+	srcfg.Namespace = h.namespace
+	srcfg.Kind = "SamplesResource"
+	srcfg.APIVersion = "samplesoperator.config.openshift.io/v1alpha1"
+	srcfg.Spec.Architectures = append(srcfg.Spec.Architectures, v1alpha1.X86Architecture)
+	srcfg.Spec.InstallType = v1alpha1.CentosSamplesDistribution
+	logrus.Println("creating default SamplesResource")
+	err = h.sdkwrapper.Create(srcfg)
+	if err != nil {
+		if !kerrors.IsAlreadyExists(err) {
 			return err
 		}
-		return h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.SamplesExist)
+		logrus.Println("got already exists error on create default, just going to forgo this time vs. retry")
+		// just return the raw error and initiate the sdk's requeue/ratelimiter setup
 	}
-	logrus.Println("SampleResource already received, not creating default")
-	return nil
+	h.deleteInProgress = false
+	return err
 }
 
 func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.SamplesResource, secret *corev1.Secret) error {
@@ -356,6 +442,52 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 	return nil
 }
 
+func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResource) {
+	h.buildSkipFilters(srcfg)
+
+	iopts := metav1.ListOptions{LabelSelector: v1alpha1.SamplesResourceLabel + "=true"}
+
+	streamList, err := h.imageclientwrapper.List("openshift", iopts)
+	if err != nil {
+		logrus.Warnf("Problem listing openshift imagestreams on SamplesResource delete: %#v", err)
+	} else {
+		for _, stream := range streamList.Items {
+			if _, ok := h.skippedImagestreams[stream.Name]; ok {
+				continue
+			}
+			err = h.imageclientwrapper.Delete("openshift", stream.Name, &metav1.DeleteOptions{})
+			if err != nil && !kerrors.IsNotFound(err) {
+				logrus.Warnf("Problem deleteing openshift imagestream %s on SamplesResource delete: %#v", stream.Name, err)
+			}
+		}
+	}
+
+	tempList, err := h.templateclientwrapper.List("openshift", iopts)
+	if err != nil {
+		logrus.Warnf("Problem listing openshift imagestreams on SamplesResource delete: %#v", err)
+	} else {
+		for _, temp := range tempList.Items {
+			if _, ok := h.skippedTemplates[temp.Name]; ok {
+				continue
+			}
+			err = h.templateclientwrapper.Delete("openshift", temp.Name, &metav1.DeleteOptions{})
+			if err != nil && !kerrors.IsNotFound(err) {
+				logrus.Warnf("Problem deleting openshift template %s on SamplesResource delete: %#v", temp.Name, err)
+			}
+		}
+	}
+
+	err = h.secretclientwrapper.Delete("openshift", v1alpha1.SamplesRegistryCredentials, &metav1.DeleteOptions{})
+	if err != nil && !kerrors.IsNotFound(err) {
+		logrus.Warnf("Problem deleting openshift secret %s on SamplesResource delete: %#v", v1alpha1.SamplesRegistryCredentials, err)
+	}
+
+	err = h.configmapclientwrapper.Delete(h.namespace, v1alpha1.SamplesResourceName)
+	if err != nil && !kerrors.IsNotFound(err) {
+		logrus.Warnf("Problem deleting openshift configmap %s on SamplesResource delete: %#v", v1alpha1.SamplesResourceName, err)
+	}
+}
+
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch event.Object.(type) {
 	case *corev1.Secret:
@@ -372,10 +504,27 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		if srcfg.Name != v1alpha1.SamplesResourceName {
 			return nil
 		}
+
+		// pattern is 1) come in with delete timestamp, event delete flag false
+		// 2) then after we remove finalizer, comes in with delete timestamp
+		// and event delete flag true
 		if event.Deleted {
-			logrus.Println("SampleResource deleted")
-			h.samplesResource = nil
-			return h.CreateDefaultResourceIfNeeded()
+			// possibly tell poller to stop
+			logrus.Info("A previous delete attempt has been successfully completed")
+			return nil
+		}
+		if srcfg.DeletionTimestamp != nil {
+			if h.NeedsFinalizing(srcfg) {
+				logrus.Println("Initiating finalizer processing for a SampleResource delete attempt")
+				h.RemoveFinalizer(srcfg)
+				h.CleanUpOpenshiftNamespaceOnDelete(srcfg)
+				err := h.GoodConditionUpdate(srcfg, corev1.ConditionFalse, v1alpha1.SamplesExist)
+				go func() {
+					h.CreateDefaultResourceIfNeeded()
+				}()
+				return err
+			}
+			return nil
 		}
 
 		// coordinate with timer's check on creating
@@ -408,7 +557,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		h.buildSkipFilters(srcfg)
 
 		if len(srcfg.Spec.Architectures) == 0 {
-			srcfg.Spec.Architectures = append(srcfg.Spec.Architectures, x86)
+			srcfg.Spec.Architectures = append(srcfg.Spec.Architectures, v1alpha1.X86Architecture)
 		}
 
 		if len(srcfg.Spec.InstallType) == 0 {
@@ -431,6 +580,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 		}
 
+		h.AddFinalizer(srcfg)
 		err := h.GoodConditionUpdate(srcfg, newStatus, v1alpha1.SamplesExist)
 		h.samplesResource = srcfg
 		return err
@@ -497,18 +647,24 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 			if err != nil {
 				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", dir+"/"+file.Name())
 			}
+			if imagestream.Labels == nil {
+				imagestream.Labels = map[string]string{}
+			}
+
+			is, err := h.imageclientwrapper.Get("openshift", imagestream.Name, metav1.GetOptions{})
+			if err != nil && !kerrors.IsNotFound(err) {
+				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "unexpected imagestream get error: %v")
+			}
+
+			if kerrors.IsNotFound(err) {
+				// testing showed that we get an empty is vs. nil in this case
+				is = nil
+			}
 
 			if _, isok := h.skippedImagestreams[imagestream.Name]; !isok {
 				h.updateDockerPullSpec([]string{"docker.io", "registry.redhat.io", "registry.access.redhat.com", "quay.io"}, imagestream, opcfg)
-				is, err := h.imageclientwrapper.Get("openshift", imagestream.Name, metav1.GetOptions{})
-				if err != nil && !kerrors.IsNotFound(err) {
-					return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "unexpected imagestream get error: %v")
-				}
 
-				if kerrors.IsNotFound(err) {
-					// testing showed that we get an empty is vs. nil in this case
-					is = nil
-				}
+				imagestream.Labels[v1alpha1.SamplesResourceLabel] = "true"
 
 				if is == nil {
 					_, err = h.imageclientwrapper.Create("openshift", imagestream)
@@ -524,25 +680,36 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 					}
 					logrus.Printf("updated imagestream %s", is.Name)
 				}
+			} else {
+				is.Labels[v1alpha1.SamplesResourceLabel] = "false"
+				h.imageclientwrapper.Update("openshift", is)
+				// if we get an error, we'll just try to remove the label next
+				// time; and we'll examine the skipped lists on delete
 			}
 		}
 
 		if strings.HasSuffix(dir, "templates") {
 			template, err := h.filetemplategetter.Get(dir + "/" + file.Name())
+			if template.Labels == nil {
+				template.Labels = map[string]string{}
+			}
+
 			if err != nil {
 				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", dir+"/"+file.Name())
 			}
 
-			if _, tok := h.skippedTemplates[template.Name]; !tok {
-				t, err := h.templateclientwrapper.Get("openshift", template.Name, metav1.GetOptions{})
-				if err != nil && !kerrors.IsNotFound(err) {
-					return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "unexpected template get error: %v")
-				}
+			t, err := h.templateclientwrapper.Get("openshift", template.Name, metav1.GetOptions{})
+			if err != nil && !kerrors.IsNotFound(err) {
+				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "unexpected template get error: %v")
+			}
 
-				if kerrors.IsNotFound(err) {
-					// testing showed that we get an empty is vs. nil in this case
-					t = nil
-				}
+			if kerrors.IsNotFound(err) {
+				// testing showed that we get an empty is vs. nil in this case
+				t = nil
+			}
+
+			if _, tok := h.skippedTemplates[template.Name]; !tok {
+				template.Labels[v1alpha1.SamplesResourceLabel] = "true"
 
 				if t == nil {
 					_, err = h.templateclientwrapper.Create("openshift", template)
@@ -558,6 +725,11 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 					}
 					logrus.Printf("updated template %s", t.Name)
 				}
+			} else {
+				t.Labels[v1alpha1.SamplesResourceLabel] = "false"
+				h.templateclientwrapper.Update("openshift", t)
+				// if we get an error, we'll just try to remove the label next
+				// time; and we'll examine the skipped lists on delete
 			}
 		}
 	}
@@ -610,7 +782,7 @@ func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.Ima
 
 func (h *Handler) GetBaseDir(arch string, opcfg *v1alpha1.SamplesResource) (dir string, err error) {
 	switch arch {
-	case x86:
+	case v1alpha1.X86Architecture:
 		switch opcfg.Spec.InstallType {
 		case v1alpha1.RHELSamplesDistribution:
 			dir = x86OCPContentRootDir
@@ -619,7 +791,7 @@ func (h *Handler) GetBaseDir(arch string, opcfg *v1alpha1.SamplesResource) (dir 
 		default:
 			err = fmt.Errorf("invalid install type %s specified, should be rhel or centos", string(opcfg.Spec.InstallType))
 		}
-	case ppc:
+	case v1alpha1.PPCArchitecture:
 		switch opcfg.Spec.InstallType {
 		case v1alpha1.CentosSamplesDistribution:
 			err = fmt.Errorf("ppc64le architecture and centos install are not currently supported")
@@ -629,7 +801,7 @@ func (h *Handler) GetBaseDir(arch string, opcfg *v1alpha1.SamplesResource) (dir 
 			err = fmt.Errorf("invalid install type %s specified, should be rhel or centos", string(opcfg.Spec.InstallType))
 		}
 	default:
-		err = fmt.Errorf("architecture %s unsupported; only support %s and %s", arch, x86, ppc)
+		err = fmt.Errorf("architecture %s unsupported; only support %s and %s", arch, v1alpha1.X86Architecture, v1alpha1.PPCArchitecture)
 	}
 	return dir, err
 }
@@ -658,6 +830,7 @@ type ImageStreamClientWrapper interface {
 	List(namespace string, opts metav1.ListOptions) (*imagev1.ImageStreamList, error)
 	Create(namespace string, is *imagev1.ImageStream) (*imagev1.ImageStream, error)
 	Update(namespace string, is *imagev1.ImageStream) (*imagev1.ImageStream, error)
+	Delete(namespace, name string, opts *metav1.DeleteOptions) error
 }
 
 type defaultImageStreamClientWrapper struct {
@@ -680,11 +853,16 @@ func (g *defaultImageStreamClientWrapper) Update(namespace string, is *imagev1.I
 	return g.h.imageclient.ImageStreams(namespace).Update(is)
 }
 
+func (g *defaultImageStreamClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
+	return g.h.imageclient.ImageStreams(namespace).Delete(name, opts)
+}
+
 type TemplateClientWrapper interface {
 	Get(namespace, name string, opts metav1.GetOptions) (*templatev1.Template, error)
 	List(namespace string, opts metav1.ListOptions) (*templatev1.TemplateList, error)
 	Create(namespace string, t *templatev1.Template) (*templatev1.Template, error)
 	Update(namespace string, t *templatev1.Template) (*templatev1.Template, error)
+	Delete(namespace, name string, opts *metav1.DeleteOptions) error
 }
 
 type defaultTemplateClientWrapper struct {
@@ -707,9 +885,14 @@ func (g *defaultTemplateClientWrapper) Update(namespace string, t *templatev1.Te
 	return g.h.tempclient.Templates(namespace).Update(t)
 }
 
+func (g *defaultTemplateClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
+	return g.h.tempclient.Templates(namespace).Delete(name, opts)
+}
+
 type ConfigMapClientWrapper interface {
 	Get(namespace, name string) (*corev1.ConfigMap, error)
 	Create(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error)
+	Delete(namespace, name string) error
 }
 
 type defaultConfigMapClientWrapper struct {
@@ -722,6 +905,10 @@ func (g *defaultConfigMapClientWrapper) Get(namespace, name string) (*corev1.Con
 
 func (g *defaultConfigMapClientWrapper) Create(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error) {
 	return g.h.coreclient.ConfigMaps(namespace).Create(s)
+}
+
+func (g *defaultConfigMapClientWrapper) Delete(namespace, name string) error {
+	return g.h.coreclient.ConfigMaps(namespace).Delete(name, &metav1.DeleteOptions{})
 }
 
 type SecretClientWrapper interface {

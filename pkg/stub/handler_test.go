@@ -59,7 +59,7 @@ func TestWithArchDist(t *testing.T) {
 	for _, dist := range distlist {
 		h, sr, event := setup()
 		sr.Spec.Architectures = []string{
-			x86,
+			v1alpha1.X86Architecture,
 		}
 		mimic(&h, dist, x86OKDContentRootDir)
 		sr.Spec.InstallType = dist
@@ -72,7 +72,7 @@ func TestWithArchDist(t *testing.T) {
 	mimic(&h, v1alpha1.RHELSamplesDistribution, ppc64OCPContentRootDir)
 	sr.Spec.InstallType = v1alpha1.RHELSamplesDistribution
 	sr.Spec.Architectures = []string{
-		ppc,
+		v1alpha1.PPCArchitecture,
 	}
 	err := h.Handle(nil, event)
 	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
@@ -83,7 +83,7 @@ func TestWithArchDist(t *testing.T) {
 	sr.ResourceVersion = "2"
 	sr.Spec.InstallType = v1alpha1.CentosSamplesDistribution
 	sr.Spec.Architectures = []string{
-		x86,
+		v1alpha1.X86Architecture,
 	}
 	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OCPContentRootDir)
 	err = h.Handle(nil, event)
@@ -104,7 +104,7 @@ func TestWithBadDistPPCArch(t *testing.T) {
 	h, sr, event := setup()
 	sr.Spec.InstallType = v1alpha1.SamplesDistributionType("foo")
 	sr.Spec.Architectures = []string{
-		ppc,
+		v1alpha1.PPCArchitecture,
 	}
 	err := h.Handle(nil, event)
 	validate(false, err, "invalid install type", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionUnknown}, t)
@@ -113,7 +113,7 @@ func TestWithBadDistPPCArch(t *testing.T) {
 func TestWithArch(t *testing.T) {
 	h, sr, event := setup()
 	sr.Spec.Architectures = []string{
-		x86,
+		v1alpha1.X86Architecture,
 	}
 	err := h.Handle(nil, event)
 	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
@@ -478,7 +478,7 @@ func TestUnsupportedArchChange(t *testing.T) {
 	validate(true, err, "", sr, conditions, statuses, t)
 
 	_, sr, event = setup()
-	sr.Spec.Architectures = []string{ppc}
+	sr.Spec.Architectures = []string{v1alpha1.PPCArchitecture}
 	sr.ResourceVersion = "2"
 	err = h.Handle(nil, event)
 	// returned sr will only have the latest condition, since
@@ -543,52 +543,64 @@ func mimic(h *Handler, dist v1alpha1.SamplesDistributionType, topdir string) {
 		},
 	}
 	fakeisgetter := h.fileimagegetter.(*fakeImageStreamFromFileGetter)
-	fakeisgetter.streams = map[string]*imagev1.ImageStream{
-		topdir + "/imagestreams/foo": &imagev1.ImageStream{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "foo",
-			},
-			Spec: imagev1.ImageStreamSpec{
-				DockerImageRepository: registry1,
-				Tags: []imagev1.TagReference{
-					imagev1.TagReference{
-						// no Name field set on purpose, cover more code paths
-						From: &corev1.ObjectReference{
-							Kind: "DockerImage",
-						},
-					},
-				},
-			},
+	foo := &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "foo",
+			Labels: map[string]string{},
 		},
-		topdir + "/imagestreams/bar": &imagev1.ImageStream{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "bar",
-			},
-			Spec: imagev1.ImageStreamSpec{
-				DockerImageRepository: registry2,
-				Tags: []imagev1.TagReference{
-					imagev1.TagReference{
-						From: &corev1.ObjectReference{
-							Name: registry2,
-							Kind: "DockerImage",
-						},
+		Spec: imagev1.ImageStreamSpec{
+			DockerImageRepository: registry1,
+			Tags: []imagev1.TagReference{
+				imagev1.TagReference{
+					// no Name field set on purpose, cover more code paths
+					From: &corev1.ObjectReference{
+						Kind: "DockerImage",
 					},
 				},
 			},
 		},
 	}
+	bar := &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "bar",
+			Labels: map[string]string{},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			DockerImageRepository: registry2,
+			Tags: []imagev1.TagReference{
+				imagev1.TagReference{
+					From: &corev1.ObjectReference{
+						Name: registry2,
+						Kind: "DockerImage",
+					},
+				},
+			},
+		},
+	}
+	fakeisgetter.streams = map[string]*imagev1.ImageStream{
+		topdir + "/imagestreams/foo": foo,
+		topdir + "/imagestreams/bar": bar,
+		"foo": foo,
+		"bar": bar,
+	}
 	faketempgetter := h.filetemplategetter.(*fakeTemplateFromFileGetter)
+	bo := &templatev1.Template{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "bo",
+			Labels: map[string]string{},
+		},
+	}
+	gogo := &templatev1.Template{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "go",
+			Labels: map[string]string{},
+		},
+	}
 	faketempgetter.templates = map[string]*templatev1.Template{
-		topdir + "/templates/bo": &templatev1.Template{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "bo",
-			},
-		},
-		topdir + "/templates/go": &templatev1.Template{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "go",
-			},
-		},
+		topdir + "/templates/bo": bo,
+		topdir + "/templates/go": gogo,
+		"bo": bo,
+		"go": gogo,
 	}
 
 }
@@ -791,6 +803,10 @@ func (f *fakeImageStreamClientWrapper) Update(namespace string, stream *imagev1.
 	return f.Create(namespace, stream)
 }
 
+func (f *fakeImageStreamClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
+	return nil
+}
+
 type fakeTemplateClientWrapper struct {
 	templates    map[string]*templatev1.Template
 	upsertkeys   map[string]bool
@@ -837,6 +853,10 @@ func (f *fakeTemplateClientWrapper) Update(namespace string, t *templatev1.Templ
 	return f.Create(namespace, t)
 }
 
+func (f *fakeTemplateClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
+	return nil
+}
+
 type fakeConfigMapClientWrapper struct {
 	maps map[string]*corev1.ConfigMap
 	err  error
@@ -856,6 +876,10 @@ func (f *fakeConfigMapClientWrapper) Get(namespace, name string) (*corev1.Config
 	}
 	cm, _ := f.maps[name]
 	return cm, nil
+}
+
+func (f *fakeConfigMapClientWrapper) Delete(namespace, name string) error {
+	return nil
 }
 
 type fakeSecretClientWrapper struct {
