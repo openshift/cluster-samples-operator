@@ -39,6 +39,18 @@ const (
 	SamplesRegistryCredentials = "samples-registry-credentials"
 	// SamplesResourceName is the name/identifier of the static, singleton operator employed for the samples.
 	SamplesResourceName = "openshift-samples"
+	// X86Architecture is the value used to specify the x86_64 hardware architecture
+	// in the Architectures array field.
+	X86Architecture = "x86_64"
+	// PPCArchitecture is the value used to specify the ppc64le hardware architecture
+	// in the Architectures array field.
+	PPCArchitecture = "ppc64le"
+	// SamplesResourceFinalizer is the text added to the SamplesResource.Finalizer field
+	// to enable finalizer processing.
+	SamplesResourceFinalizer = "samplesoperator.config.openshift.io/finalizer"
+	// SamplesResourceLabel is the key for a label added to all the imagestreams and templates
+	// in the openshift namespace that the SamplesResource is managing.
+	SamplesResourceLabel = "samplesoperator.config.openshift.io/managed"
 )
 
 type SamplesResourceSpec struct {
@@ -111,6 +123,9 @@ type SamplesResourceCondition struct {
 }
 
 func (s *SamplesResource) ConditionTrue(c SamplesResourceConditionType) bool {
+	if s.Status.Conditions == nil {
+		return false
+	}
 	for _, rc := range s.Status.Conditions {
 		if rc.Type == c && rc.Status == corev1.ConditionTrue {
 			return true
@@ -120,6 +135,9 @@ func (s *SamplesResource) ConditionTrue(c SamplesResourceConditionType) bool {
 }
 
 func (s *SamplesResource) ConditionUpdate(c *SamplesResourceCondition) {
+	if s.Status.Conditions == nil {
+		return
+	}
 	for i, ec := range s.Status.Conditions {
 		if ec.Type == c.Type {
 			s.Status.Conditions[i] = *c
@@ -129,9 +147,11 @@ func (s *SamplesResource) ConditionUpdate(c *SamplesResourceCondition) {
 }
 
 func (s *SamplesResource) Condition(c SamplesResourceConditionType) *SamplesResourceCondition {
-	for _, rc := range s.Status.Conditions {
-		if rc.Type == c {
-			return &rc
+	if s.Status.Conditions != nil {
+		for _, rc := range s.Status.Conditions {
+			if rc.Type == c {
+				return &rc
+			}
 		}
 	}
 	newCondition := SamplesResourceCondition{
