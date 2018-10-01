@@ -128,6 +128,27 @@ func TestWithBadArch(t *testing.T) {
 	validate(false, err, "architecture bad unsupported", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionUnknown}, t)
 }
 
+func TestConfigurationValidCondition(t *testing.T) {
+	h, sr, event := setup()
+	err := h.Handle(nil, event)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
+	_, sr, event = setup()
+	sr.Spec.InstallType = "rhel8"
+	sr.ResourceVersion = "2"
+	err = h.Handle(nil, event)
+	validate(false, err, "trying to change installtype, which is not allowed, but also specified", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse}, t)
+	_, sr, event = setup()
+	sr.Spec.InstallType = "rhel"
+	sr.ResourceVersion = "3"
+	err = h.Handle(nil, event)
+	validate(false, err, "cannot change installtype from centos to rhel", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse}, t)
+	_, sr, event = setup()
+	sr.Spec.InstallType = "centos"
+	sr.ResourceVersion = "4"
+	err = h.Handle(nil, event)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid, v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue}, t)
+}
+
 func TestSkipped(t *testing.T) {
 	h, sr, event := setup()
 	event.Object = sr

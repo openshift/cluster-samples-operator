@@ -182,7 +182,7 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
 			return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 		}
 	default:
-		err = fmt.Errorf("trying to change installtype, which is not allowed, but also specificed an unsupported installtype %s", srcfg.Spec.InstallType)
+		err = fmt.Errorf("trying to change installtype, which is not allowed, but also specified an unsupported installtype %s", srcfg.Spec.InstallType)
 		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
 
@@ -266,6 +266,7 @@ func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus
 		condition.LastUpdateTime = now
 		condition.Status = newStatus
 		condition.LastTransitionTime = now
+		condition.Message = ""
 		srcfg.ConditionUpdate(condition)
 		err := h.sdkwrapper.Update(srcfg)
 		if err != nil {
@@ -609,7 +610,7 @@ func (h *Handler) processError(opcfg *v1alpha1.SamplesResource, ctype v1alpha1.S
 	// decision was made to not spam master if
 	// duplicate events come it (i.e. status does not
 	// change)
-	if status.Status != cstatus {
+	if status.Status != cstatus || status.Message != log {
 		now := kapis.Now()
 		status.LastUpdateTime = now
 		status.Status = cstatus
