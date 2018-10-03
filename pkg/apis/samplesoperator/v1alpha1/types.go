@@ -98,7 +98,7 @@ const (
 	// SamplesExist represents whether an incoming SamplesResource has been successfully
 	// processed or not all, or whether the last SamplesResource to come in has been
 	// successfully processed.
-	SamplesExist SamplesResourceConditionType = "SamplesExists"
+	SamplesExist SamplesResourceConditionType = "SamplesExist"
 	// ConfigurationValid represents whether the latest SamplesResource to come in
 	// tried to make a support configuration change.  Currently, changes to the
 	// InstallType and Architectures list after initial processing is not allowed.
