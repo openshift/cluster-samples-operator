@@ -555,6 +555,17 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			h.manageDockerCfgSecret(false, srcfg, h.registrySecret)
 		}
 
+		// if trying to do rhel to the default registry.redhat.io registry requires the secret
+		// be in place since registry.redhat.io requires auth to pull; if it is not ready
+		// log error state
+		if srcfg.Spec.InstallType == v1alpha1.RHELSamplesDistribution &&
+			(srcfg.Spec.SamplesRegistry == "" || srcfg.Spec.SamplesRegistry == "registry.redhat.io") &&
+			!srcfg.ConditionTrue(v1alpha1.ImportCredentialsExist) &&
+			h.registrySecret == nil {
+			err := fmt.Errorf("Cannot create rhel imagestreams to registry.redhat.io without the credentials being available: %#v", srcfg)
+			return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionFalse, err, "%v")
+		}
+
 		h.buildSkipFilters(srcfg)
 
 		if len(srcfg.Spec.Architectures) == 0 {
