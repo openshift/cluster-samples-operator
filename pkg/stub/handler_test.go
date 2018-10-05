@@ -40,10 +40,19 @@ func TestWithDist(t *testing.T) {
 		v1alpha1.CentosSamplesDistribution,
 		v1alpha1.RHELSamplesDistribution,
 	}
+	credEvent := sdk.Event{Object: &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            v1alpha1.SamplesRegistryCredentials,
+			ResourceVersion: "a",
+		},
+	}}
 
 	for _, dist := range distlist {
 		h, sr, event := setup()
 		sr.Spec.InstallType = dist
+		if dist == v1alpha1.RHELSamplesDistribution {
+			h.Handle(nil, credEvent)
+		}
 		err := h.Handle(nil, event)
 		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
 		//sr.Status.Conditions = []v1alpha1.SamplesResourceCondition{}
@@ -55,6 +64,12 @@ func TestWithArchDist(t *testing.T) {
 		v1alpha1.CentosSamplesDistribution,
 		v1alpha1.RHELSamplesDistribution,
 	}
+	credEvent := sdk.Event{Object: &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            v1alpha1.SamplesRegistryCredentials,
+			ResourceVersion: "a",
+		},
+	}}
 
 	for _, dist := range distlist {
 		h, sr, event := setup()
@@ -63,9 +78,11 @@ func TestWithArchDist(t *testing.T) {
 		}
 		mimic(&h, dist, x86OKDContentRootDir)
 		sr.Spec.InstallType = dist
+		if dist == v1alpha1.RHELSamplesDistribution {
+			h.Handle(nil, credEvent)
+		}
 		err := h.Handle(nil, event)
 		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
-		//sr.Status.Conditions = []v1alpha1.SamplesResourceCondition{}
 	}
 
 	h, sr, event := setup()
@@ -74,6 +91,7 @@ func TestWithArchDist(t *testing.T) {
 	sr.Spec.Architectures = []string{
 		v1alpha1.PPCArchitecture,
 	}
+	h.Handle(nil, credEvent)
 	err := h.Handle(nil, event)
 	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
 
