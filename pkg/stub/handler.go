@@ -81,6 +81,14 @@ type Handler struct {
 	samplesResource *v1alpha1.SamplesResource
 	registrySecret  *corev1.Secret
 
+	// we maintain a separate SamplesResource cache
+	// entry when this is a default rhel install and we
+	// are waiting for the credential since we are
+	// in an erorr state; our current approach is
+	// to only update the standard samplesResource
+	// cache entry for valid / non-error states
+	waitingForCredential *v1alpha1.SamplesResource
+
 	restconfig  *restclient.Config
 	tempclient  *templatev1client.TemplateV1Client
 	imageclient *imagev1client.ImageV1Client
@@ -320,6 +328,10 @@ func (h *Handler) CreateDefaultResourceIfNeeded() error {
 	// when it completely updates all imagestreams/templates/statuses
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
+	if h.waitingForCredential != nil {
+		return nil
+	}
+
 	deleteInProgress := h.deleteInProgress
 
 	var err error
@@ -381,7 +393,8 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 	if secret.Name != v1alpha1.SamplesRegistryCredentials {
 		return nil
 	}
-	if h.samplesResource == nil {
+
+	if h.samplesResource == nil && h.waitingForCredential == nil {
 		if !deleted {
 			h.registrySecret = secret
 		}
@@ -438,7 +451,7 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 	}
 
 	h.registrySecret = secret
-	h.samplesResource = samplesResource
+	h.waitingForCredential = nil
 
 	return nil
 }
@@ -493,8 +506,16 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch event.Object.(type) {
 	case *corev1.Secret:
 		dockercfgSecret, _ := event.Object.(*corev1.Secret)
+		h.mutex.Lock()
+		defer h.mutex.Unlock()
 
-		err := h.manageDockerCfgSecret(event.Deleted, h.samplesResource, dockercfgSecret)
+		var err error
+		// special case error recovery for default rhel needing credential
+		if h.waitingForCredential != nil {
+			err = h.manageDockerCfgSecret(event.Deleted, h.waitingForCredential, dockercfgSecret)
+		} else {
+			err = h.manageDockerCfgSecret(event.Deleted, h.samplesResource, dockercfgSecret)
+		}
 		if err != nil {
 			return err
 		}
@@ -562,8 +583,27 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			(srcfg.Spec.SamplesRegistry == "" || srcfg.Spec.SamplesRegistry == "registry.redhat.io") &&
 			!srcfg.ConditionTrue(v1alpha1.ImportCredentialsExist) &&
 			h.registrySecret == nil {
-			err := fmt.Errorf("Cannot create rhel imagestreams to registry.redhat.io without the credentials being available: %#v", srcfg)
-			return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionFalse, err, "%v")
+			if h.waitingForCredential == nil {
+				h.waitingForCredential = srcfg
+				err := fmt.Errorf("Cannot create rhel imagestreams to registry.redhat.io without the credentials being available: %#v", srcfg)
+				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionFalse, err, "%v")
+			} else {
+				// already recorded error/need, simply wait for credential to appear, but we'll update our cached
+				// entry for resource version validation on various status condition updates.  That said, the basic
+				// flow will be
+				// 1) cache in waitingForCredential any updates to samplesresoure
+				// 2) get secret event
+				// 3) secret event is processed, samplesresource condition is updated with credentials exists, using cwaitingForCredential
+				// 4) new samplesresouce event comes in based on status update from 3)
+				// 5) it is processed since credential exits
+				// 6) if successful the samplesexists condition is created, and the configmap is populated, and samplesResource cache is updated
+				h.waitingForCredential = srcfg
+				return nil
+			}
+		} else {
+			// if we change config in the interim to no longer require creds, nil out waitingForCredentials
+			// so it does not impact any future checks
+			h.waitingForCredential = nil
 		}
 
 		h.buildSkipFilters(srcfg)
