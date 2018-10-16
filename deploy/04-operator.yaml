@@ -13,6 +13,12 @@ spec:
       labels:
         name: cluster-samples-operator
     spec:
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
       containers:
         - name: cluster-samples-operator
           image: docker.io/openshift/origin-cluster-samples-operator:latest
