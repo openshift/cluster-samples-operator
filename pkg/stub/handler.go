@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
-
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
 
@@ -32,6 +30,9 @@ import (
 
 	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	templatev1client "github.com/openshift/client-go/template/clientset/versioned/typed/template/v1"
+
+	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
+	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 )
 
 const (
@@ -48,6 +49,7 @@ func NewHandler() sdk.Handler {
 	h.initter.init()
 
 	h.sdkwrapper = &defaultSDKWrapper{h: &h}
+	h.cvowrapper = operatorstatus.NewCVOOperatorStatusHandler()
 
 	h.fileimagegetter = &defaultImageStreamFromFileGetter{h: &h}
 	h.filetemplategetter = &defaultTemplateFromFileGetter{h: &h}
@@ -77,6 +79,7 @@ type Handler struct {
 	initter InClusterInitter
 
 	sdkwrapper SDKWrapper
+	cvowrapper *operatorstatus.CVOOperatorStatusHandler
 
 	samplesResource *v1alpha1.SamplesResource
 	registrySecret  *corev1.Secret
@@ -114,6 +117,7 @@ type Handler struct {
 }
 
 func (h *Handler) StatusUpdate(condition v1alpha1.SamplesResourceConditionType, srcfg *v1alpha1.SamplesResource) error {
+
 	if condition == v1alpha1.SamplesExist {
 		cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
 		if err != nil && !kerrors.IsNotFound(err) {
@@ -526,6 +530,13 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return nil
 		}
 
+		// Every time we see a change to the SamplesResource object, update the ClusterOperator status
+		// based on the current conditions of the SamplesResource.
+		err := h.cvowrapper.UpdateOperatorStatus(srcfg)
+		if err != nil {
+			return err
+		}
+
 		// pattern is 1) come in with delete timestamp, event delete flag false
 		// 2) then after we remove finalizer, comes in with delete timestamp
 		// and event delete flag true
@@ -632,7 +643,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		}
 
 		h.AddFinalizer(srcfg)
-		err := h.GoodConditionUpdate(srcfg, newStatus, v1alpha1.SamplesExist)
+		err = h.GoodConditionUpdate(srcfg, newStatus, v1alpha1.SamplesExist)
 		h.samplesResource = srcfg
 		return err
 	}
