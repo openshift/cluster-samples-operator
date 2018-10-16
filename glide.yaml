@@ -334,3 +334,5 @@ import:
   - pkg/util/sets
 - package: github.com/openshift/client-go
   version: ^3.9.0
+- package: github.com/openshift/cluster-version-operator
+  version: master
