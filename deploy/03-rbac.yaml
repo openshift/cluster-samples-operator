@@ -11,6 +11,10 @@ rules:
   verbs:
   - "*"
 - apiGroups:
+  - "operatorstatus.openshift.io"
+  resoruces:
+    - clusteroperators
+- apiGroups:
   - ""
   resources:
   - pods
