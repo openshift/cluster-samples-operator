@@ -1,5 +1,5 @@
-hash: a44aee6dae7459f8a3fef515de43c1dfe91001730dd6130789e11e112ba60d61
-updated: 2018-08-21T16:10:31.532984255-04:00
+hash: 467ef1be7c66d3842faaaa769362e09c5e6f52c5f9a920fa210ec48248fa10ca
+updated: 2018-10-16T17:17:12.714044416-04:00
 imports:
 - name: cloud.google.com/go
   version: 64a2037ec6be8a4b0c1d1f706ed35b428b989239
@@ -75,7 +75,7 @@ imports:
 - name: github.com/modern-go/reflect2
   version: 4b7aa43c6742a2c18fdef89dd197aaae7dac7ccd
 - name: github.com/openshift/api
-  version: cb68976b78d5fdc64c52646f55d78bf6ea95883a
+  version: a46029836bdc207f9949fc5f4907f0bfd3cf7763
   subpackages:
   - image/docker10
   - image/dockerpre012
@@ -89,6 +89,8 @@ imports:
   - image/clientset/versioned/typed/image/v1
   - template/clientset/versioned/scheme
   - template/clientset/versioned/typed/template/v1
+- name: github.com/openshift/cluster-version-operator
+  version: fe673cb712fa5e27001488fc088ac91bb553353d
 - name: github.com/operator-framework/operator-sdk
   version: 9314564aede3cf664a49fe670d6f3efdc84dd7e7
   subpackages:
