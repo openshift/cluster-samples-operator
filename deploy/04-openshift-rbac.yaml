@@ -5,7 +5,7 @@ metadata:
   namespace: openshift
 subjects:
 - kind: ServiceAccount
-  name: default
+  name: cluster-samples-operator
   namespace: openshift-cluster-samples-operator
 roleRef:
   kind: ClusterRole

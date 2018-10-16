@@ -32,7 +32,7 @@ func main() {
 	}
 	resyncPeriod := 10 * 60 // 10 minutes
 	logrus.Infof("Watching %s, %s, %s, %d", resource, kind, namespace, resyncPeriod)
-	sdk.Watch(resource, kind, namespace, resyncPeriod)
+	sdk.Watch(resource, kind, "", resyncPeriod)
 	logrus.Infof("Watching secrets")
 	sdk.Watch("v1", "Secret", namespace, resyncPeriod)
 	sdk.Handle(stub.NewHandler())

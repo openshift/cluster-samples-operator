@@ -9,5 +9,5 @@ spec:
     listKind: SamplesResourceList
     plural: samplesresources
     singular: samplesresource
-  scope: Namespaced
+  scope: Cluster
   version: v1alpha1
