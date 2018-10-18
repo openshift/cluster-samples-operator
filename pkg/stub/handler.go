@@ -371,7 +371,6 @@ func (h *Handler) CreateDefaultResourceIfNeeded() error {
 	// resource and set up that way
 	srcfg = &v1alpha1.SamplesResource{}
 	srcfg.Name = v1alpha1.SamplesResourceName
-	srcfg.Namespace = h.namespace
 	srcfg.Kind = "SamplesResource"
 	srcfg.APIVersion = "samplesoperator.config.openshift.io/v1alpha1"
 	srcfg.Spec.Architectures = append(srcfg.Spec.Architectures, v1alpha1.X86Architecture)
@@ -523,7 +522,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	case *v1alpha1.SamplesResource:
 		newStatus := corev1.ConditionTrue
 		srcfg, _ := event.Object.(*v1alpha1.SamplesResource)
-		if srcfg.Name != v1alpha1.SamplesResourceName {
+		if srcfg.Name != v1alpha1.SamplesResourceName || srcfg.Namespace != "" {
 			return nil
 		}
 
