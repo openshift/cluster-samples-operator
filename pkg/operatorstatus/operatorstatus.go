@@ -3,6 +3,8 @@ package operator
 import (
 	"fmt"
 
+	"github.com/sirupsen/logrus"
+
 	metaapi "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -67,10 +69,13 @@ func (o *CVOOperatorStatusHandler) UpdateOperatorStatus(sampleResource *v1alpha1
 		return err
 	}
 
-	if sampleResource.ConditionTrue(v1alpha1.ConfigurationValid) {
-		err = o.setOperatorStatus(sampleResource.Namespace, sampleResource.Name, osapi.OperatorFailing, osapi.ConditionFalse, "The samples operator configuration is invalid")
-	} else {
-		err = o.setOperatorStatus(sampleResource.Namespace, sampleResource.Name, osapi.OperatorFailing, osapi.ConditionTrue, "The samples operator configuraiton is valid")
+	switch {
+	case sampleResource.ConditionTrue(v1alpha1.ConfigurationValid):
+		err = o.setOperatorStatus(sampleResource.Namespace, sampleResource.Name, osapi.OperatorFailing, osapi.ConditionFalse, "The samples operator configuration is valid")
+	case sampleResource.ConditionTrue(v1alpha1.ConfigurationValid):
+		err = o.setOperatorStatus(sampleResource.Namespace, sampleResource.Name, osapi.OperatorFailing, osapi.ConditionTrue, "The samples operator configuration is invalid")
+	default:
+		err = o.setOperatorStatus(sampleResource.Namespace, sampleResource.Name, osapi.OperatorFailing, osapi.ConditionUnknown, "The samples operator configuration state is unknown")
 	}
 	if err != nil {
 		return err
@@ -81,32 +86,8 @@ func (o *CVOOperatorStatusHandler) UpdateOperatorStatus(sampleResource *v1alpha1
 	return err
 }
 
-func (o *CVOOperatorStatusHandler) updateOperatorCondition(op *osapi.ClusterOperator, condition *osapi.ClusterOperatorStatusCondition) (modified bool) {
-	found := false
-	conditions := []osapi.ClusterOperatorStatusCondition{}
-
-	for _, c := range op.Status.Conditions {
-		if condition.Type != c.Type {
-			conditions = append(conditions, c)
-			continue
-		}
-		if condition.Status != c.Status {
-			modified = true
-		}
-		conditions = append(conditions, *condition)
-		found = true
-	}
-
-	if !found {
-		conditions = append(conditions, *condition)
-		modified = true
-	}
-
-	op.Status.Conditions = conditions
-	return
-}
-
 func (o *CVOOperatorStatusHandler) setOperatorStatus(namespace, name string, condtype osapi.ClusterStatusConditionType, status osapi.ConditionStatus, msg string) error {
+	logrus.Debugf("setting clusteroperator status condition %s to %s", condtype, status)
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		state, err := o.SDKwrapper.Get(name, namespace)
 		if err != nil {
@@ -144,7 +125,6 @@ func (o *CVOOperatorStatusHandler) setOperatorStatus(namespace, name string, con
 
 			return o.SDKwrapper.Create(state)
 		}
-
 		modified := o.updateOperatorCondition(state, &osapi.ClusterOperatorStatusCondition{
 			Type:               condtype,
 			Status:             status,
@@ -156,4 +136,29 @@ func (o *CVOOperatorStatusHandler) setOperatorStatus(namespace, name string, con
 		}
 		return o.SDKwrapper.Update(state)
 	})
+}
+
+func (o *CVOOperatorStatusHandler) updateOperatorCondition(op *osapi.ClusterOperator, condition *osapi.ClusterOperatorStatusCondition) (modified bool) {
+	found := false
+	conditions := []osapi.ClusterOperatorStatusCondition{}
+
+	for _, c := range op.Status.Conditions {
+		if condition.Type != c.Type {
+			conditions = append(conditions, c)
+			continue
+		}
+		if condition.Status != c.Status {
+			modified = true
+		}
+		conditions = append(conditions, *condition)
+		found = true
+	}
+
+	if !found {
+		conditions = append(conditions, *condition)
+		modified = true
+	}
+
+	op.Status.Conditions = conditions
+	return
 }

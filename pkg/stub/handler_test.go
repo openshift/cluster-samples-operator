@@ -98,8 +98,6 @@ func TestWithArchDist(t *testing.T) {
 	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
 
 	// verify cannot change arch and distro
-	_, sr, _ = setup()
-	event.Object = sr
 	sr.ResourceVersion = "2"
 	sr.Spec.InstallType = v1alpha1.CentosSamplesDistribution
 	sr.Spec.Architectures = []string{
@@ -107,10 +105,10 @@ func TestWithArchDist(t *testing.T) {
 	}
 	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OCPContentRootDir)
 	err = h.Handle(nil, event)
-	validate(false, err, "cannot change installtype from", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse}, t)
+	validate(false, err, "cannot change installtype from", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse}, t)
 	sr.Spec.InstallType = v1alpha1.RHELSamplesDistribution
 	err = h.Handle(nil, event)
-	validate(false, err, "cannot change architectures from", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse}, t)
+	validate(false, err, "cannot change architectures from", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse}, t)
 }
 
 func TestWithBadDist(t *testing.T) {
@@ -152,21 +150,18 @@ func TestConfigurationValidCondition(t *testing.T) {
 	h, sr, event := setup()
 	err := h.Handle(nil, event)
 	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue}, t)
-	_, sr, event = setup()
 	sr.Spec.InstallType = "rhel8"
 	sr.ResourceVersion = "2"
 	err = h.Handle(nil, event)
-	validate(false, err, "trying to change installtype, which is not allowed, but also specified", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse}, t)
-	_, sr, event = setup()
+	validate(false, err, "trying to change installtype, which is not allowed, but also specified", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse}, t)
 	sr.Spec.InstallType = "rhel"
 	sr.ResourceVersion = "3"
 	err = h.Handle(nil, event)
-	validate(false, err, "cannot change installtype from centos to rhel", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse}, t)
-	_, sr, event = setup()
+	validate(false, err, "cannot change installtype from centos to rhel", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse}, t)
 	sr.Spec.InstallType = "centos"
 	sr.ResourceVersion = "4"
 	err = h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid, v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue}, t)
+	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue}, t)
 }
 
 func TestSkipped(t *testing.T) {
@@ -256,13 +251,12 @@ func TestProcessed(t *testing.T) {
 		}
 
 		// make sure registries are updated after already updating from the defaults
-		_, sr, _ = setup()
-		event.Object = sr
 		sr.Spec.SamplesRegistry = "bar.io"
 		sr.ResourceVersion = "2"
 		sr.Spec.InstallType = dist
+
 		err = h.Handle(nil, event)
-		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.ConfigurationValid, v1alpha1.SamplesExist}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue}, t)
+		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue}, t)
 		is, _ = fakeisclient.Get("", "foo", metav1.GetOptions{})
 		if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, sr.Spec.SamplesRegistry) {
 			t.Fatalf("stream repo not updated %#v, %#v", is, h)
@@ -432,13 +426,23 @@ func TestDeletedCR(t *testing.T) {
 func TestSameCR(t *testing.T) {
 	h, sr, event := setup()
 	sr.ResourceVersion = "a"
-	condtions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}
+
+	// first pass on the resource creates the samples
+	conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist}
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue}
 	err := h.Handle(nil, event)
-	validate(true, err, "", sr, condtions, statuses, t)
+	validate(true, err, "", sr, conditions, statuses, t)
+
+	// second pass on the resource marks the config as valid(relative to the previously processed config)
+	conditions = []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ConfigurationValid}
+	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue}
 	err = h.Handle(nil, event)
-	// conditions array should not change
-	validate(true, err, "", sr, condtions, statuses, t)
+	validate(true, err, "", sr, conditions, statuses, t)
+
+	// third pass should not change the object
+	err = h.Handle(nil, event)
+	validate(true, err, "", sr, conditions, statuses, t)
+
 }
 
 func TestBadTopDirList(t *testing.T) {
@@ -493,14 +497,22 @@ func TestUnsupportedDistroChange(t *testing.T) {
 	_, sr, event = setup()
 	sr.Spec.InstallType = v1alpha1.RHELSamplesDistribution
 	sr.ResourceVersion = "2"
+	sr.Status.Conditions = []v1alpha1.SamplesResourceCondition{
+		{
+			Type:   v1alpha1.SamplesExist,
+			Status: corev1.ConditionTrue,
+		},
+	}
 	err = h.Handle(nil, event)
 	// returned sr will only have the latest condition, since
 	// we do not update the cached copy in the error case, only
 	// etcd is updated
 	conditions = []v1alpha1.SamplesResourceConditionType{
+		v1alpha1.SamplesExist,
 		v1alpha1.ConfigurationValid,
 	}
 	statuses = []corev1.ConditionStatus{
+		corev1.ConditionTrue,
 		corev1.ConditionFalse,
 	}
 	validate(false, err, "cannot change installtype", sr, conditions, statuses, t)
@@ -521,14 +533,23 @@ func TestUnsupportedArchChange(t *testing.T) {
 	_, sr, event = setup()
 	sr.Spec.Architectures = []string{v1alpha1.PPCArchitecture}
 	sr.ResourceVersion = "2"
+
+	sr.Status.Conditions = []v1alpha1.SamplesResourceCondition{
+		{
+			Type:   v1alpha1.SamplesExist,
+			Status: corev1.ConditionTrue,
+		},
+	}
 	err = h.Handle(nil, event)
 	// returned sr will only have the latest condition, since
 	// we do not update the cached copy in the error case, only
 	// etcd is updated
 	conditions = []v1alpha1.SamplesResourceConditionType{
+		v1alpha1.SamplesExist,
 		v1alpha1.ConfigurationValid,
 	}
 	statuses = []corev1.ConditionStatus{
+		corev1.ConditionTrue,
 		corev1.ConditionFalse,
 	}
 	validate(false, err, "cannot change architecture", sr, conditions, statuses, t)
@@ -552,32 +573,32 @@ func mimic(h *Handler, dist v1alpha1.SamplesDistributionType, topdir string) {
 	}
 	fakefile := h.filefinder.(*fakeResourceFileLister)
 	fakefile.files = map[string][]fakeFileInfo{
-		topdir: []fakeFileInfo{
-			fakeFileInfo{
+		topdir: {
+			{
 				name: "imagestreams",
 				dir:  true,
 			},
-			fakeFileInfo{
+			{
 				name: "templates",
 				dir:  true,
 			},
 		},
-		topdir + "/" + "imagestreams": []fakeFileInfo{
-			fakeFileInfo{
+		topdir + "/" + "imagestreams": {
+			{
 				name: "foo",
 				dir:  false,
 			},
-			fakeFileInfo{
+			{
 				name: "bar",
 				dir:  false,
 			},
 		},
-		topdir + "/" + "templates": []fakeFileInfo{
-			fakeFileInfo{
+		topdir + "/" + "templates": {
+			{
 				name: "bo",
 				dir:  false,
 			},
-			fakeFileInfo{
+			{
 				name: "go",
 				dir:  false,
 			},
@@ -592,7 +613,7 @@ func mimic(h *Handler, dist v1alpha1.SamplesDistributionType, topdir string) {
 		Spec: imagev1.ImageStreamSpec{
 			DockerImageRepository: registry1,
 			Tags: []imagev1.TagReference{
-				imagev1.TagReference{
+				{
 					// no Name field set on purpose, cover more code paths
 					From: &corev1.ObjectReference{
 						Kind: "DockerImage",
@@ -609,7 +630,7 @@ func mimic(h *Handler, dist v1alpha1.SamplesDistributionType, topdir string) {
 		Spec: imagev1.ImageStreamSpec{
 			DockerImageRepository: registry2,
 			Tags: []imagev1.TagReference{
-				imagev1.TagReference{
+				{
 					From: &corev1.ObjectReference{
 						Name: registry2,
 						Kind: "DockerImage",
@@ -658,12 +679,12 @@ func validate(succeed bool, err error, errstr string, sr *v1alpha1.SamplesResour
 			t.Fatalf("error should have been reported")
 		}
 		if !strings.Contains(err.Error(), errstr) {
-			t.Fatalf("unexpected error %v", err)
+			t.Fatalf("unexpected error: %v, expected: %v", err, errstr)
 		}
 	}
 	if sr != nil {
 		if len(sr.Status.Conditions) != len(conditions) {
-			t.Fatalf("condition arrays different lengths got %v\n expected %v", sr, conditions)
+			t.Fatalf("condition arrays different lengths got %v\n expected %v", sr.Status.Conditions, conditions)
 		}
 		for i, c := range conditions {
 			if sr.Status.Conditions[i].Type != c {

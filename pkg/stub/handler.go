@@ -116,61 +116,67 @@ type Handler struct {
 	mutex *sync.Mutex
 }
 
-func (h *Handler) StatusUpdate(condition v1alpha1.SamplesResourceConditionType, srcfg *v1alpha1.SamplesResource) error {
+func (h *Handler) StoreCurrentValidConfig(condition v1alpha1.SamplesResourceConditionType, srcfg *v1alpha1.SamplesResource) error {
 
-	if condition == v1alpha1.SamplesExist {
-		cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
-		if err != nil && !kerrors.IsNotFound(err) {
-			// just return error to sdk for retry
-			return err
-		}
-		if kerrors.IsNotFound(err) {
-			// 4.0 testing showed that we were getting empty ConfigMaps
-			cm = nil
-		}
-		if cm != nil {
-			// just return ... we only update the config map once
-			return nil
-		}
-		cm = &corev1.ConfigMap{}
-		cm.Name = v1alpha1.SamplesResourceName
-		cm.Data = map[string]string{}
-		if len(srcfg.Spec.InstallType) == 0 {
-			cm.Data[installtypekey] = string(v1alpha1.CentosSamplesDistribution)
-		} else {
-			cm.Data[installtypekey] = string(srcfg.Spec.InstallType)
-		}
-		if len(srcfg.Spec.Architectures) == 0 {
-			cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
-		} else {
-			for _, arch := range srcfg.Spec.Architectures {
-				switch arch {
-				case v1alpha1.X86Architecture:
-					cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
-				case v1alpha1.PPCArchitecture:
-					cm.Data[v1alpha1.PPCArchitecture] = v1alpha1.PPCArchitecture
-				}
-			}
-		}
-		_, err = h.configmapclientwrapper.Create(h.namespace, cm)
-		if err != nil {
-			// just return error to sdk for retry
-			return err
-		}
-	}
-	return nil
-}
-
-func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
-	// if we have not had a valid SamplesResource processed, allow caller to try with
-	// the srcfg contents
-	if h.samplesResource == nil || !h.samplesResource.ConditionTrue(v1alpha1.SamplesExist) {
+	if condition != v1alpha1.SamplesExist {
 		return nil
 	}
+
 	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
 	if err != nil && !kerrors.IsNotFound(err) {
 		// just return error to sdk for retry
 		return err
+	}
+	if kerrors.IsNotFound(err) {
+		// 4.0 testing showed that we were getting empty ConfigMaps
+		cm = nil
+	}
+	if cm != nil {
+		// just return ... we only update the config map once
+		return nil
+	}
+	cm = &corev1.ConfigMap{}
+	cm.Name = v1alpha1.SamplesResourceName
+	cm.Data = map[string]string{}
+	if len(srcfg.Spec.InstallType) == 0 {
+		cm.Data[installtypekey] = string(v1alpha1.CentosSamplesDistribution)
+	} else {
+		cm.Data[installtypekey] = string(srcfg.Spec.InstallType)
+	}
+	if len(srcfg.Spec.Architectures) == 0 {
+		cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
+	} else {
+		for _, arch := range srcfg.Spec.Architectures {
+			switch arch {
+			case v1alpha1.X86Architecture:
+				cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
+			case v1alpha1.PPCArchitecture:
+				cm.Data[v1alpha1.PPCArchitecture] = v1alpha1.PPCArchitecture
+			}
+		}
+	}
+	_, err = h.configmapclientwrapper.Create(h.namespace, cm)
+	return err
+}
+
+func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
+	// TODO - the first thing this should do is check that all the config values
+	// are "valid" (the architecture name is known, the distribution name is known, etc)
+	// if that fails, we should immediately error out and set ConfigValid to false.
+
+	// only if the values being requested are valid, should we then proceed to check
+	// them against the previous values(if we've stored any previous values)
+
+	// if we have not had a valid SamplesResource processed, allow caller to try with
+	// the srcfg contents
+	if !srcfg.ConditionTrue(v1alpha1.SamplesExist) {
+		logrus.Println("Spec is valid because samples are not created yet")
+		return nil
+	}
+	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
+	if err != nil && !kerrors.IsNotFound(err) {
+		err = fmt.Errorf("error retrieving previous configuration: %v", err)
+		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
 	}
 	if kerrors.IsNotFound(err) {
 		err = fmt.Errorf("ConfigMap %s does not exist, but it should, so cannot validate config change", v1alpha1.SamplesResourceName)
@@ -215,7 +221,6 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
 		default:
 			err = fmt.Errorf("trying to change architecture, which is not allowed, but also specified an unsupported architecture %s", arch)
 			return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
-
 		}
 	}
 
@@ -224,7 +229,6 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
 		err = fmt.Errorf("cannot change architectures from %#v to %#v", cm.Data, srcfg.Spec.Architectures)
 		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
-
 	return h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.ConfigurationValid)
 }
 
@@ -269,6 +273,7 @@ func (h *Handler) NeedsFinalizing(srcfg *v1alpha1.SamplesResource) bool {
 }
 
 func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus corev1.ConditionStatus, conditionType v1alpha1.SamplesResourceConditionType) error {
+	logrus.Debugf("updating condition %s to %s", conditionType, newStatus)
 	condition := srcfg.Condition(conditionType)
 	// decision was made to not spam master if
 	// duplicate events come it (i.e. status does not
@@ -302,7 +307,7 @@ func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus
 			}
 		}
 
-		err = h.StatusUpdate(conditionType, srcfg)
+		err = h.StoreCurrentValidConfig(conditionType, srcfg)
 
 		logrus.Println("")
 		logrus.Println("")
@@ -526,6 +531,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	case *v1alpha1.SamplesResource:
 		newStatus := corev1.ConditionTrue
 		srcfg, _ := event.Object.(*v1alpha1.SamplesResource)
+
 		if srcfg.Name != v1alpha1.SamplesResourceName || srcfg.Namespace != "" {
 			return nil
 		}
@@ -533,7 +539,10 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		// Every time we see a change to the SamplesResource object, update the ClusterOperator status
 		// based on the current conditions of the SamplesResource.
 		err := h.cvowrapper.UpdateOperatorStatus(srcfg)
+		// TODO make sure an error here does not prevent us from doing other necessary processing
+		// of the samples resource object.
 		if err != nil {
+			logrus.Errorf("error updating cluster operator status: %v", err)
 			return err
 		}
 
@@ -565,17 +574,9 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		h.mutex.Lock()
 		defer h.mutex.Unlock()
 
-		if h.samplesResource != nil {
-			currVersion, _ := strconv.Atoi(h.samplesResource.ResourceVersion)
-			newVersion, _ := strconv.Atoi(srcfg.ResourceVersion)
-			if newVersion <= currVersion {
-				return nil
-			}
-
-			err := h.SpecValidation(srcfg)
-			if err != nil {
-				return err
-			}
+		err = h.SpecValidation(srcfg)
+		if err != nil {
+			return err
 		}
 
 		// if the secret event came in before the samples resource event,
@@ -643,6 +644,8 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		}
 
 		h.AddFinalizer(srcfg)
+
+		// TODO: this should atomically also update the ConfigValid condition to True
 		err = h.GoodConditionUpdate(srcfg, newStatus, v1alpha1.SamplesExist)
 		h.samplesResource = srcfg
 		return err
@@ -856,7 +859,7 @@ func (h *Handler) GetBaseDir(arch string, opcfg *v1alpha1.SamplesResource) (dir 
 	case v1alpha1.PPCArchitecture:
 		switch opcfg.Spec.InstallType {
 		case v1alpha1.CentosSamplesDistribution:
-			err = fmt.Errorf("ppc64le architecture and centos install are not currently supported")
+			err = fmt.Errorf("ppc64le architecture with centos install is not currently supported")
 		case v1alpha1.RHELSamplesDistribution:
 			dir = ppc64OCPContentRootDir
 		default:
