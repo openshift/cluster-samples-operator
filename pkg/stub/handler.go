@@ -49,7 +49,6 @@ func NewHandler() sdk.Handler {
 	h.initter.init()
 
 	h.sdkwrapper = &defaultSDKWrapper{h: &h}
-	h.cvowrapper = operatorstatus.NewCVOOperatorStatusHandler()
 
 	h.fileimagegetter = &defaultImageStreamFromFileGetter{h: &h}
 	h.filetemplategetter = &defaultTemplateFromFileGetter{h: &h}
@@ -61,6 +60,7 @@ func NewHandler() sdk.Handler {
 	h.configmapclientwrapper = &defaultConfigMapClientWrapper{h: &h}
 
 	h.namespace = getNamespace()
+	h.cvowrapper = operatorstatus.NewCVOOperatorStatusHandler(h.namespace)
 
 	h.skippedImagestreams = make(map[string]bool)
 	h.skippedTemplates = make(map[string]bool)

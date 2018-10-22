@@ -134,6 +134,18 @@ func (s *SamplesResource) ConditionTrue(c SamplesResourceConditionType) bool {
 	return false
 }
 
+func (s *SamplesResource) ConditionFalse(c SamplesResourceConditionType) bool {
+	if s.Status.Conditions == nil {
+		return false
+	}
+	for _, rc := range s.Status.Conditions {
+		if rc.Type == c && rc.Status == corev1.ConditionFalse {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *SamplesResource) ConditionUpdate(c *SamplesResourceCondition) {
 	if s.Status.Conditions == nil {
 		return
