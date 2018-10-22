@@ -19,11 +19,12 @@ import (
 // CVOOperatorStatusHandler allows for wrappering sdk access to osapi.ClusterOperator
 type CVOOperatorStatusHandler struct {
 	SDKwrapper OperatorStatusSDKWrapper
+	Namespace  string
 }
 
 // NewCVOOperatorStatusHandler is the default initializer function for CVOOperatorStatusHandler
-func NewCVOOperatorStatusHandler() *CVOOperatorStatusHandler {
-	return &CVOOperatorStatusHandler{SDKwrapper: &defaultOperatorStatusSDKWrapper{}}
+func NewCVOOperatorStatusHandler(namespace string) *CVOOperatorStatusHandler {
+	return &CVOOperatorStatusHandler{SDKwrapper: &defaultOperatorStatusSDKWrapper{}, Namespace: namespace}
 }
 
 // OperatorStatusSDKWrapper is the interface that wrappers actuall access to github.com/operator-framework/operator-sdk/pkg/sdk
@@ -60,10 +61,13 @@ func (s *defaultOperatorStatusSDKWrapper) Create(state *osapi.ClusterOperator) e
 
 func (o *CVOOperatorStatusHandler) UpdateOperatorStatus(sampleResource *v1alpha1.SamplesResource) error {
 	var err error
-	if sampleResource.ConditionTrue(v1alpha1.SamplesExist) {
-		err = o.setOperatorStatus(sampleResource.Namespace, sampleResource.Name, osapi.OperatorAvailable, osapi.ConditionTrue, "Samples exist in the openshift project")
-	} else {
-		err = o.setOperatorStatus(sampleResource.Namespace, sampleResource.Name, osapi.OperatorAvailable, osapi.ConditionFalse, "Samples do not exist in the openshift project")
+	switch {
+	case sampleResource.ConditionTrue(v1alpha1.SamplesExist):
+		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorAvailable, osapi.ConditionTrue, "Samples exist in the openshift project")
+	case sampleResource.ConditionFalse(v1alpha1.SamplesExist):
+		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorAvailable, osapi.ConditionFalse, "Samples do not exist in the openshift project")
+	default:
+		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorAvailable, osapi.ConditionUnknown, "The presence of the samples in the openshift project is unknown")
 	}
 	if err != nil {
 		return err
@@ -71,25 +75,25 @@ func (o *CVOOperatorStatusHandler) UpdateOperatorStatus(sampleResource *v1alpha1
 
 	switch {
 	case sampleResource.ConditionTrue(v1alpha1.ConfigurationValid):
-		err = o.setOperatorStatus(sampleResource.Namespace, sampleResource.Name, osapi.OperatorFailing, osapi.ConditionFalse, "The samples operator configuration is valid")
-	case sampleResource.ConditionTrue(v1alpha1.ConfigurationValid):
-		err = o.setOperatorStatus(sampleResource.Namespace, sampleResource.Name, osapi.OperatorFailing, osapi.ConditionTrue, "The samples operator configuration is invalid")
+		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorFailing, osapi.ConditionFalse, "The samples operator configuration is valid")
+	case sampleResource.ConditionFalse(v1alpha1.ConfigurationValid):
+		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorFailing, osapi.ConditionTrue, "The samples operator configuration is invalid")
 	default:
-		err = o.setOperatorStatus(sampleResource.Namespace, sampleResource.Name, osapi.OperatorFailing, osapi.ConditionUnknown, "The samples operator configuration state is unknown")
+		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorFailing, osapi.ConditionUnknown, "The samples operator configuration state is unknown")
 	}
 	if err != nil {
 		return err
 	}
 
 	// We have no meaningful "progressing" status, everything we do basically either instantly succeeds or fails.
-	err = o.setOperatorStatus(sampleResource.Namespace, sampleResource.Name, osapi.OperatorProgressing, osapi.ConditionFalse, "")
+	err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorProgressing, osapi.ConditionFalse, "")
 	return err
 }
 
-func (o *CVOOperatorStatusHandler) setOperatorStatus(namespace, name string, condtype osapi.ClusterStatusConditionType, status osapi.ConditionStatus, msg string) error {
+func (o *CVOOperatorStatusHandler) setOperatorStatus(name string, condtype osapi.ClusterStatusConditionType, status osapi.ConditionStatus, msg string) error {
 	logrus.Debugf("setting clusteroperator status condition %s to %s", condtype, status)
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		state, err := o.SDKwrapper.Get(name, namespace)
+		state, err := o.SDKwrapper.Get(name, o.Namespace)
 		if err != nil {
 			if !errors.IsNotFound(err) {
 				return fmt.Errorf("failed to get cluster operator resource %s/%s: %s", state.ObjectMeta.Namespace, state.ObjectMeta.Name, err)
