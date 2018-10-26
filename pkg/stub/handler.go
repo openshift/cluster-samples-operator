@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,7 +38,10 @@ const (
 	x86OCPContentRootDir   = "/opt/openshift/operator/ocp-x86_64"
 	x86OKDContentRootDir   = "/opt/openshift/operator/okd-x86_64"
 	ppc64OCPContentRootDir = "/opt/openshift/operator/ocp-ppc64le"
-	installtypekey         = "installtype"
+	installtypekey         = "keyForInstallTypeField"
+	regkey                 = "keyForSamplesRegistryField"
+	skippedstreamskey      = "keyForSkippedImageStreamsField"
+	skippedtempskey        = "keyForSkippedTemplatesField"
 )
 
 func NewHandler() sdk.Handler {
@@ -66,11 +68,7 @@ func NewHandler() sdk.Handler {
 	h.skippedTemplates = make(map[string]bool)
 
 	h.mutex = &sync.Mutex{}
-	timer := time.NewTimer(5 * time.Second)
-	go func() {
-		<-timer.C
-		h.CreateDefaultResourceIfNeeded()
-	}()
+	h.CreateDefaultResourceIfNeeded()
 
 	return &h
 }
@@ -80,17 +78,6 @@ type Handler struct {
 
 	sdkwrapper SDKWrapper
 	cvowrapper *operatorstatus.CVOOperatorStatusHandler
-
-	samplesResource *v1alpha1.SamplesResource
-	registrySecret  *corev1.Secret
-
-	// we maintain a separate SamplesResource cache
-	// entry when this is a default rhel install and we
-	// are waiting for the credential since we are
-	// in an erorr state; our current approach is
-	// to only update the standard samplesResource
-	// cache entry for valid / non-error states
-	waitingForCredential *v1alpha1.SamplesResource
 
 	restconfig  *restclient.Config
 	tempclient  *templatev1client.TemplateV1Client
@@ -116,6 +103,75 @@ type Handler struct {
 	mutex *sync.Mutex
 }
 
+func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *corev1.ConfigMap) (bool, error) {
+	samplesRegistry, ok := cm.Data[regkey]
+	if !ok {
+		err := fmt.Errorf("could not find the registry setting in the config map %#v", cm.Data)
+		return false, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
+	}
+	if srcfg.Spec.SamplesRegistry != samplesRegistry {
+		logrus.Printf("SamplesRegistry changed from %s, processing %v", samplesRegistry, srcfg)
+		return true, nil
+	}
+
+	skippedStreams, ok := cm.Data[skippedstreamskey]
+	if !ok {
+		err := fmt.Errorf("could not find the skipped stream setting in the config map %#v", cm.Data)
+		return false, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
+	}
+	streams := []string{}
+	// Split will return an item of len 1 if skippedStreams is empty;
+	// verified via testing and godoc of method
+	if len(skippedStreams) > 0 {
+		streams = strings.Split(skippedStreams, " ")
+	}
+	if len(streams) != len(srcfg.Spec.SkippedImagestreams) {
+		logrus.Printf("SkippedImageStreams changed from %s, processing %v", skippedStreams, srcfg)
+		return true, nil
+	}
+
+	streamsMap := make(map[string]bool)
+	for _, stream := range streams {
+		streamsMap[stream] = true
+	}
+	for _, stream := range srcfg.Spec.SkippedImagestreams {
+		if _, ok := streamsMap[stream]; !ok {
+			logrus.Printf("SkippedImageStreams changed from %s, processing %v", skippedStreams, srcfg)
+			return true, nil
+		}
+	}
+
+	skippedTemps, ok := cm.Data[skippedtempskey]
+	if !ok {
+		err := fmt.Errorf("could not find the skipped template setting in the config map %#v", cm.Data)
+		return false, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
+	}
+	temps := []string{}
+	// Split will return an item of len 1 if skippedStreams is empty;
+	// verified via testing and godoc of method
+	if len(skippedTemps) > 0 {
+		temps = strings.Split(skippedTemps, " ")
+	}
+	if len(temps) != len(srcfg.Spec.SkippedTemplates) {
+		logrus.Printf("SkippedTemplates changed from %s, processing %v", skippedTemps, srcfg)
+		return true, nil
+	}
+
+	tempsMap := make(map[string]bool)
+	for _, temp := range temps {
+		tempsMap[temp] = true
+	}
+	for _, temp := range srcfg.Spec.SkippedTemplates {
+		if _, ok := tempsMap[temp]; !ok {
+			logrus.Printf("SkippedTemplates changed from %s, processing %v", skippedTemps, srcfg)
+			return true, nil
+		}
+	}
+
+	logrus.Printf("Incoming samples registry unchanged from last processed version")
+	return false, nil
+}
+
 func (h *Handler) StoreCurrentValidConfig(condition v1alpha1.SamplesResourceConditionType, srcfg *v1alpha1.SamplesResource) error {
 
 	if condition != v1alpha1.SamplesExist {
@@ -131,38 +187,74 @@ func (h *Handler) StoreCurrentValidConfig(condition v1alpha1.SamplesResourceCond
 		// 4.0 testing showed that we were getting empty ConfigMaps
 		cm = nil
 	}
-	if cm != nil {
-		// just return ... we only update the config map once
-		return nil
-	}
-	cm = &corev1.ConfigMap{}
-	cm.Name = v1alpha1.SamplesResourceName
-	cm.Data = map[string]string{}
-	if len(srcfg.Spec.InstallType) == 0 {
-		cm.Data[installtypekey] = string(v1alpha1.CentosSamplesDistribution)
-	} else {
-		cm.Data[installtypekey] = string(srcfg.Spec.InstallType)
-	}
-	if len(srcfg.Spec.Architectures) == 0 {
-		cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
-	} else {
-		for _, arch := range srcfg.Spec.Architectures {
-			switch arch {
-			case v1alpha1.X86Architecture:
-				cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
-			case v1alpha1.PPCArchitecture:
-				cm.Data[v1alpha1.PPCArchitecture] = v1alpha1.PPCArchitecture
+	create := false
+	if cm == nil {
+		create = true
+		cm = &corev1.ConfigMap{}
+		cm.Name = v1alpha1.SamplesResourceName
+		cm.Data = map[string]string{}
+		if len(srcfg.Spec.InstallType) == 0 {
+			cm.Data[installtypekey] = string(v1alpha1.CentosSamplesDistribution)
+		} else {
+			cm.Data[installtypekey] = string(srcfg.Spec.InstallType)
+		}
+		if len(srcfg.Spec.Architectures) == 0 {
+			cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
+		} else {
+			for _, arch := range srcfg.Spec.Architectures {
+				switch arch {
+				case v1alpha1.X86Architecture:
+					cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
+				case v1alpha1.PPCArchitecture:
+					cm.Data[v1alpha1.PPCArchitecture] = v1alpha1.PPCArchitecture
+				}
 			}
 		}
 	}
-	_, err = h.configmapclientwrapper.Create(h.namespace, cm)
+	cm.Data[regkey] = srcfg.Spec.SamplesRegistry
+	var value string
+	for _, val := range srcfg.Spec.SkippedImagestreams {
+		value = val + " "
+	}
+	cm.Data[skippedstreamskey] = value
+	value = ""
+	for _, val := range srcfg.Spec.SkippedTemplates {
+		value = val + " "
+	}
+	cm.Data[skippedtempskey] = value
+	if create {
+		_, err = h.configmapclientwrapper.Create(h.namespace, cm)
+	} else {
+		_, err = h.configmapclientwrapper.Update(h.namespace, cm)
+	}
 	return err
 }
 
-func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
-	// TODO - the first thing this should do is check that all the config values
+func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) (*corev1.ConfigMap, error) {
+	// the first thing this should do is check that all the config values
 	// are "valid" (the architecture name is known, the distribution name is known, etc)
 	// if that fails, we should immediately error out and set ConfigValid to false.
+	for _, arch := range srcfg.Spec.Architectures {
+		switch arch {
+		case v1alpha1.X86Architecture:
+		case v1alpha1.PPCArchitecture:
+			if srcfg.Spec.InstallType == v1alpha1.CentosSamplesDistribution {
+				err := fmt.Errorf("do not support centos distribution on ppc64l3")
+				return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+			}
+		default:
+			err := fmt.Errorf("architecture %s unsupported; only support %s and %s", arch, v1alpha1.X86Architecture, v1alpha1.PPCArchitecture)
+			return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+		}
+	}
+
+	switch srcfg.Spec.InstallType {
+	case v1alpha1.RHELSamplesDistribution:
+	case v1alpha1.CentosSamplesDistribution:
+	default:
+		err := fmt.Errorf("invalid install type %s specified, should be rhel or centos", string(srcfg.Spec.InstallType))
+		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+	}
 
 	// only if the values being requested are valid, should we then proceed to check
 	// them against the previous values(if we've stored any previous values)
@@ -171,37 +263,36 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
 	// the srcfg contents
 	if !srcfg.ConditionTrue(v1alpha1.SamplesExist) {
 		logrus.Println("Spec is valid because samples are not created yet")
-		return nil
+		return nil, nil
 	}
 	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
 	if err != nil && !kerrors.IsNotFound(err) {
 		err = fmt.Errorf("error retrieving previous configuration: %v", err)
-		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
+		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
 	}
 	if kerrors.IsNotFound(err) {
 		err = fmt.Errorf("ConfigMap %s does not exist, but it should, so cannot validate config change", v1alpha1.SamplesResourceName)
-		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
+		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
 	}
 
 	installtype, ok := cm.Data[installtypekey]
 	if !ok {
 		err = fmt.Errorf("could	not find the installtype in the config map %#v", cm.Data)
-		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
+		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
 	}
 	switch srcfg.Spec.InstallType {
 	case "", v1alpha1.CentosSamplesDistribution:
 		if installtype != string(v1alpha1.CentosSamplesDistribution) {
 			err = fmt.Errorf("cannot change installtype from %s to %s", installtype, srcfg.Spec.InstallType)
-			return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+			return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 		}
 	case v1alpha1.RHELSamplesDistribution:
 		if installtype != string(v1alpha1.RHELSamplesDistribution) {
 			err = fmt.Errorf("cannot change installtype from %s to %s", installtype, srcfg.Spec.InstallType)
-			return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+			return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 		}
 	default:
-		err = fmt.Errorf("trying to change installtype, which is not allowed, but also specified an unsupported installtype %s", srcfg.Spec.InstallType)
-		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+		// above value check catches this
 	}
 
 	_, hasx86 := cm.Data[v1alpha1.X86Architecture]
@@ -219,17 +310,16 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error {
 		case v1alpha1.PPCArchitecture:
 			wantsppc = true
 		default:
-			err = fmt.Errorf("trying to change architecture, which is not allowed, but also specified an unsupported architecture %s", arch)
-			return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+			// above value check catches this
 		}
 	}
 
 	if wantsx86 != hasx86 ||
 		wantsppc != hasppc {
 		err = fmt.Errorf("cannot change architectures from %#v to %#v", cm.Data, srcfg.Spec.Architectures)
-		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
-	return h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.ConfigurationValid)
+	return cm, h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.ConfigurationValid)
 }
 
 func (h *Handler) AddFinalizer(srcfg *v1alpha1.SamplesResource) {
@@ -291,7 +381,7 @@ func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus
 				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "failed adding success condition to config: %v")
 			}
 			logrus.Printf("got conflict error %#v on success status update, going retry", err)
-			srcfg, err = h.sdkwrapper.Get(srcfg.Name, srcfg.Namespace)
+			srcfg, err = h.sdkwrapper.Get(srcfg.Name)
 			if err != nil {
 				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "failed to retrieve samples resource after update conflict: %v")
 			}
@@ -331,23 +421,43 @@ func (h *Handler) IsRetryableAPIError(err error) bool {
 	return false
 }
 
-func (h *Handler) CreateDefaultResourceIfNeeded() error {
+func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, error) {
 	// coordinate with event handler processing
 	// where it will set h.sampleResource
 	// when it completely updates all imagestreams/templates/statuses
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
-	if h.waitingForCredential != nil {
-		return nil
-	}
 
 	deleteInProgress := h.deleteInProgress
 
 	var err error
-	var srcfg *v1alpha1.SamplesResource
+	// "4a" in the "startup" workflow, just create default
+	// resource and set up that way
+	srcfg := &v1alpha1.SamplesResource{}
+	srcfg.Name = v1alpha1.SamplesResourceName
+	srcfg.Kind = "SamplesResource"
+	srcfg.APIVersion = v1alpha1.GroupName + "/" + v1alpha1.Version
+	srcfg.Spec.Architectures = append(srcfg.Spec.Architectures, v1alpha1.X86Architecture)
+	srcfg.Spec.InstallType = v1alpha1.CentosSamplesDistribution
+	now := kapis.Now()
+	exist := srcfg.Condition(v1alpha1.SamplesExist)
+	exist.Status = corev1.ConditionFalse
+	exist.LastUpdateTime = now
+	exist.LastTransitionTime = now
+	srcfg.ConditionUpdate(exist)
+	cred := srcfg.Condition(v1alpha1.ImportCredentialsExist)
+	cred.Status = corev1.ConditionFalse
+	cred.LastUpdateTime = now
+	cred.LastTransitionTime = now
+	srcfg.ConditionUpdate(cred)
+	valid := srcfg.Condition(v1alpha1.ConfigurationValid)
+	valid.Status = corev1.ConditionTrue
+	valid.LastUpdateTime = now
+	valid.LastTransitionTime = now
+	srcfg.ConditionUpdate(valid)
 	if deleteInProgress {
 		err = wait.PollImmediate(3*time.Second, 30*time.Second, func() (bool, error) {
-			sr, e := h.sdkwrapper.Get(v1alpha1.SamplesResourceName, h.namespace)
+			sr, e := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
 			if kerrors.IsNotFound(e) {
 				return true, nil
 			}
@@ -366,46 +476,59 @@ func (h *Handler) CreateDefaultResourceIfNeeded() error {
 			return false, nil
 		})
 		if err != nil {
-			return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "issues waiting for delete to complete: %v")
+			return nil, h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "issues waiting for delete to complete: %v")
 		}
-		h.samplesResource = nil
-	} else {
-		srcfg = h.samplesResource
 	}
-	if srcfg != nil {
-		logrus.Println("SampleResource already received, not creating default")
-		return nil
-	}
-	// "4a" in the "startup" workflow, just create default
-	// resource and set up that way
-	srcfg = &v1alpha1.SamplesResource{}
-	srcfg.Name = v1alpha1.SamplesResourceName
-	srcfg.Kind = "SamplesResource"
-	srcfg.APIVersion = "samplesoperator.config.openshift.io/v1alpha1"
-	srcfg.Spec.Architectures = append(srcfg.Spec.Architectures, v1alpha1.X86Architecture)
-	srcfg.Spec.InstallType = v1alpha1.CentosSamplesDistribution
-	logrus.Println("creating default SamplesResource")
-	err = h.sdkwrapper.Create(srcfg)
-	if err != nil {
-		if !kerrors.IsAlreadyExists(err) {
-			return err
+
+	s, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
+	if s == nil || kerrors.IsNotFound(err) {
+		logrus.Println("creating default SamplesResource")
+		err = h.sdkwrapper.Create(srcfg)
+		if err != nil {
+			if !kerrors.IsAlreadyExists(err) {
+				return nil, err
+			}
+			// in case there is some race condition
+			logrus.Println("got already exists error on create default")
 		}
-		logrus.Println("got already exists error on create default, just going to forgo this time vs. retry")
-		// just return the raw error and initiate the sdk's requeue/ratelimiter setup
+
 	}
 	h.deleteInProgress = false
-	return err
+	return srcfg, nil
 }
 
-func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.SamplesResource, secret *corev1.Secret) error {
-	if secret.Name != v1alpha1.SamplesRegistryCredentials {
+func (h *Handler) WaitingForCredential(srcfg *v1alpha1.SamplesResource) error {
+	if srcfg.ConditionTrue(v1alpha1.ImportCredentialsExist) {
 		return nil
 	}
 
-	if h.samplesResource == nil && h.waitingForCredential == nil {
-		if !deleted {
-			h.registrySecret = secret
+	// if trying to do rhel to the default registry.redhat.io registry requires the secret
+	// be in place since registry.redhat.io requires auth to pull; since it is not ready
+	// log error state
+	if srcfg.Spec.InstallType == v1alpha1.RHELSamplesDistribution &&
+		(srcfg.Spec.SamplesRegistry == "" || srcfg.Spec.SamplesRegistry == "registry.redhat.io") {
+		// currently do not attempt to avoid multiple settings of this conditions/message prior to an event
+		// where the situation is addressed
+		err := fmt.Errorf("Cannot create rhel imagestreams to registry.redhat.io without the credentials being available: %#v", srcfg)
+		h.processError(srcfg, v1alpha1.ImportCredentialsExist, corev1.ConditionFalse, err, "%v")
+		return err
+	}
+	return nil
+}
+
+func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.SamplesResource, s *corev1.Secret) error {
+	secret := s
+	var err error
+	if secret == nil {
+		secret, err = h.secretclientwrapper.Get(h.namespace, v1alpha1.SamplesRegistryCredentials)
+		if err != nil && kerrors.IsNotFound(err) {
+			return nil
 		}
+		if err != nil {
+			return err
+		}
+	}
+	if secret.Name != v1alpha1.SamplesRegistryCredentials {
 		return nil
 	}
 
@@ -417,15 +540,7 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 		}
 		logrus.Printf("registry dockerconfig secret %s was deleted", secret.Name)
 		newStatus = corev1.ConditionFalse
-		h.registrySecret = nil
 	} else {
-		if h.registrySecret != nil {
-			currentVersion, _ := strconv.Atoi(h.registrySecret.ResourceVersion)
-			newVersion, _ := strconv.Atoi(secret.ResourceVersion)
-			if newVersion <= currentVersion {
-				return nil
-			}
-		}
 		secretToCreate := corev1.Secret{}
 		secret.DeepCopyInto(&secretToCreate)
 		secretToCreate.Namespace = ""
@@ -450,16 +565,12 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 			return h.processError(samplesResource, v1alpha1.ImportCredentialsExist, corev1.ConditionUnknown, err, "failed to create/update registry dockerconfig secret in openshif namespace : %v")
 		}
 		newStatus = corev1.ConditionTrue
-		h.registrySecret = secret
 	}
 
-	err := h.GoodConditionUpdate(samplesResource, newStatus, v1alpha1.ImportCredentialsExist)
+	err = h.GoodConditionUpdate(samplesResource, newStatus, v1alpha1.ImportCredentialsExist)
 	if err != nil {
 		return err
 	}
-
-	h.registrySecret = secret
-	h.waitingForCredential = nil
 
 	return nil
 }
@@ -514,18 +625,17 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch event.Object.(type) {
 	case *corev1.Secret:
 		dockercfgSecret, _ := event.Object.(*corev1.Secret)
+		if dockercfgSecret.Name != v1alpha1.SamplesRegistryCredentials {
+			return nil
+		}
 		h.mutex.Lock()
 		defer h.mutex.Unlock()
 
-		var err error
-		// special case error recovery for default rhel needing credential
-		if h.waitingForCredential != nil {
-			err = h.manageDockerCfgSecret(event.Deleted, h.waitingForCredential, dockercfgSecret)
+		srcfg, _ := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
+		if srcfg != nil {
+			return h.manageDockerCfgSecret(event.Deleted, srcfg, dockercfgSecret)
 		} else {
-			err = h.manageDockerCfgSecret(event.Deleted, h.samplesResource, dockercfgSecret)
-		}
-		if err != nil {
-			return err
+			return fmt.Errorf("Received secret %s but do not have the SampleRegistry yet, requeuing", dockercfgSecret.Name)
 		}
 
 	case *v1alpha1.SamplesResource:
@@ -574,47 +684,28 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		h.mutex.Lock()
 		defer h.mutex.Unlock()
 
-		err = h.SpecValidation(srcfg)
+		cm, err := h.SpecValidation(srcfg)
 		if err != nil {
 			return err
 		}
 
-		// if the secret event came in before the samples resource event,
-		// it could not be processed (though it would have been cached in
-		// the Handler struct);  process it now
-		if h.registrySecret != nil &&
-			!srcfg.ConditionTrue(v1alpha1.ImportCredentialsExist) {
-			h.manageDockerCfgSecret(false, srcfg, h.registrySecret)
+		if cm != nil {
+			changed, err := h.VariableConfigChanged(srcfg, cm)
+			if err != nil {
+				return err
+			}
+			if !changed {
+				return nil
+			}
 		}
 
 		// if trying to do rhel to the default registry.redhat.io registry requires the secret
 		// be in place since registry.redhat.io requires auth to pull; if it is not ready
-		// log error state
-		if srcfg.Spec.InstallType == v1alpha1.RHELSamplesDistribution &&
-			(srcfg.Spec.SamplesRegistry == "" || srcfg.Spec.SamplesRegistry == "registry.redhat.io") &&
-			!srcfg.ConditionTrue(v1alpha1.ImportCredentialsExist) &&
-			h.registrySecret == nil {
-			if h.waitingForCredential == nil {
-				h.waitingForCredential = srcfg
-				err := fmt.Errorf("Cannot create rhel imagestreams to registry.redhat.io without the credentials being available: %#v", srcfg)
-				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionFalse, err, "%v")
-			} else {
-				// already recorded error/need, simply wait for credential to appear, but we'll update our cached
-				// entry for resource version validation on various status condition updates.  That said, the basic
-				// flow will be
-				// 1) cache in waitingForCredential any updates to samplesresoure
-				// 2) get secret event
-				// 3) secret event is processed, samplesresource condition is updated with credentials exists, using cwaitingForCredential
-				// 4) new samplesresouce event comes in based on status update from 3)
-				// 5) it is processed since credential exits
-				// 6) if successful the samplesexists condition is created, and the configmap is populated, and samplesResource cache is updated
-				h.waitingForCredential = srcfg
-				return nil
-			}
-		} else {
-			// if we change config in the interim to no longer require creds, nil out waitingForCredentials
-			// so it does not impact any future checks
-			h.waitingForCredential = nil
+		// error state will be logged by WaitingForCredential, so return error and requeue
+		err = h.WaitingForCredential(srcfg)
+		if err != nil {
+			// abort processing, but not returning error to initiate requeue
+			return nil
 		}
 
 		h.buildSkipFilters(srcfg)
@@ -628,10 +719,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		}
 
 		for _, arch := range srcfg.Spec.Architectures {
-			dir, err := h.GetBaseDir(arch, srcfg)
-			if err != nil {
-				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error determining distro/type : %v")
-			}
+			dir := h.GetBaseDir(arch, srcfg)
 			files, err := h.filefinder.List(dir)
 			if err != nil {
 				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
@@ -647,7 +735,6 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 		// TODO: this should atomically also update the ConfigValid condition to True
 		err = h.GoodConditionUpdate(srcfg, newStatus, v1alpha1.SamplesExist)
-		h.samplesResource = srcfg
 		return err
 	}
 	return nil
@@ -845,7 +932,8 @@ func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.Ima
 
 }
 
-func (h *Handler) GetBaseDir(arch string, opcfg *v1alpha1.SamplesResource) (dir string, err error) {
+func (h *Handler) GetBaseDir(arch string, opcfg *v1alpha1.SamplesResource) (dir string) {
+	// invalid settings have already been sorted out by SpecValidation
 	switch arch {
 	case v1alpha1.X86Architecture:
 		switch opcfg.Spec.InstallType {
@@ -854,21 +942,12 @@ func (h *Handler) GetBaseDir(arch string, opcfg *v1alpha1.SamplesResource) (dir 
 		case v1alpha1.CentosSamplesDistribution:
 			dir = x86OKDContentRootDir
 		default:
-			err = fmt.Errorf("invalid install type %s specified, should be rhel or centos", string(opcfg.Spec.InstallType))
 		}
 	case v1alpha1.PPCArchitecture:
-		switch opcfg.Spec.InstallType {
-		case v1alpha1.CentosSamplesDistribution:
-			err = fmt.Errorf("ppc64le architecture with centos install is not currently supported")
-		case v1alpha1.RHELSamplesDistribution:
-			dir = ppc64OCPContentRootDir
-		default:
-			err = fmt.Errorf("invalid install type %s specified, should be rhel or centos", string(opcfg.Spec.InstallType))
-		}
+		dir = ppc64OCPContentRootDir
 	default:
-		err = fmt.Errorf("architecture %s unsupported; only support %s and %s", arch, v1alpha1.X86Architecture, v1alpha1.PPCArchitecture)
 	}
-	return dir, err
+	return dir
 }
 
 func getTemplateClient(restconfig *restclient.Config) (*templatev1client.TemplateV1Client, error) {
@@ -957,6 +1036,7 @@ func (g *defaultTemplateClientWrapper) Delete(namespace, name string, opts *meta
 type ConfigMapClientWrapper interface {
 	Get(namespace, name string) (*corev1.ConfigMap, error)
 	Create(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error)
+	Update(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error)
 	Delete(namespace, name string) error
 }
 
@@ -970,6 +1050,10 @@ func (g *defaultConfigMapClientWrapper) Get(namespace, name string) (*corev1.Con
 
 func (g *defaultConfigMapClientWrapper) Create(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error) {
 	return g.h.coreclient.ConfigMaps(namespace).Create(s)
+}
+
+func (g *defaultConfigMapClientWrapper) Update(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	return g.h.coreclient.ConfigMaps(namespace).Update(s)
 }
 
 func (g *defaultConfigMapClientWrapper) Delete(namespace, name string) error {
@@ -1102,7 +1186,7 @@ func (g *defaultInClusterInitter) init() {
 type SDKWrapper interface {
 	Update(samplesResource *v1alpha1.SamplesResource) (err error)
 	Create(samplesResource *v1alpha1.SamplesResource) (err error)
-	Get(name, namespace string) (*v1alpha1.SamplesResource, error)
+	Get(name string) (*v1alpha1.SamplesResource, error)
 }
 
 type defaultSDKWrapper struct {
@@ -1117,12 +1201,11 @@ func (g *defaultSDKWrapper) Create(samplesResource *v1alpha1.SamplesResource) er
 	return sdk.Create(samplesResource)
 }
 
-func (g *defaultSDKWrapper) Get(name, namespace string) (*v1alpha1.SamplesResource, error) {
+func (g *defaultSDKWrapper) Get(name string) (*v1alpha1.SamplesResource, error) {
 	sr := v1alpha1.SamplesResource{}
 	sr.Kind = "SamplesResource"
 	sr.APIVersion = "samplesoperator.config.openshift.io/v1alpha1"
 	sr.Name = name
-	sr.Namespace = namespace
 	err := sdk.Get(&sr, sdk.WithGetOptions(&metav1.GetOptions{}))
 	if err != nil {
 		return nil, err

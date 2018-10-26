@@ -4,6 +4,7 @@ import (
 	"context"
 	"runtime"
 
+	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
 	stub "github.com/openshift/cluster-samples-operator/pkg/stub"
 	sdk "github.com/operator-framework/operator-sdk/pkg/sdk"
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
@@ -24,7 +25,7 @@ func main() {
 
 	sdk.ExposeMetricsPort()
 
-	resource := "samplesoperator.config.openshift.io/v1alpha1"
+	resource := v1alpha1.GroupName + "/" + v1alpha1.Version
 	kind := "SamplesResource"
 	namespace, err := k8sutil.GetWatchNamespace()
 	if err != nil {
