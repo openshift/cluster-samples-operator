@@ -492,7 +492,9 @@ func TestBadTopLevelStatus(t *testing.T) {
 	fakestatus.updateerr = fmt.Errorf("badsdkupdate")
 	err := h.Handle(nil, event)
 	conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}
-	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionFalse, corev1.ConditionTrue}
+	// with deferring sdk updates to the very end, the local object will still have valid conditions on it, even though the error
+	// error returned by h.Handle indicates etcd was not updated
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}
 	validate(false, err, "badsdkupdate", sr, conditions, statuses, t)
 }
 

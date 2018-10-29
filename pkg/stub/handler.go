@@ -30,6 +30,7 @@ import (
 	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	templatev1client "github.com/openshift/client-go/template/clientset/versioned/typed/template/v1"
 
+	operatorsv1alpha1api "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 )
@@ -184,33 +185,34 @@ func (h *Handler) StoreCurrentValidConfig(condition v1alpha1.SamplesResourceCond
 		return err
 	}
 	if kerrors.IsNotFound(err) {
-		// 4.0 testing showed that we were getting empty ConfigMaps
-		cm = nil
+		err = fmt.Errorf("Operator in compromised state; Could not find config map even though samplesresource exists: %#v", srcfg)
+		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v")
+		h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
+		return err
 	}
-	create := false
-	if cm == nil {
-		create = true
-		cm = &corev1.ConfigMap{}
-		cm.Name = v1alpha1.SamplesResourceName
+
+	if cm.Data == nil {
 		cm.Data = map[string]string{}
-		if len(srcfg.Spec.InstallType) == 0 {
-			cm.Data[installtypekey] = string(v1alpha1.CentosSamplesDistribution)
-		} else {
-			cm.Data[installtypekey] = string(srcfg.Spec.InstallType)
-		}
-		if len(srcfg.Spec.Architectures) == 0 {
-			cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
-		} else {
-			for _, arch := range srcfg.Spec.Architectures {
-				switch arch {
-				case v1alpha1.X86Architecture:
-					cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
-				case v1alpha1.PPCArchitecture:
-					cm.Data[v1alpha1.PPCArchitecture] = v1alpha1.PPCArchitecture
-				}
+	}
+
+	if len(srcfg.Spec.InstallType) == 0 {
+		cm.Data[installtypekey] = string(v1alpha1.CentosSamplesDistribution)
+	} else {
+		cm.Data[installtypekey] = string(srcfg.Spec.InstallType)
+	}
+	if len(srcfg.Spec.Architectures) == 0 {
+		cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
+	} else {
+		for _, arch := range srcfg.Spec.Architectures {
+			switch arch {
+			case v1alpha1.X86Architecture:
+				cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
+			case v1alpha1.PPCArchitecture:
+				cm.Data[v1alpha1.PPCArchitecture] = v1alpha1.PPCArchitecture
 			}
 		}
 	}
+
 	cm.Data[regkey] = srcfg.Spec.SamplesRegistry
 	var value string
 	for _, val := range srcfg.Spec.SkippedImagestreams {
@@ -222,11 +224,7 @@ func (h *Handler) StoreCurrentValidConfig(condition v1alpha1.SamplesResourceCond
 		value = val + " "
 	}
 	cm.Data[skippedtempskey] = value
-	if create {
-		_, err = h.configmapclientwrapper.Create(h.namespace, cm)
-	} else {
-		_, err = h.configmapclientwrapper.Update(h.namespace, cm)
-	}
+	_, err = h.configmapclientwrapper.Update(h.namespace, cm)
 	return err
 }
 
@@ -262,7 +260,7 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) (*corev1.Confi
 	// if we have not had a valid SamplesResource processed, allow caller to try with
 	// the srcfg contents
 	if !srcfg.ConditionTrue(v1alpha1.SamplesExist) {
-		logrus.Println("Spec is valid because samples are not created yet")
+		logrus.Println("Spec is valid because this operator has not processed a config yet")
 		return nil, nil
 	}
 	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
@@ -319,7 +317,8 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) (*corev1.Confi
 		err = fmt.Errorf("cannot change architectures from %#v to %#v", cm.Data, srcfg.Spec.Architectures)
 		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
-	return cm, h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.ConfigurationValid)
+	h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.ConfigurationValid)
+	return cm, nil
 }
 
 func (h *Handler) AddFinalizer(srcfg *v1alpha1.SamplesResource) {
@@ -362,7 +361,7 @@ func (h *Handler) NeedsFinalizing(srcfg *v1alpha1.SamplesResource) bool {
 	return false
 }
 
-func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus corev1.ConditionStatus, conditionType v1alpha1.SamplesResourceConditionType) error {
+func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus corev1.ConditionStatus, conditionType v1alpha1.SamplesResourceConditionType) {
 	logrus.Debugf("updating condition %s to %s", conditionType, newStatus)
 	condition := srcfg.Condition(conditionType)
 	// decision was made to not spam master if
@@ -375,41 +374,22 @@ func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus
 		condition.LastTransitionTime = now
 		condition.Message = ""
 		srcfg.ConditionUpdate(condition)
-		err := h.sdkwrapper.Update(srcfg)
-		if err != nil {
-			if !kerrors.IsConflict(err) {
-				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "failed adding success condition to config: %v")
-			}
-			logrus.Printf("got conflict error %#v on success status update, going retry", err)
-			srcfg, err = h.sdkwrapper.Get(srcfg.Name)
-			if err != nil {
-				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "failed to retrieve samples resource after update conflict: %v")
-			}
-			condition = srcfg.Condition(conditionType)
-			condition.LastTransitionTime = now
-			condition.LastUpdateTime = now
-			condition.Status = newStatus
-			srcfg.ConditionUpdate(condition)
-			err = h.sdkwrapper.Update(srcfg)
-			if err != nil {
-				// just give up this time
-				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "failed to update status after conflict retry: %v")
-			}
-		}
 
-		err = h.StoreCurrentValidConfig(conditionType, srcfg)
+		h.StoreCurrentValidConfig(conditionType, srcfg)
 
 		logrus.Println("")
 		logrus.Println("")
 		logrus.Println("")
 		logrus.Println("")
 	}
-	return nil
 }
 
 // copied from k8s.io/kubernetes/test/utils/
 func (h *Handler) IsRetryableAPIError(err error) bool {
-	// These errors may indicate a transient error that we can retry in tests.
+	if err == nil {
+		return false
+	}
+	// These errors may indicate a transient error that we can retry.
 	if kerrors.IsInternalError(err) || kerrors.IsTimeout(err) || kerrors.IsServerTimeout(err) ||
 		kerrors.IsTooManyRequests(err) || utilnet.IsProbableEOF(err) || utilnet.IsConnectionReset(err) {
 		return true
@@ -431,45 +411,22 @@ func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, er
 	deleteInProgress := h.deleteInProgress
 
 	var err error
-	// "4a" in the "startup" workflow, just create default
-	// resource and set up that way
-	srcfg := &v1alpha1.SamplesResource{}
-	srcfg.Name = v1alpha1.SamplesResourceName
-	srcfg.Kind = "SamplesResource"
-	srcfg.APIVersion = v1alpha1.GroupName + "/" + v1alpha1.Version
-	srcfg.Spec.Architectures = append(srcfg.Spec.Architectures, v1alpha1.X86Architecture)
-	srcfg.Spec.InstallType = v1alpha1.CentosSamplesDistribution
-	now := kapis.Now()
-	exist := srcfg.Condition(v1alpha1.SamplesExist)
-	exist.Status = corev1.ConditionFalse
-	exist.LastUpdateTime = now
-	exist.LastTransitionTime = now
-	srcfg.ConditionUpdate(exist)
-	cred := srcfg.Condition(v1alpha1.ImportCredentialsExist)
-	cred.Status = corev1.ConditionFalse
-	cred.LastUpdateTime = now
-	cred.LastTransitionTime = now
-	srcfg.ConditionUpdate(cred)
-	valid := srcfg.Condition(v1alpha1.ConfigurationValid)
-	valid.Status = corev1.ConditionTrue
-	valid.LastUpdateTime = now
-	valid.LastTransitionTime = now
-	srcfg.ConditionUpdate(valid)
 	if deleteInProgress {
+		srcfg := &v1alpha1.SamplesResource{}
+		srcfg.Name = v1alpha1.SamplesResourceName
+		srcfg.Kind = "SamplesResource"
+		srcfg.APIVersion = v1alpha1.GroupName + "/" + v1alpha1.Version
 		err = wait.PollImmediate(3*time.Second, 30*time.Second, func() (bool, error) {
-			sr, e := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
+			srcfg, e := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
 			if kerrors.IsNotFound(e) {
 				return true, nil
-			}
-			if err != nil && h.IsRetryableAPIError(err) {
-				return false, nil
 			}
 			if err != nil {
 				return false, err
 			}
 			// based on 4.0 testing, we've been seeing empty resources returned
 			// in the not found case, but just in case ...
-			if sr == nil {
+			if srcfg == nil {
 				return true, nil
 			}
 			// means still found ... will return wait.ErrWaitTimeout if this continues
@@ -480,8 +437,32 @@ func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, er
 		}
 	}
 
-	s, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
-	if s == nil || kerrors.IsNotFound(err) {
+	srcfg, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
+	if srcfg == nil || kerrors.IsNotFound(err) {
+		// "4a" in the "startup" workflow, just create default
+		// resource and set up that way
+		srcfg = &v1alpha1.SamplesResource{}
+		srcfg.Name = v1alpha1.SamplesResourceName
+		srcfg.Kind = "SamplesResource"
+		srcfg.APIVersion = v1alpha1.GroupName + "/" + v1alpha1.Version
+		srcfg.Spec.Architectures = append(srcfg.Spec.Architectures, v1alpha1.X86Architecture)
+		srcfg.Spec.InstallType = v1alpha1.CentosSamplesDistribution
+		now := kapis.Now()
+		exist := srcfg.Condition(v1alpha1.SamplesExist)
+		exist.Status = corev1.ConditionFalse
+		exist.LastUpdateTime = now
+		exist.LastTransitionTime = now
+		srcfg.ConditionUpdate(exist)
+		cred := srcfg.Condition(v1alpha1.ImportCredentialsExist)
+		cred.Status = corev1.ConditionFalse
+		cred.LastUpdateTime = now
+		cred.LastTransitionTime = now
+		srcfg.ConditionUpdate(cred)
+		valid := srcfg.Condition(v1alpha1.ConfigurationValid)
+		valid.Status = corev1.ConditionTrue
+		valid.LastUpdateTime = now
+		valid.LastTransitionTime = now
+		srcfg.ConditionUpdate(valid)
 		logrus.Println("creating default SamplesResource")
 		err = h.sdkwrapper.Create(srcfg)
 		if err != nil {
@@ -492,9 +473,44 @@ func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, er
 			logrus.Println("got already exists error on create default")
 		}
 
+	} else {
+		logrus.Printf("SamplesResource %#v found during operator startup", srcfg)
+	}
+
+	// a missing config map when samplesresource.samplesexists is not false means
+	// a compromised state which will be caught in SpecValidation; so we don't
+	// look to possibly create the config map in that case
+	if srcfg.ConditionFalse(v1alpha1.SamplesExist) {
+		h.CreateConfigMapIfNeeded()
 	}
 	h.deleteInProgress = false
 	return srcfg, nil
+}
+
+func (h *Handler) CreateConfigMapIfNeeded() error {
+	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
+	if cm == nil || kerrors.IsNotFound(err) {
+		logrus.Println("creating config map")
+		cm = &corev1.ConfigMap{}
+		cm.Name = v1alpha1.SamplesResourceName
+		cm.Data = map[string]string{}
+		_, err = h.configmapclientwrapper.Create(h.namespace, cm)
+		if err != nil {
+			if !kerrors.IsAlreadyExists(err) {
+				return err
+			}
+			// in case there is some race condition
+			logrus.Println("got already exists error on create config map")
+			return nil
+		}
+	} else {
+		if err == nil {
+			logrus.Printf("ConfigMap for SamplesResource %#v found during operator startup", cm)
+		} else {
+			logrus.Printf("Could not ascertain presence of ConfigMap: %v", err)
+		}
+	}
+	return err
 }
 
 func (h *Handler) WaitingForCredential(srcfg *v1alpha1.SamplesResource) error {
@@ -567,15 +583,12 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 		newStatus = corev1.ConditionTrue
 	}
 
-	err = h.GoodConditionUpdate(samplesResource, newStatus, v1alpha1.ImportCredentialsExist)
-	if err != nil {
-		return err
-	}
+	h.GoodConditionUpdate(samplesResource, newStatus, v1alpha1.ImportCredentialsExist)
 
 	return nil
 }
 
-func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResource) {
+func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResource) error {
 	h.buildSkipFilters(srcfg)
 
 	iopts := metav1.ListOptions{LabelSelector: v1alpha1.SamplesResourceLabel + "=true"}
@@ -619,6 +632,55 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResou
 	if err != nil && !kerrors.IsNotFound(err) {
 		logrus.Warnf("Problem deleting openshift configmap %s on SamplesResource delete: %#v", v1alpha1.SamplesResourceName, err)
 	}
+	return nil
+}
+
+// ProcessManagementField returns true if the operator should handle the SampleResource event
+// and false if it should not, as well as an err in case we want to bubble that up to
+// the controller level logic for retry
+func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool, error) {
+	switch srcfg.Spec.ManagementState {
+	case operatorsv1alpha1api.Removed:
+		// if samples exists already is false, that means the samples related artifacts are gone,
+		// and we can ignore, unless this is the rhel scenario where we have not installed the
+		// rhel samples because the secret is missing, but then they manage to add the secret AND
+		// mark this resource as Removed before we manage to install the samples ... if so, let's
+		// at least delete the secret ... won't distinguish between centos and rhel though in case
+		// they have also overriden the registry to pull from, and have loaded the centos content there
+		if srcfg.ConditionFalse(v1alpha1.SamplesExist) &&
+			srcfg.ConditionFalse(v1alpha1.ImportCredentialsExist) {
+			logrus.Debugf("ignoring subequent samplesresource with managed==removed after remove is processed")
+			return false, nil
+		}
+
+		logrus.Println("management state set to removed so deleting samples and configmap")
+		err := h.CleanUpOpenshiftNamespaceOnDelete(srcfg)
+		if err != nil {
+			h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "The error %v during openshift namespace cleanup has left the samples in an unknown state")
+		}
+		// explicitly reset samples exist to false since the samplesresource has not
+		// actually been deleted
+		now := kapis.Now()
+		condition := srcfg.Condition(v1alpha1.SamplesExist)
+		condition.LastTransitionTime = now
+		condition.LastUpdateTime = now
+		condition.Status = corev1.ConditionFalse
+		srcfg.ConditionUpdate(condition)
+		return false, nil
+	case operatorsv1alpha1api.Managed:
+		logrus.Println("management state set to managed")
+		// in case configmap was removed via dealing or removed mgmt state
+		// ensure config map is created
+		if !srcfg.ConditionTrue(v1alpha1.SamplesExist) {
+			h.CreateConfigMapIfNeeded()
+		}
+		return true, nil
+	case operatorsv1alpha1api.Unmanaged:
+		logrus.Println("management state set to unmanaged")
+		return false, nil
+	default:
+		return true, nil
+	}
 }
 
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
@@ -633,7 +695,16 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 		srcfg, _ := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
 		if srcfg != nil {
-			return h.manageDockerCfgSecret(event.Deleted, srcfg, dockercfgSecret)
+			doit, err := h.ProcessManagementField(srcfg)
+			if !doit || err != nil {
+				return err
+			}
+			err = h.manageDockerCfgSecret(event.Deleted, srcfg, dockercfgSecret)
+			if err != nil {
+				return err
+			}
+			// flush the status changes generated by the processing
+			return h.sdkwrapper.Update(srcfg)
 		} else {
 			return fmt.Errorf("Received secret %s but do not have the SampleRegistry yet, requeuing", dockercfgSecret.Name)
 		}
@@ -649,8 +720,6 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		// Every time we see a change to the SamplesResource object, update the ClusterOperator status
 		// based on the current conditions of the SamplesResource.
 		err := h.cvowrapper.UpdateOperatorStatus(srcfg)
-		// TODO make sure an error here does not prevent us from doing other necessary processing
-		// of the samples resource object.
 		if err != nil {
 			logrus.Errorf("error updating cluster operator status: %v", err)
 			return err
@@ -669,13 +738,21 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 				logrus.Println("Initiating finalizer processing for a SampleResource delete attempt")
 				h.RemoveFinalizer(srcfg)
 				h.CleanUpOpenshiftNamespaceOnDelete(srcfg)
-				err := h.GoodConditionUpdate(srcfg, corev1.ConditionFalse, v1alpha1.SamplesExist)
+				h.GoodConditionUpdate(srcfg, corev1.ConditionFalse, v1alpha1.SamplesExist)
+				err := h.sdkwrapper.Update(srcfg)
 				go func() {
 					h.CreateDefaultResourceIfNeeded()
 				}()
 				return err
 			}
 			return nil
+		}
+
+		doit, err := h.ProcessManagementField(srcfg)
+		if !doit || err != nil {
+			// flush status update
+			h.sdkwrapper.Update(srcfg)
+			return err
 		}
 
 		// coordinate with timer's check on creating
@@ -686,12 +763,16 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 		cm, err := h.SpecValidation(srcfg)
 		if err != nil {
+			// flush status update
+			h.sdkwrapper.Update(srcfg)
 			return err
 		}
 
 		if cm != nil {
 			changed, err := h.VariableConfigChanged(srcfg, cm)
 			if err != nil {
+				// flush status update
+				h.sdkwrapper.Update(srcfg)
 				return err
 			}
 			if !changed {
@@ -704,6 +785,8 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		// error state will be logged by WaitingForCredential, so return error and requeue
 		err = h.WaitingForCredential(srcfg)
 		if err != nil {
+			// flush status update
+			h.sdkwrapper.Update(srcfg)
 			// abort processing, but not returning error to initiate requeue
 			return nil
 		}
@@ -722,20 +805,25 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			dir := h.GetBaseDir(arch, srcfg)
 			files, err := h.filefinder.List(dir)
 			if err != nil {
-				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
+				err = h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
+				h.sdkwrapper.Update(srcfg)
+				return err
 			}
 			err = h.processFiles(dir, files, srcfg)
 			if err != nil {
-				return h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error processing content : %v")
+				err = h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error processing content : %v")
+				h.sdkwrapper.Update(srcfg)
+				return err
 			}
 
 		}
 
 		h.AddFinalizer(srcfg)
 
-		// TODO: this should atomically also update the ConfigValid condition to True
-		err = h.GoodConditionUpdate(srcfg, newStatus, v1alpha1.SamplesExist)
-		return err
+		// this also atomically updates the ConfigValid condition to True
+		h.GoodConditionUpdate(srcfg, newStatus, v1alpha1.SamplesExist)
+		// flush updates from processing
+		return h.sdkwrapper.Update(srcfg)
 	}
 	return nil
 }
@@ -768,11 +856,6 @@ func (h *Handler) processError(opcfg *v1alpha1.SamplesResource, ctype v1alpha1.S
 		status.LastTransitionTime = now
 		status.Message = log
 		opcfg.ConditionUpdate(status)
-		err2 := h.sdkwrapper.Update(opcfg)
-		if err2 != nil {
-			// just log this error
-			logrus.Printf("failed to add error condition to config status: %v", err2)
-		}
 	}
 
 	// return original error
@@ -1194,11 +1277,29 @@ type defaultSDKWrapper struct {
 }
 
 func (g *defaultSDKWrapper) Update(samplesResource *v1alpha1.SamplesResource) error {
-	return sdk.Update(samplesResource)
+	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
+		err := sdk.Update(samplesResource)
+		if !g.h.IsRetryableAPIError(err) {
+			return false, err
+		}
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	})
 }
 
 func (g *defaultSDKWrapper) Create(samplesResource *v1alpha1.SamplesResource) error {
-	return sdk.Create(samplesResource)
+	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
+		err := sdk.Create(samplesResource)
+		if !g.h.IsRetryableAPIError(err) {
+			return false, err
+		}
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	})
 }
 
 func (g *defaultSDKWrapper) Get(name string) (*v1alpha1.SamplesResource, error) {
@@ -1206,7 +1307,16 @@ func (g *defaultSDKWrapper) Get(name string) (*v1alpha1.SamplesResource, error) 
 	sr.Kind = "SamplesResource"
 	sr.APIVersion = "samplesoperator.config.openshift.io/v1alpha1"
 	sr.Name = name
-	err := sdk.Get(&sr, sdk.WithGetOptions(&metav1.GetOptions{}))
+	err := wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
+		err := sdk.Get(&sr, sdk.WithGetOptions(&metav1.GetOptions{}))
+		if !g.h.IsRetryableAPIError(err) {
+			return false, err
+		}
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	})
 	if err != nil {
 		return nil, err
 	}
