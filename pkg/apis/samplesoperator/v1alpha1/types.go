@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	operatorsv1alpha1api "github.com/openshift/api/operator/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -54,6 +55,15 @@ const (
 )
 
 type SamplesResourceSpec struct {
+	// operatorsv1alpha1api.OperatorSpec is top level on/off type of switch for all operators.
+	// When "Managed", this operator processes config and manipulates the samples accordingly.
+	// When "Unmanaged", this operator ignores any updates to the resources it watches.
+	// When "Removed", it reacts that same wasy as it does if the SamplesResource object
+	// is deleted, meaning any ImageStreams or Templates it manages (i.e. it honors the skipped
+	// lists) and the registry secret are deleted, along with the ConfigMap in the operator's
+	// namespace that represents the last config used to manipulate the samples,
+	operatorsv1alpha1api.OperatorSpec `json:",inline"`
+
 	// SamplesRegistry allows for the specification of which registry is accessed
 	// by the ImageStreams for their image content.  Defaults depend on the InstallType.
 	// An InstallType of 'rhel' defaults to registry.redhat.io, and an InstallType of
