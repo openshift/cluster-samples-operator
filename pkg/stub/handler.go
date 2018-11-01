@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
 
 	restclient "k8s.io/client-go/rest"
 
@@ -71,6 +72,9 @@ func NewHandler() sdk.Handler {
 	h.mutex = &sync.Mutex{}
 	h.CreateDefaultResourceIfNeeded()
 
+	h.imagestreamFile = make(map[string]string)
+	h.templateFile = make(map[string]string)
+
 	return &h
 }
 
@@ -99,9 +103,88 @@ type Handler struct {
 	skippedTemplates    map[string]bool
 	skippedImagestreams map[string]bool
 
+	imagestreamFile map[string]string
+	templateFile    map[string]string
+
 	deleteInProgress bool
 
 	mutex *sync.Mutex
+}
+
+func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]string) (*v1alpha1.SamplesResource, string, bool) {
+	if h.deleteInProgress {
+		return nil, "", false
+	}
+	if annotations != nil {
+		isv, ok := annotations[v1alpha1.SamplesVersionAnnotation]
+		if ok && isv == v1alpha1.CodeLevel {
+			return nil, "", false
+		}
+	}
+	srcfg, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
+	if srcfg == nil || err != nil {
+		logrus.Printf("Received watch event %s but ignoring since not have the SamplesResource yet: %#v %#v", kind+"/"+name, err, srcfg)
+		return nil, "", false
+	}
+	proceed, err := h.ProcessManagementField(srcfg)
+	if !proceed || err != nil {
+		return nil, "", false
+	}
+
+	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
+	if err != nil {
+		logrus.Warningf("Problem accessing config map during image stream watch event processing: %#v", err)
+		return nil, "", false
+	}
+	filePath, ok := cm.Data[kind+"-"+name]
+	if !ok {
+		logrus.Printf("watch event %s not part of operators inventory", name)
+		return nil, "", false
+	}
+
+	return srcfg, filePath, true
+}
+
+func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	srcfg, filePath, ok := h.prepWatchEvent("imagestream", is.Name, is.Annotations)
+	if !ok {
+		return
+	}
+
+	imagestream, err := h.fileimagegetter.Get(filePath)
+	if err != nil {
+		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
+	} else {
+		err = h.upsertImageStream(imagestream, is, srcfg)
+	}
+	if err != nil {
+		h.sdkwrapper.Update(srcfg)
+	}
+
+}
+
+func (h *Handler) processTemplateWatchEvent(t *templatev1.Template) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	srcfg, filePath, ok := h.prepWatchEvent("template", t.Name, t.Annotations)
+	if !ok {
+		return
+	}
+
+	template, err := h.filetemplategetter.Get(filePath)
+	if err != nil {
+		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
+	} else {
+		err = h.upsertTemplate(template, t, srcfg)
+	}
+	if err != nil {
+		h.sdkwrapper.Update(srcfg)
+	}
+
 }
 
 func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *corev1.ConfigMap) (bool, error) {
@@ -169,7 +252,7 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 		}
 	}
 
-	logrus.Printf("Incoming samples registry unchanged from last processed version")
+	logrus.Printf("Incoming samplesresource unchanged from last processed version")
 	return false, nil
 }
 
@@ -185,7 +268,7 @@ func (h *Handler) StoreCurrentValidConfig(condition v1alpha1.SamplesResourceCond
 		return err
 	}
 	if kerrors.IsNotFound(err) {
-		err = fmt.Errorf("Operator in compromised state; Could not find config map even though samplesresource exists: %#v", srcfg)
+		err = fmt.Errorf("Operator in compromised state; Could not find config map even though samplesresource exists")
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v")
 		h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
 		return err
@@ -224,6 +307,14 @@ func (h *Handler) StoreCurrentValidConfig(condition v1alpha1.SamplesResourceCond
 		value = val + " "
 	}
 	cm.Data[skippedtempskey] = value
+
+	for key, path := range h.imagestreamFile {
+		cm.Data["imagestream"+"-"+key] = path
+	}
+	for key, path := range h.templateFile {
+		cm.Data["template"+"-"+key] = path
+	}
+
 	_, err = h.configmapclientwrapper.Update(h.namespace, cm)
 	return err
 }
@@ -275,7 +366,7 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) (*corev1.Confi
 
 	installtype, ok := cm.Data[installtypekey]
 	if !ok {
-		err = fmt.Errorf("could	not find the installtype in the config map %#v", cm.Data)
+		err = fmt.Errorf("could not find the installtype in the config map %#v", cm.Data)
 		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
 	}
 	switch srcfg.Spec.InstallType {
@@ -375,7 +466,9 @@ func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus
 		condition.Message = ""
 		srcfg.ConditionUpdate(condition)
 
-		h.StoreCurrentValidConfig(conditionType, srcfg)
+		if !h.deleteInProgress {
+			h.StoreCurrentValidConfig(conditionType, srcfg)
+		}
 
 		logrus.Println("")
 		logrus.Println("")
@@ -439,6 +532,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, er
 
 	srcfg, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
 	if srcfg == nil || kerrors.IsNotFound(err) {
+		h.CreateConfigMapIfNeeded()
 		// "4a" in the "startup" workflow, just create default
 		// resource and set up that way
 		srcfg = &v1alpha1.SamplesResource{}
@@ -477,12 +571,6 @@ func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, er
 		logrus.Printf("SamplesResource %#v found during operator startup", srcfg)
 	}
 
-	// a missing config map when samplesresource.samplesexists is not false means
-	// a compromised state which will be caught in SpecValidation; so we don't
-	// look to possibly create the config map in that case
-	if srcfg.ConditionFalse(v1alpha1.SamplesExist) {
-		h.CreateConfigMapIfNeeded()
-	}
 	h.deleteInProgress = false
 	return srcfg, nil
 }
@@ -562,6 +650,8 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 		secretToCreate.Namespace = ""
 		secretToCreate.ResourceVersion = ""
 		secretToCreate.UID = ""
+		secretToCreate.Annotations = make(map[string]string)
+		secretToCreate.Annotations[v1alpha1.SamplesVersionAnnotation] = v1alpha1.CodeLevel
 
 		s, err := h.secretclientwrapper.Get("openshift", secret.Name)
 		if err != nil && !kerrors.IsNotFound(err) {
@@ -591,7 +681,7 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResource) error {
 	h.buildSkipFilters(srcfg)
 
-	iopts := metav1.ListOptions{LabelSelector: v1alpha1.SamplesResourceLabel + "=true"}
+	iopts := metav1.ListOptions{LabelSelector: v1alpha1.SamplesManagedLabel + "=true"}
 
 	streamList, err := h.imageclientwrapper.List("openshift", iopts)
 	if err != nil {
@@ -656,7 +746,7 @@ func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool,
 		logrus.Println("management state set to removed so deleting samples and configmap")
 		err := h.CleanUpOpenshiftNamespaceOnDelete(srcfg)
 		if err != nil {
-			h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "The error %v during openshift namespace cleanup has left the samples in an unknown state")
+			return false, h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "The error %v during openshift namespace cleanup has left the samples in an unknown state")
 		}
 		// explicitly reset samples exist to false since the samplesresource has not
 		// actually been deleted
@@ -668,10 +758,10 @@ func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool,
 		srcfg.ConditionUpdate(condition)
 		return false, nil
 	case operatorsv1alpha1api.Managed:
-		logrus.Println("management state set to managed")
 		// in case configmap was removed via dealing or removed mgmt state
 		// ensure config map is created
 		if !srcfg.ConditionTrue(v1alpha1.SamplesExist) {
+			logrus.Println("management state set to managed")
 			h.CreateConfigMapIfNeeded()
 		}
 		return true, nil
@@ -685,6 +775,20 @@ func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool,
 
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch event.Object.(type) {
+	case *imagev1.ImageStream:
+		is, _ := event.Object.(*imagev1.ImageStream)
+		if is.Namespace != "openshift" {
+			return nil
+		}
+		h.processImageStreamWatchEvent(is)
+
+	case *templatev1.Template:
+		t, _ := event.Object.(*templatev1.Template)
+		if t.Namespace != "openshift" {
+			return nil
+		}
+		h.processTemplateWatchEvent(t)
+
 	case *corev1.Secret:
 		dockercfgSecret, _ := event.Object.(*corev1.Secret)
 		if dockercfgSecret.Name != v1alpha1.SamplesRegistryCredentials {
@@ -706,7 +810,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			// flush the status changes generated by the processing
 			return h.sdkwrapper.Update(srcfg)
 		} else {
-			return fmt.Errorf("Received secret %s but do not have the SampleRegistry yet, requeuing", dockercfgSecret.Name)
+			return fmt.Errorf("Received secret %s but do not have the SamplesResource yet, requeuing", dockercfgSecret.Name)
 		}
 
 	case *v1alpha1.SamplesResource:
@@ -862,6 +966,90 @@ func (h *Handler) processError(opcfg *v1alpha1.SamplesResource, ctype v1alpha1.S
 	return err
 }
 
+func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInCluster *imagev1.ImageStream, opcfg *v1alpha1.SamplesResource) error {
+	if _, isok := h.skippedImagestreams[imagestreamInOperatorImage.Name]; isok {
+		if imagestreamInCluster != nil {
+			if imagestreamInCluster.Labels == nil {
+				imagestreamInCluster.Labels = make(map[string]string)
+			}
+			imagestreamInCluster.Labels[v1alpha1.SamplesManagedLabel] = "false"
+			h.imageclientwrapper.Update("openshift", imagestreamInCluster)
+			// if we get an error, we'll just try to remove the label next
+			// time; and we'll examine the skipped lists on delete
+		}
+		return nil
+	}
+
+	h.updateDockerPullSpec([]string{"docker.io", "registry.redhat.io", "registry.access.redhat.com", "quay.io"}, imagestreamInOperatorImage, opcfg)
+
+	if imagestreamInOperatorImage.Labels == nil {
+		imagestreamInOperatorImage.Labels = make(map[string]string)
+	}
+	if imagestreamInOperatorImage.Annotations == nil {
+		imagestreamInOperatorImage.Annotations = make(map[string]string)
+	}
+	imagestreamInOperatorImage.Labels[v1alpha1.SamplesManagedLabel] = "true"
+	imagestreamInOperatorImage.Annotations[v1alpha1.SamplesVersionAnnotation] = v1alpha1.CodeLevel
+
+	if imagestreamInCluster == nil {
+		_, err := h.imageclientwrapper.Create("openshift", imagestreamInOperatorImage)
+		if err != nil {
+			return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "imagestream create error: %v")
+		}
+		logrus.Printf("created imagestream %s", imagestreamInOperatorImage.Name)
+		return nil
+	}
+
+	imagestreamInOperatorImage.ResourceVersion = imagestreamInCluster.ResourceVersion
+	_, err := h.imageclientwrapper.Update("openshift", imagestreamInOperatorImage)
+	if err != nil {
+		return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "imagestream update error: %v")
+	}
+	logrus.Printf("updated imagestream %s", imagestreamInCluster.Name)
+	return nil
+}
+
+func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *templatev1.Template, opcfg *v1alpha1.SamplesResource) error {
+	if _, tok := h.skippedTemplates[templateInOperatorImage.Name]; tok {
+		if templateInCluster != nil {
+			if templateInCluster.Labels == nil {
+				templateInCluster.Labels = make(map[string]string)
+			}
+			templateInCluster.Labels[v1alpha1.SamplesManagedLabel] = "false"
+			h.templateclientwrapper.Update("openshift", templateInCluster)
+			// if we get an error, we'll just try to remove the label next
+			// time; and we'll examine the skipped lists on delete
+		}
+		return nil
+	}
+
+	if templateInOperatorImage.Labels == nil {
+		templateInOperatorImage.Labels = map[string]string{}
+	}
+	if templateInOperatorImage.Annotations == nil {
+		templateInOperatorImage.Annotations = map[string]string{}
+	}
+	templateInOperatorImage.Labels[v1alpha1.SamplesManagedLabel] = "true"
+	templateInOperatorImage.Annotations[v1alpha1.SamplesVersionAnnotation] = v1alpha1.CodeLevel
+
+	if templateInCluster == nil {
+		_, err := h.templateclientwrapper.Create("openshift", templateInOperatorImage)
+		if err != nil {
+			return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "template create error: %v")
+		}
+		logrus.Printf("created template %s", templateInOperatorImage.Name)
+		return nil
+	}
+
+	templateInOperatorImage.ResourceVersion = templateInCluster.ResourceVersion
+	_, err := h.templateclientwrapper.Update("openshift", templateInOperatorImage)
+	if err != nil {
+		return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "template update error: %v")
+	}
+	logrus.Printf("updated template %s", templateInCluster.Name)
+	return nil
+}
+
 func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.SamplesResource) error {
 	for _, file := range files {
 		if file.IsDir() {
@@ -882,9 +1070,8 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 			if err != nil {
 				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", dir+"/"+file.Name())
 			}
-			if imagestream.Labels == nil {
-				imagestream.Labels = map[string]string{}
-			}
+
+			h.imagestreamFile[imagestream.Name] = dir + "/" + file.Name()
 
 			is, err := h.imageclientwrapper.Get("openshift", imagestream.Name, metav1.GetOptions{})
 			if err != nil && !kerrors.IsNotFound(err) {
@@ -896,42 +1083,19 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 				is = nil
 			}
 
-			if _, isok := h.skippedImagestreams[imagestream.Name]; !isok {
-				h.updateDockerPullSpec([]string{"docker.io", "registry.redhat.io", "registry.access.redhat.com", "quay.io"}, imagestream, opcfg)
-
-				imagestream.Labels[v1alpha1.SamplesResourceLabel] = "true"
-
-				if is == nil {
-					_, err = h.imageclientwrapper.Create("openshift", imagestream)
-					if err != nil {
-						return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "imagestream create error: %v")
-					}
-					logrus.Printf("created imagestream %s", imagestream.Name)
-				} else {
-					imagestream.ResourceVersion = is.ResourceVersion
-					_, err = h.imageclientwrapper.Update("openshift", imagestream)
-					if err != nil {
-						return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "imagestream update error: %v")
-					}
-					logrus.Printf("updated imagestream %s", is.Name)
-				}
-			} else {
-				is.Labels[v1alpha1.SamplesResourceLabel] = "false"
-				h.imageclientwrapper.Update("openshift", is)
-				// if we get an error, we'll just try to remove the label next
-				// time; and we'll examine the skipped lists on delete
+			err = h.upsertImageStream(imagestream, is, opcfg)
+			if err != nil {
+				return err
 			}
 		}
 
 		if strings.HasSuffix(dir, "templates") {
 			template, err := h.filetemplategetter.Get(dir + "/" + file.Name())
-			if template.Labels == nil {
-				template.Labels = map[string]string{}
-			}
-
 			if err != nil {
 				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", dir+"/"+file.Name())
 			}
+
+			h.templateFile[template.Name] = dir + "/" + file.Name()
 
 			t, err := h.templateclientwrapper.Get("openshift", template.Name, metav1.GetOptions{})
 			if err != nil && !kerrors.IsNotFound(err) {
@@ -943,28 +1107,9 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 				t = nil
 			}
 
-			if _, tok := h.skippedTemplates[template.Name]; !tok {
-				template.Labels[v1alpha1.SamplesResourceLabel] = "true"
-
-				if t == nil {
-					_, err = h.templateclientwrapper.Create("openshift", template)
-					if err != nil {
-						return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "template create error: %v")
-					}
-					logrus.Printf("created template %s", template.Name)
-				} else {
-					template.ResourceVersion = t.ResourceVersion
-					_, err = h.templateclientwrapper.Update("openshift", template)
-					if err != nil {
-						return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "template update error: %v")
-					}
-					logrus.Printf("updated template %s", t.Name)
-				}
-			} else {
-				t.Labels[v1alpha1.SamplesResourceLabel] = "false"
-				h.templateclientwrapper.Update("openshift", t)
-				// if we get an error, we'll just try to remove the label next
-				// time; and we'll examine the skipped lists on delete
+			err = h.upsertTemplate(template, t, opcfg)
+			if err != nil {
+				return err
 			}
 		}
 	}
@@ -1058,6 +1203,7 @@ type ImageStreamClientWrapper interface {
 	Create(namespace string, is *imagev1.ImageStream) (*imagev1.ImageStream, error)
 	Update(namespace string, is *imagev1.ImageStream) (*imagev1.ImageStream, error)
 	Delete(namespace, name string, opts *metav1.DeleteOptions) error
+	Watch(namespace string) (watch.Interface, error)
 }
 
 type defaultImageStreamClientWrapper struct {
@@ -1084,12 +1230,18 @@ func (g *defaultImageStreamClientWrapper) Delete(namespace, name string, opts *m
 	return g.h.imageclient.ImageStreams(namespace).Delete(name, opts)
 }
 
+func (g *defaultImageStreamClientWrapper) Watch(namespace string) (watch.Interface, error) {
+	opts := metav1.ListOptions{}
+	return g.h.imageclient.ImageStreams(namespace).Watch(opts)
+}
+
 type TemplateClientWrapper interface {
 	Get(namespace, name string, opts metav1.GetOptions) (*templatev1.Template, error)
 	List(namespace string, opts metav1.ListOptions) (*templatev1.TemplateList, error)
 	Create(namespace string, t *templatev1.Template) (*templatev1.Template, error)
 	Update(namespace string, t *templatev1.Template) (*templatev1.Template, error)
 	Delete(namespace, name string, opts *metav1.DeleteOptions) error
+	Watch(namespace string) (watch.Interface, error)
 }
 
 type defaultTemplateClientWrapper struct {
@@ -1114,6 +1266,11 @@ func (g *defaultTemplateClientWrapper) Update(namespace string, t *templatev1.Te
 
 func (g *defaultTemplateClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
 	return g.h.tempclient.Templates(namespace).Delete(name, opts)
+}
+
+func (g *defaultTemplateClientWrapper) Watch(namespace string) (watch.Interface, error) {
+	opts := metav1.ListOptions{}
+	return g.h.tempclient.Templates(namespace).Watch(opts)
 }
 
 type ConfigMapClientWrapper interface {
@@ -1279,26 +1436,26 @@ type defaultSDKWrapper struct {
 func (g *defaultSDKWrapper) Update(samplesResource *v1alpha1.SamplesResource) error {
 	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
 		err := sdk.Update(samplesResource)
+		if err == nil {
+			return true, nil
+		}
 		if !g.h.IsRetryableAPIError(err) {
 			return false, err
 		}
-		if err != nil {
-			return false, nil
-		}
-		return true, nil
+		return false, nil
 	})
 }
 
 func (g *defaultSDKWrapper) Create(samplesResource *v1alpha1.SamplesResource) error {
 	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
 		err := sdk.Create(samplesResource)
+		if err == nil {
+			return true, nil
+		}
 		if !g.h.IsRetryableAPIError(err) {
 			return false, err
 		}
-		if err != nil {
-			return false, nil
-		}
-		return true, nil
+		return false, nil
 	})
 }
 
@@ -1309,13 +1466,13 @@ func (g *defaultSDKWrapper) Get(name string) (*v1alpha1.SamplesResource, error) 
 	sr.Name = name
 	err := wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
 		err := sdk.Get(&sr, sdk.WithGetOptions(&metav1.GetOptions{}))
+		if err == nil {
+			return true, nil
+		}
 		if !g.h.IsRetryableAPIError(err) {
 			return false, err
 		}
-		if err != nil {
-			return false, nil
-		}
-		return true, nil
+		return false, nil
 	})
 	if err != nil {
 		return nil, err
