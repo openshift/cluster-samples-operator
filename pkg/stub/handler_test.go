@@ -15,6 +15,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	templatev1 "github.com/openshift/api/template/v1"
@@ -291,6 +292,52 @@ func TestProcessed(t *testing.T) {
 
 }
 
+func TestImageStreamEvent(t *testing.T) {
+	h, sr, event := setup()
+	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OKDContentRootDir)
+	err := h.Handle(nil, event)
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}
+	conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}
+	validate(true, err, "", sr, conditions, statuses, t)
+
+	is := &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+		},
+	}
+
+	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
+	delete(fakeisclient.upsertkeys, "foo")
+	h.processImageStreamWatchEvent(is)
+	if _, ok := fakeisclient.upsertkeys["foo"]; !ok {
+		t.Fatalf("is did not reach client %s: %#v", "foo", h)
+	}
+
+}
+
+func TestTemplateEvent(t *testing.T) {
+	h, sr, event := setup()
+	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OKDContentRootDir)
+	err := h.Handle(nil, event)
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}
+	conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}
+	validate(true, err, "", sr, conditions, statuses, t)
+
+	template := &templatev1.Template{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "bo",
+		},
+	}
+
+	faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
+	delete(faketclient.upsertkeys, "bo")
+	h.processTemplateWatchEvent(template)
+	if _, ok := faketclient.upsertkeys["bo"]; !ok {
+		t.Fatalf("template did not reach client %s: %#v", "bo", h)
+	}
+
+}
+
 func TestCreateDeleteSecretBeforeCR(t *testing.T) {
 	h, sr, event := setup()
 	h.sdkwrapper.(*fakeSDKWrapper).sr = nil
@@ -302,10 +349,10 @@ func TestCreateDeleteSecretBeforeCR(t *testing.T) {
 	}
 
 	err := h.Handle(nil, event)
-	validate(false, err, "Received secret samples-registry-credentials but do not have the SampleRegistry yet", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue}, t)
+	validate(false, err, "Received secret samples-registry-credentials but do not have the SamplesResource yet", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue}, t)
 	event.Deleted = true
 	err = h.Handle(nil, event)
-	validate(false, err, "Received secret samples-registry-credentials but do not have the SampleRegistry yet", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue}, t)
+	validate(false, err, "Received secret samples-registry-credentials but do not have the SamplesResource yet", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue}, t)
 
 	event.Deleted = false
 	event.Object = sr
@@ -743,6 +790,9 @@ func NewTestHandler() Handler {
 	h.secretclientwrapper = &fakeSecretClientWrapper{}
 	h.configmapclientwrapper = &fakeConfigMapClientWrapper{maps: map[string]*corev1.ConfigMap{}}
 
+	h.imagestreamFile = make(map[string]string)
+	h.templateFile = make(map[string]string)
+
 	return h
 }
 
@@ -880,6 +930,10 @@ func (f *fakeImageStreamClientWrapper) Delete(namespace, name string, opts *meta
 	return nil
 }
 
+func (f *fakeImageStreamClientWrapper) Watch(namespace string) (watch.Interface, error) {
+	return nil, nil
+}
+
 type fakeTemplateClientWrapper struct {
 	templates    map[string]*templatev1.Template
 	upsertkeys   map[string]bool
@@ -928,6 +982,10 @@ func (f *fakeTemplateClientWrapper) Update(namespace string, t *templatev1.Templ
 
 func (f *fakeTemplateClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
 	return nil
+}
+
+func (f *fakeTemplateClientWrapper) Watch(namespace string) (watch.Interface, error) {
+	return nil, nil
 }
 
 type fakeConfigMapClientWrapper struct {

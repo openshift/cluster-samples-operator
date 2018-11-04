@@ -48,10 +48,22 @@ const (
 	PPCArchitecture = "ppc64le"
 	// SamplesResourceFinalizer is the text added to the SamplesResource.Finalizer field
 	// to enable finalizer processing.
-	SamplesResourceFinalizer = "samplesoperator.config.openshift.io/finalizer"
-	// SamplesResourceLabel is the key for a label added to all the imagestreams and templates
-	// in the openshift namespace that the SamplesResource is managing.
-	SamplesResourceLabel = "samplesoperator.config.openshift.io/managed"
+	SamplesResourceFinalizer = GroupName + "/finalizer"
+	// SamplesManagedLabel is the key for a label added to all the imagestreams and templates
+	// in the openshift namespace that the SamplesResource is managing.  This label is adjusted
+	// when changes to the SkippedImagestreams and SkippedTemplates fields are made.
+	SamplesManagedLabel = GroupName + "/managed"
+	// SamplesVersionAnnotation is the key for an annotation set on the imagestreams, templates,
+	// and secret that this operator manages that signifies the version of the operator that
+	// last managed the particular resource.
+	SamplesVersionAnnotation = GroupName + "/version"
+)
+
+var (
+	//TODO eventually we will want this off of the commit or something that correlates to versions in the code repo
+	// CodeLevel is a precise code version level that the operator will use to determine whether it ias
+	// been upgraded, and by extension, whether the samples should be updated.
+	CodeLevel = "v0.0.1"
 )
 
 type SamplesResourceSpec struct {

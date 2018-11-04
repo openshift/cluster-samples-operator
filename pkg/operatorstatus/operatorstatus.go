@@ -99,8 +99,7 @@ func (o *CVOOperatorStatusHandler) setOperatorStatus(name string, condtype osapi
 				return fmt.Errorf("failed to get cluster operator resource %s/%s: %s", state.ObjectMeta.Namespace, state.ObjectMeta.Name, err)
 			}
 
-			//TODO eventually we will want this off of the commit or something that correlates to versions in the code repo
-			state.Status.Version = "v0.0.1"
+			state.Status.Version = v1alpha1.CodeLevel
 
 			state.Status.Conditions = []osapi.ClusterOperatorStatusCondition{
 				{

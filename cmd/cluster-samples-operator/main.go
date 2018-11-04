@@ -10,6 +10,9 @@ import (
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 
+	imagev1 "github.com/openshift/api/image/v1"
+	templatev1 "github.com/openshift/api/template/v1"
+
 	"github.com/sirupsen/logrus"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
@@ -36,6 +39,11 @@ func main() {
 	sdk.Watch(resource, kind, "", resyncPeriod)
 	logrus.Infof("Watching secrets")
 	sdk.Watch("v1", "Secret", namespace, resyncPeriod)
+	sdk.Watch("v1", "Secret", "openshift", resyncPeriod)
+	k8sutil.AddToSDKScheme(imagev1.AddToScheme)
+	k8sutil.AddToSDKScheme(templatev1.AddToScheme)
+	sdk.Watch(imagev1.SchemeGroupVersion.String(), "ImageStream", "openshift", resyncPeriod)
+	sdk.Watch(templatev1.SchemeGroupVersion.String(), "Template", "openshift", resyncPeriod)
 	sdk.Handle(stub.NewHandler())
 	sdk.Run(context.TODO())
 }
