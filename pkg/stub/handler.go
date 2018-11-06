@@ -207,10 +207,14 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 	// Split will return an item of len 1 if skippedStreams is empty;
 	// verified via testing and godoc of method
 	if len(skippedStreams) > 0 {
+		// gotta trim any remaining space to get array size comparison correct
+		// a string of say 'jenkins ' will create an array of size 2
+		skippedStreams = strings.TrimSpace(skippedStreams)
 		streams = strings.Split(skippedStreams, " ")
 	}
+
 	if len(streams) != len(srcfg.Spec.SkippedImagestreams) {
-		logrus.Printf("SkippedImageStreams changed from %s, processing %v", skippedStreams, srcfg)
+		logrus.Printf("SkippedImageStreams number of entries changed from %s, processing %v", skippedStreams, srcfg)
 		return true, nil
 	}
 
@@ -220,7 +224,7 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 	}
 	for _, stream := range srcfg.Spec.SkippedImagestreams {
 		if _, ok := streamsMap[stream]; !ok {
-			logrus.Printf("SkippedImageStreams changed from %s, processing %v", skippedStreams, srcfg)
+			logrus.Printf("SkippedImageStreams list of entries changed from %s, processing %v", skippedStreams, srcfg)
 			return true, nil
 		}
 	}
@@ -234,10 +238,13 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 	// Split will return an item of len 1 if skippedStreams is empty;
 	// verified via testing and godoc of method
 	if len(skippedTemps) > 0 {
+		// gotta trim any remaining space to get array size comparison correct
+		// a string of say 'jenkins ' will create an array of size 2
+		skippedTemps = strings.TrimSpace(skippedTemps)
 		temps = strings.Split(skippedTemps, " ")
 	}
 	if len(temps) != len(srcfg.Spec.SkippedTemplates) {
-		logrus.Printf("SkippedTemplates changed from %s, processing %v", skippedTemps, srcfg)
+		logrus.Printf("SkippedTemplates number of entries changed from %s, processing %v", skippedTemps, srcfg)
 		return true, nil
 	}
 
@@ -247,7 +254,7 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 	}
 	for _, temp := range srcfg.Spec.SkippedTemplates {
 		if _, ok := tempsMap[temp]; !ok {
-			logrus.Printf("SkippedTemplates changed from %s, processing %v", skippedTemps, srcfg)
+			logrus.Printf("SkippedTemplates list of entries changed from %s, processing %v", skippedTemps, srcfg)
 			return true, nil
 		}
 	}
@@ -256,11 +263,7 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 	return false, nil
 }
 
-func (h *Handler) StoreCurrentValidConfig(condition v1alpha1.SamplesResourceConditionType, srcfg *v1alpha1.SamplesResource) error {
-
-	if condition != v1alpha1.SamplesExist {
-		return nil
-	}
+func (h *Handler) StoreCurrentValidConfig(srcfg *v1alpha1.SamplesResource) error {
 
 	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
 	if err != nil && !kerrors.IsNotFound(err) {
@@ -299,12 +302,13 @@ func (h *Handler) StoreCurrentValidConfig(condition v1alpha1.SamplesResourceCond
 	cm.Data[regkey] = srcfg.Spec.SamplesRegistry
 	var value string
 	for _, val := range srcfg.Spec.SkippedImagestreams {
-		value = val + " "
+		value = value + val + " "
 	}
 	cm.Data[skippedstreamskey] = value
+
 	value = ""
 	for _, val := range srcfg.Spec.SkippedTemplates {
-		value = val + " "
+		value = value + val + " "
 	}
 	cm.Data[skippedtempskey] = value
 
@@ -465,10 +469,6 @@ func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus
 		condition.LastTransitionTime = now
 		condition.Message = ""
 		srcfg.ConditionUpdate(condition)
-
-		if !h.deleteInProgress {
-			h.StoreCurrentValidConfig(conditionType, srcfg)
-		}
 
 		logrus.Println("")
 		logrus.Println("")
@@ -924,6 +924,14 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 		h.AddFinalizer(srcfg)
 
+		if !h.deleteInProgress {
+			err = h.StoreCurrentValidConfig(srcfg)
+			if err != nil {
+				err = h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "error %v updating configmap, subsequent config validations untenable")
+				return err
+			}
+		}
+
 		// this also atomically updates the ConfigValid condition to True
 		h.GoodConditionUpdate(srcfg, newStatus, v1alpha1.SamplesExist)
 		// flush updates from processing
@@ -933,12 +941,16 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 }
 
 func (h *Handler) buildSkipFilters(opcfg *v1alpha1.SamplesResource) {
+	newStreamMap := make(map[string]bool)
+	newTempMap := make(map[string]bool)
 	for _, st := range opcfg.Spec.SkippedTemplates {
-		h.skippedTemplates[st] = true
+		newTempMap[st] = true
 	}
 	for _, si := range opcfg.Spec.SkippedImagestreams {
-		h.skippedImagestreams[si] = true
+		newStreamMap[si] = true
 	}
+	h.skippedImagestreams = newStreamMap
+	h.skippedTemplates = newTempMap
 }
 
 func (h *Handler) processError(opcfg *v1alpha1.SamplesResource, ctype v1alpha1.SamplesResourceConditionType, cstatus corev1.ConditionStatus, err error, msg string, args ...interface{}) error {
