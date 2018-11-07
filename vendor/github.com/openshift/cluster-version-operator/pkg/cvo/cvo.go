@@ -2,34 +2,35 @@ package cvo
 
 import (
 	"fmt"
+	"strconv"
+	"sync"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	apiextinformersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1beta1"
-	apiextlistersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
-	appslisterv1 "k8s.io/client-go/listers/apps/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/openshift/cluster-version-operator/lib/resourceapply"
-	cvv1 "github.com/openshift/cluster-version-operator/pkg/apis/clusterversion.openshift.io/v1"
+	"github.com/openshift/cluster-version-operator/lib/resourcemerge"
+	cvv1 "github.com/openshift/cluster-version-operator/pkg/apis/config.openshift.io/v1"
+	osv1 "github.com/openshift/cluster-version-operator/pkg/apis/operatorstatus.openshift.io/v1"
 	clientset "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned"
-	cvinformersv1 "github.com/openshift/cluster-version-operator/pkg/generated/informers/externalversions/clusterversion.openshift.io/v1"
+	cvinformersv1 "github.com/openshift/cluster-version-operator/pkg/generated/informers/externalversions/config.openshift.io/v1"
 	osinformersv1 "github.com/openshift/cluster-version-operator/pkg/generated/informers/externalversions/operatorstatus.openshift.io/v1"
-	cvlistersv1 "github.com/openshift/cluster-version-operator/pkg/generated/listers/clusterversion.openshift.io/v1"
+	cvlistersv1 "github.com/openshift/cluster-version-operator/pkg/generated/listers/config.openshift.io/v1"
 	oslistersv1 "github.com/openshift/cluster-version-operator/pkg/generated/listers/operatorstatus.openshift.io/v1"
 )
 
@@ -43,16 +44,40 @@ const (
 )
 
 // ownerKind contains the schema.GroupVersionKind for type that owns objects managed by CVO.
-var ownerKind = cvv1.SchemeGroupVersion.WithKind("CVOConfig")
+var ownerKind = cvv1.SchemeGroupVersion.WithKind("ClusterVersion")
 
-// Operator defines cluster version operator.
+// Operator defines cluster version operator. The CVO attempts to reconcile the appropriate payload
+// onto the cluster, writing status to the ClusterVersion object as it goes. A background loop
+// periodically checks for new updates from a server described by spec.upstream and spec.channel.
+// The main CVO sync loop is the single writer of ClusterVersion status.
+//
+// The CVO updates multiple conditions, but synthesizes them into a summary message on the
+// Progressing condition to answer the question of "what version is available on the cluster".
+// When errors occur, the Failing condition of the status is updated with a detailed message and
+// reason, and then the reason is used to summarize the error onto the Progressing condition's
+// message for a simple overview.
+//
+// The CVO periodically syncs the whole payload to the cluster even if no version transition is
+// detected in order to undo accidental actions.
+//
+// A release image is expected to contain a CVO binary, the manifests necessary to update the
+// CVO, and the manifests of the other operators on the cluster. During an update the operator
+// attempts to copy the contents of the image manifests into a temporary directory using a
+// batch job and a shared host-path, then applies the CVO manifests using the payload image
+// for the CVO deployment. The deployment is then expected to launch the new process, and the
+// new operator picks up the lease and applies the rest of the payload.
 type Operator struct {
 	// nodename allows CVO to sync fetchPayload to same node as itself.
 	nodename string
-	// namespace and name are used to find the CVOConfig, OperatorStatus.
+	// namespace and name are used to find the ClusterVersion, OperatorStatus.
 	namespace, name string
+
 	// releaseImage allows templating CVO deployment manifest.
 	releaseImage string
+	// releaseVersion is a string identifier for the current version, read
+	// from the payload of the operator. It may be empty if no version exists, in
+	// which case no available updates will be returned.
+	releaseVersion string
 
 	// restConfig is used to create resourcebuilder.
 	restConfig *rest.Config
@@ -62,19 +87,35 @@ type Operator struct {
 	apiExtClient  apiextclientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler func(key string) error
+	// updatePayloadHandler allows unit tests to inject arbitrary payload errors
+	updatePayloadHandler func(config *cvv1.ClusterVersion, payload *updatePayload) error
 
+	// minimumUpdateCheckInterval is the minimum duration to check for updates from
+	// the upstream.
+	minimumUpdateCheckInterval time.Duration
+	// payloadDir is intended for testing. If unset it will default to '/'
+	payloadDir string
+	// defaultUpstreamServer is intended for testing.
+	defaultUpstreamServer string
+
+	cvLister              cvlistersv1.ClusterVersionLister
+	cvListerSynced        cache.InformerSynced
 	clusterOperatorLister oslistersv1.ClusterOperatorLister
+	clusterOperatorSynced cache.InformerSynced
 
-	crdLister             apiextlistersv1beta1.CustomResourceDefinitionLister
-	deployLister          appslisterv1.DeploymentLister
-	cvoConfigLister       cvlistersv1.CVOConfigLister
-	crdListerSynced       cache.InformerSynced
-	deployListerSynced    cache.InformerSynced
-	cvoConfigListerSynced cache.InformerSynced
-
-	// queue only ever has one item, but it has nice error handling backoff/retry semantics
+	// queue tracks applying updates to a cluster.
 	queue workqueue.RateLimitingInterface
+	// availableUpdatesQueue tracks checking for updates from the update server.
+	availableUpdatesQueue workqueue.RateLimitingInterface
+
+	// statusLock guards access to modifying available updates
+	statusLock       sync.Mutex
+	availableUpdates *availableUpdates
+
+	// lastAtLock guards access to controller memory about the sync loop
+	lastAtLock          sync.Mutex
+	lastSyncAt          time.Time
+	lastResourceVersion int64
 }
 
 // New returns a new cluster version operator.
@@ -82,10 +123,10 @@ func New(
 	nodename string,
 	namespace, name string,
 	releaseImage string,
-	cvoConfigInformer cvinformersv1.CVOConfigInformer,
+	overridePayloadDir string,
+	minimumInterval time.Duration,
+	cvInformer cvinformersv1.ClusterVersionInformer,
 	clusterOperatorInformer osinformersv1.ClusterOperatorInformer,
-	crdInformer apiextinformersv1beta1.CustomResourceDefinitionInformer,
-	deployInformer appsinformersv1.DeploymentInformer,
 	restConfig *rest.Config,
 	client clientset.Interface,
 	kubeClient kubernetes.Interface,
@@ -96,31 +137,50 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	optr := &Operator{
-		nodename:      nodename,
-		namespace:     namespace,
-		name:          name,
-		releaseImage:  releaseImage,
+		nodename:     nodename,
+		namespace:    namespace,
+		name:         name,
+		releaseImage: releaseImage,
+
+		minimumUpdateCheckInterval: minimumInterval,
+		payloadDir:                 overridePayloadDir,
+		defaultUpstreamServer:      "http://localhost:8080/graph",
+
 		restConfig:    restConfig,
 		client:        client,
 		kubeClient:    kubeClient,
 		apiExtClient:  apiExtClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "clusterversionoperator"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "clusterversionoperator"),
+
+		queue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "clusterversion"),
+		availableUpdatesQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "availableupdates"),
 	}
 
-	cvoConfigInformer.Informer().AddEventHandler(optr.eventHandler())
-	crdInformer.Informer().AddEventHandler(optr.eventHandler())
+	optr.updatePayloadHandler = optr.syncUpdatePayload
 
-	optr.syncHandler = optr.sync
+	cvInformer.Informer().AddEventHandler(optr.eventHandler())
+	clusterOperatorInformer.Informer().AddEventHandler(optr.eventHandler())
 
 	optr.clusterOperatorLister = clusterOperatorInformer.Lister()
+	optr.clusterOperatorSynced = clusterOperatorInformer.Informer().HasSynced
 
-	optr.crdLister = crdInformer.Lister()
-	optr.crdListerSynced = crdInformer.Informer().HasSynced
-	optr.deployLister = deployInformer.Lister()
-	optr.deployListerSynced = deployInformer.Informer().HasSynced
-	optr.cvoConfigLister = cvoConfigInformer.Lister()
-	optr.cvoConfigListerSynced = cvoConfigInformer.Informer().HasSynced
+	optr.cvLister = cvInformer.Lister()
+	optr.cvListerSynced = cvInformer.Informer().HasSynced
+
+	if err := optr.registerMetrics(); err != nil {
+		panic(err)
+	}
+
+	if meta, _, err := loadUpdatePayloadMetadata(optr.baseDirectory(), releaseImage); err != nil {
+		glog.Warningf("The local payload is invalid - no current version can be determined from disk: %v", err)
+	} else {
+		// XXX: set this to the cincinnati version in preference
+		if _, err := semver.Parse(meta.imageRef.Name); err != nil {
+			glog.Warningf("The local payload name %q is not a valid semantic version - no current version will be reported: %v", meta.imageRef.Name, err)
+		} else {
+			optr.releaseVersion = meta.imageRef.Name
+		}
+	}
 
 	return optr
 }
@@ -130,144 +190,305 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer optr.queue.ShutDown()
 
-	glog.Info("Starting ClusterVersionOperator")
+	glog.Infof("Starting ClusterVersionOperator with minimum reconcile period %s", optr.minimumUpdateCheckInterval)
 	defer glog.Info("Shutting down ClusterVersionOperator")
 
 	if !cache.WaitForCacheSync(stopCh,
-		optr.crdListerSynced,
-		optr.deployListerSynced,
-		optr.cvoConfigListerSynced,
+		optr.clusterOperatorSynced,
+		optr.cvListerSynced,
 	) {
 		return
 	}
 
-	for i := 0; i < workers; i++ {
-		go wait.Until(optr.worker, time.Second, stopCh)
-	}
+	// trigger the first cluster version reconcile always
+	optr.queue.Add(optr.queueKey())
+
+	go wait.Until(func() { optr.worker(optr.queue, optr.sync) }, time.Second, stopCh)
+	go wait.Until(func() { optr.worker(optr.availableUpdatesQueue, optr.availableUpdatesSync) }, time.Second, stopCh)
 
 	<-stopCh
 }
 
+func (optr *Operator) queueKey() string {
+	return fmt.Sprintf("%s/%s", optr.namespace, optr.name)
+}
+
 func (optr *Operator) eventHandler() cache.ResourceEventHandler {
-	workQueueKey := fmt.Sprintf("%s/%s", optr.namespace, optr.name)
+	workQueueKey := optr.queueKey()
 	return cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { optr.queue.Add(workQueueKey) },
-		UpdateFunc: func(old, new interface{}) { optr.queue.Add(workQueueKey) },
-		DeleteFunc: func(obj interface{}) { optr.queue.Add(workQueueKey) },
+		AddFunc: func(obj interface{}) {
+			optr.queue.Add(workQueueKey)
+			optr.availableUpdatesQueue.Add(workQueueKey)
+		},
+		UpdateFunc: func(old, new interface{}) {
+			optr.queue.Add(workQueueKey)
+			optr.availableUpdatesQueue.Add(workQueueKey)
+		},
+		DeleteFunc: func(obj interface{}) {
+			optr.queue.Add(workQueueKey)
+		},
 	}
 }
 
-func (optr *Operator) worker() {
-	for optr.processNextWorkItem() {
+func (optr *Operator) worker(queue workqueue.RateLimitingInterface, syncHandler func(string) error) {
+	for processNextWorkItem(queue, syncHandler, optr.syncFailingStatus) {
 	}
 }
 
-func (optr *Operator) processNextWorkItem() bool {
-	key, quit := optr.queue.Get()
+type syncFailingStatusFunc func(config *cvv1.ClusterVersion, err error) error
+
+func processNextWorkItem(queue workqueue.RateLimitingInterface, syncHandler func(string) error, syncFailingStatus syncFailingStatusFunc) bool {
+	key, quit := queue.Get()
 	if quit {
 		return false
 	}
-	defer optr.queue.Done(key)
+	defer queue.Done(key)
 
-	err := optr.syncHandler(key.(string))
-	optr.handleErr(err, key)
-
+	err := syncHandler(key.(string))
+	handleErr(queue, err, key, syncFailingStatus)
 	return true
 }
 
-func (optr *Operator) handleErr(err error, key interface{}) {
+func handleErr(queue workqueue.RateLimitingInterface, err error, key interface{}, syncFailingStatus syncFailingStatusFunc) {
 	if err == nil {
-		optr.queue.Forget(key)
+		queue.Forget(key)
 		return
 	}
 
-	if optr.queue.NumRequeues(key) < maxRetries {
+	if queue.NumRequeues(key) < maxRetries {
 		glog.V(2).Infof("Error syncing operator %v: %v", key, err)
-		optr.queue.AddRateLimited(key)
+		queue.AddRateLimited(key)
 		return
 	}
 
-	err = optr.syncDegradedStatus(err)
+	err = syncFailingStatus(nil, err)
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping operator %q out of the queue: %v", key, err)
-	optr.queue.Forget(key)
+	glog.V(2).Infof("Dropping operator %q out of the queue %v: %v", key, queue, err)
+	queue.Forget(key)
 }
 
 func (optr *Operator) sync(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing operator %q (%v)", key, startTime)
+	glog.V(4).Infof("Started syncing cluster version %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing operator %q (%v)", key, time.Since(startTime))
+		glog.V(4).Infof("Finished syncing cluster version %q (%v)", key, time.Since(startTime))
 	}()
 
-	// We always run this to make sure CVOConfig can be synced.
-	if err := optr.syncCustomResourceDefinitions(); err != nil {
-		return err
-	}
-
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	// ensure the cluster version exists
+	original, created, err := optr.getOrCreateClusterVersion()
 	if err != nil {
 		return err
 	}
-
-	var obj *cvv1.CVOConfig
-	obj, err = optr.cvoConfigLister.CVOConfigs(namespace).Get(name)
-	if apierrors.IsNotFound(err) {
-		obj, err = optr.getConfig()
+	if created || optr.isOlderThanLastUpdate(original) {
+		return nil
 	}
+
+	glog.V(3).Infof("ClusterVersion: %#v", original)
+
+	// sync any available updates to status
+	if ok, err := optr.syncAvailableUpdatesStatus(original); ok {
+		if err == nil {
+			glog.V(4).Infof("Updating available updates onto status")
+			return nil
+		}
+		glog.Errorf("Unable to sync available updates to the cluster version: %v", err)
+	}
+
+	// when we're up to date, limit how frequently we check the payload
+	availableAndUpdated := original.Status.Generation == original.Generation &&
+		resourcemerge.IsOperatorStatusConditionTrue(original.Status.Conditions, osv1.OperatorAvailable)
+	hasRecentlySynced := availableAndUpdated && optr.hasRecentlySynced()
+	if hasRecentlySynced {
+		glog.V(4).Infof("Cluster version has been recently synced and no new changes detected")
+		return nil
+	}
+
+	optr.setLastSyncAt(time.Time{})
+
+	// read the payload
+	payload, err := optr.loadUpdatePayload(original)
 	if err != nil {
+		// the payload is invalid, try and update the status to indicate that
+		if sErr := optr.syncPayloadFailingStatus(original, err); sErr != nil {
+			glog.V(2).Infof("Unable to write status when payload was invalid: %v", sErr)
+		}
 		return err
 	}
 
-	config := &cvv1.CVOConfig{}
-	obj.DeepCopyInto(config)
+	update := cvv1.Update{
+		Version: payload.releaseVersion,
+		Payload: payload.releaseImage,
+	}
 
-	if err := optr.syncProgressingStatus(config); err != nil {
+	// if the current payload is already live, we are reconciling, not updating,
+	// and we won't set the progressing status.
+	if availableAndUpdated && payload.manifestHash == original.Status.VersionHash {
+		glog.V(2).Infof("Reconciling cluster to version %s and image %s (hash=%s)", update.Version, update.Payload, payload.manifestHash)
+	} else {
+		glog.V(2).Infof("Updating the cluster to version %s and image %s (hash=%s)", update.Version, update.Payload, payload.manifestHash)
+		if err := optr.syncProgressingStatus(original); err != nil {
+			return err
+		}
+	}
+
+	if err := optr.updatePayloadHandler(original, payload); err != nil {
+		if applyErr := optr.syncUpdateFailingStatus(original, err); applyErr != nil {
+			glog.V(2).Infof("Unable to write status when sync error occurred: %v", applyErr)
+		}
 		return err
 	}
 
-	payloadDir, err := optr.updatePayloadDir(config)
-	if err != nil {
-		return err
-	}
-	releaseImage := optr.releaseImage
-	if config.DesiredUpdate.Payload != "" {
-		releaseImage = config.DesiredUpdate.Payload
-	}
-	payload, err := loadUpdatePayload(payloadDir, releaseImage)
-	if err != nil {
-		return err
-	}
+	glog.V(2).Infof("Payload for cluster version %s synced", update.Version)
 
-	if err := optr.syncUpdatePayload(config, payload); err != nil {
-		return err
-	}
-
-	return optr.syncAvailableStatus(config)
+	// update the status to indicate we have synced
+	optr.setLastSyncAt(time.Now())
+	return optr.syncAvailableStatus(original, update, payload.manifestHash)
 }
 
-func (optr *Operator) getConfig() (*cvv1.CVOConfig, error) {
-	upstream := cvv1.URL("http://localhost:8080/graph")
+// availableUpdatesSync is triggered on cluster version change (and periodic requeues) to
+// sync available updates. It only modifies cluster version.
+func (optr *Operator) availableUpdatesSync(key string) error {
+	startTime := time.Now()
+	glog.V(4).Infof("Started syncing available updates %q (%v)", key, startTime)
+	defer func() {
+		glog.V(4).Infof("Finished syncing available updates %q (%v)", key, time.Since(startTime))
+	}()
+
+	config, err := optr.cvLister.Get(optr.name)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	return optr.syncAvailableUpdates(config)
+}
+
+// hasRecentlySynced returns true if the most recent sync was newer than the
+// minimum check interval.
+func (optr *Operator) hasRecentlySynced() bool {
+	if optr.minimumUpdateCheckInterval == 0 {
+		return false
+	}
+	optr.lastAtLock.Lock()
+	defer optr.lastAtLock.Unlock()
+	return optr.lastSyncAt.After(time.Now().Add(-optr.minimumUpdateCheckInterval))
+}
+
+// setLastSyncAt sets the time the operator was last synced at.
+func (optr *Operator) setLastSyncAt(t time.Time) {
+	optr.lastAtLock.Lock()
+	defer optr.lastAtLock.Unlock()
+	optr.lastSyncAt = t
+}
+
+// isOlderThanLastUpdate returns true if the cluster version is older than
+// the last update we saw.
+func (optr *Operator) isOlderThanLastUpdate(config *cvv1.ClusterVersion) bool {
+	i, err := strconv.ParseInt(config.ResourceVersion, 10, 64)
+	if err != nil {
+		return false
+	}
+	optr.lastAtLock.Lock()
+	defer optr.lastAtLock.Unlock()
+	return i < optr.lastResourceVersion
+}
+
+// rememberLastUpdate records the most recent resource version we
+// have seen from the server for cluster versions.
+func (optr *Operator) rememberLastUpdate(config *cvv1.ClusterVersion) {
+	if config == nil {
+		return
+	}
+	i, err := strconv.ParseInt(config.ResourceVersion, 10, 64)
+	if err != nil {
+		return
+	}
+	optr.lastAtLock.Lock()
+	defer optr.lastAtLock.Unlock()
+	optr.lastResourceVersion = i
+}
+
+func (optr *Operator) getOrCreateClusterVersion() (*cvv1.ClusterVersion, bool, error) {
+	obj, err := optr.cvLister.Get(optr.name)
+	if err == nil {
+		return obj, false, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return nil, false, err
+	}
+	var upstream *cvv1.URL
+	if len(optr.defaultUpstreamServer) > 0 {
+		u := cvv1.URL(optr.defaultUpstreamServer)
+		upstream = &u
+	}
 	channel := "fast"
 	id, _ := uuid.NewRandom()
 	if id.Variant() != uuid.RFC4122 {
-		return nil, fmt.Errorf("invalid %q, must be an RFC4122-variant UUID: found %s", id, id.Variant())
+		return nil, false, fmt.Errorf("invalid %q, must be an RFC4122-variant UUID: found %s", id, id.Variant())
 	}
 	if id.Version() != 4 {
-		return nil, fmt.Errorf("Invalid %q, must be a version-4 UUID: found %s", id, id.Version())
+		return nil, false, fmt.Errorf("Invalid %q, must be a version-4 UUID: found %s", id, id.Version())
 	}
 
-	// XXX: generate CVOConfig from options calculated above.
-	config := &cvv1.CVOConfig{
+	// XXX: generate ClusterVersion from options calculated above.
+	config := &cvv1.ClusterVersion{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: optr.namespace,
-			Name:      optr.name,
+			Name: optr.name,
 		},
-		Upstream:  upstream,
-		Channel:   channel,
-		ClusterID: cvv1.ClusterID(id.String()),
+		Spec: cvv1.ClusterVersionSpec{
+			Upstream:  upstream,
+			Channel:   channel,
+			ClusterID: cvv1.ClusterID(id.String()),
+		},
 	}
 
-	actual, _, err := resourceapply.ApplyCVOConfigFromCache(optr.cvoConfigLister, optr.client.ClusterversionV1(), config)
-	return actual, err
+	actual, _, err := resourceapply.ApplyClusterVersionFromCache(optr.cvLister, optr.client.ConfigV1(), config)
+	if apierrors.IsAlreadyExists(err) {
+		return nil, true, nil
+	}
+	return actual, true, err
+}
+
+// versionString returns a string describing the current version.
+func (optr *Operator) currentVersionString(config *cvv1.ClusterVersion) string {
+	if s := config.Status.Current.Version; len(s) > 0 {
+		return s
+	}
+	if s := config.Status.Current.Payload; len(s) > 0 {
+		return s
+	}
+	if s := optr.releaseVersion; len(s) > 0 {
+		return s
+	}
+	if s := optr.releaseImage; len(s) > 0 {
+		return s
+	}
+	return "<unknown>"
+}
+
+// versionString returns a string describing the desired version.
+func (optr *Operator) desiredVersionString(config *cvv1.ClusterVersion) string {
+	var s string
+	if v := config.Spec.DesiredUpdate; v != nil {
+		if len(v.Payload) > 0 {
+			s = v.Payload
+		}
+		if len(v.Version) > 0 {
+			s = v.Version
+		}
+	}
+	if len(s) == 0 {
+		s = optr.currentVersionString(config)
+	}
+	return s
+}
+
+// currentVersion returns an update object describing the current known cluster version.
+func (optr *Operator) currentVersion() cvv1.Update {
+	return cvv1.Update{
+		Version: optr.releaseVersion,
+		Payload: optr.releaseImage,
+	}
 }

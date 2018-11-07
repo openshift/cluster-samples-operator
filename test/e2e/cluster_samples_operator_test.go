@@ -9,7 +9,7 @@ import (
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 
-	imageapiv1 "githhub.com/openshift/api/image/v1"
+	imageapiv1 "github.com/openshift/api/image/v1"
 	samplesapi "github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
 )
 
