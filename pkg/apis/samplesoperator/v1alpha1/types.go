@@ -125,6 +125,12 @@ const (
 	// tried to make a support configuration change.  Currently, changes to the
 	// InstallType and Architectures list after initial processing is not allowed.
 	ConfigurationValid SamplesResourceConditionType = "ConfigurationValid"
+	// ImageChangesInProgress represents the state between where the samples operator has
+	// started updating the imagestreams and when the spec and status generations for each
+	// tag match.  The list of imagestreams that are still in progress will be stored
+	// in the Reason field of the condition.  The Reason field being empty corresponds
+	// with this condition being marked true.
+	ImageChangesInProgress SamplesResourceConditionType = "ChangesInProgress"
 )
 
 // SamplesResourceCondition captures various conditions of the SamplesResource

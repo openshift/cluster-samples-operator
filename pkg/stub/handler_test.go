@@ -89,20 +89,28 @@ func TestWithArchDist(t *testing.T) {
 		sr.Spec.Architectures = []string{
 			v1alpha1.X86Architecture,
 		}
-		mimic(&h, dist, x86OKDContentRootDir)
 		sr.Spec.InstallType = dist
 		if dist == v1alpha1.RHELSamplesDistribution {
 			fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
 			fakesecretclient.s = secret
 			err := h.Handle(nil, event)
-			validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue}, t)
+			validate(true, err, "", sr,
+				[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid},
+				[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue}, t)
 			err = h.Handle(nil, credEvent)
-			validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue}, t)
+			validate(true, err, "", sr,
+				[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid},
+				[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue}, t)
 			err = h.Handle(nil, event)
-			validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue}, t)
+			validate(true, err, "", sr,
+				[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid},
+				[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue}, t)
 		} else {
+			mimic(&h, dist, x86OKDContentRootDir)
 			err := h.Handle(nil, event)
-			validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}, t)
+			validate(true, err, "", sr,
+				[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid, v1alpha1.ImageChangesInProgress},
+				[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue}, t)
 		}
 	}
 
@@ -115,9 +123,13 @@ func TestWithArchDist(t *testing.T) {
 		v1alpha1.PPCArchitecture,
 	}
 	err := h.Handle(nil, credEvent)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue}, t)
+	validate(true, err, "", sr,
+		[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid},
+		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue}, t)
 	err = h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue}, t)
+	validate(true, err, "", sr,
+		[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid, v1alpha1.ImageChangesInProgress},
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue}, t)
 
 	// verify cannot change arch and distro
 	sr.ResourceVersion = "2"
@@ -127,10 +139,14 @@ func TestWithArchDist(t *testing.T) {
 	}
 	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OCPContentRootDir)
 	err = h.Handle(nil, event)
-	validate(false, err, "cannot change installtype from", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse}, t)
+	validate(false, err, "cannot change installtype from", sr,
+		[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid, v1alpha1.ImageChangesInProgress},
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}, t)
 	sr.Spec.InstallType = v1alpha1.RHELSamplesDistribution
 	err = h.Handle(nil, event)
-	validate(false, err, "cannot change architectures from", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse}, t)
+	validate(false, err, "cannot change architectures from", sr,
+		[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid, v1alpha1.ImageChangesInProgress},
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}, t)
 }
 
 func TestWithBadDist(t *testing.T) {
@@ -242,7 +258,9 @@ func TestProcessed(t *testing.T) {
 		}
 
 		err := h.Handle(nil, event)
-		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}, t)
+		validate(true, err, "", sr,
+			[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid, v1alpha1.ImageChangesInProgress},
+			[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue}, t)
 
 		fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 		for _, key := range iskeys {
@@ -278,7 +296,9 @@ func TestProcessed(t *testing.T) {
 		sr.Spec.InstallType = dist
 
 		err = h.Handle(nil, event)
-		validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}, t)
+		validate(true, err, "", sr,
+			[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid, v1alpha1.ImageChangesInProgress},
+			[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue}, t)
 		is, _ = fakeisclient.Get("", "foo", metav1.GetOptions{})
 		if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, sr.Spec.SamplesRegistry) {
 			t.Fatalf("stream repo not updated %#v, %#v", is, h)
@@ -296,16 +316,57 @@ func TestImageStreamEvent(t *testing.T) {
 	h, sr, event := setup()
 	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OKDContentRootDir)
 	err := h.Handle(nil, event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}
-	conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue}
+	conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid, v1alpha1.ImageChangesInProgress}
 	validate(true, err, "", sr, conditions, statuses, t)
 
+	tagVersion := int64(1)
 	is := &imagev1.ImageStream{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "foo",
+			Annotations: map[string]string{
+				v1alpha1.SamplesVersionAnnotation: v1alpha1.CodeLevel,
+			},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			Tags: []imagev1.TagReference{
+				{
+					Name:       "foo",
+					Generation: &tagVersion,
+				},
+			},
+		},
+		Status: imagev1.ImageStreamStatus{
+			Tags: []imagev1.NamedTagEventList{
+				{
+					Tag: "foo",
+					Items: []imagev1.TagEvent{
+						{
+							Generation: tagVersion,
+						},
+					},
+				},
+			},
 		},
 	}
 
+	fakecmclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: v1alpha1.SamplesResourceName,
+		},
+		Data: map[string]string{
+			"imagestream-foo": x86OKDContentRootDir + "/imagestreams/foo",
+			"imagestream-bar": x86OKDContentRootDir + "/imagestreams/bar",
+		},
+	}
+	fakecmclient.maps[v1alpha1.SamplesResourceName] = cm
+	h.processImageStreamWatchEvent(is)
+	validate(true, err, "", sr, conditions, statuses, t)
+
+	// now make sure when a non standard change event is not ignored and that we update
+	// the imagestream ... to mimic, remove annotation
+	delete(is.Annotations, v1alpha1.SamplesVersionAnnotation)
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	delete(fakeisclient.upsertkeys, "foo")
 	h.processImageStreamWatchEvent(is)
@@ -313,14 +374,50 @@ func TestImageStreamEvent(t *testing.T) {
 		t.Fatalf("is did not reach client %s: %#v", "foo", h)
 	}
 
+	// with the update above, now process both of the imagestreams and see the in progress condition
+	// go false
+	is.Annotations[v1alpha1.SamplesVersionAnnotation] = v1alpha1.CodeLevel
+	h.processImageStreamWatchEvent(is)
+	validate(true, err, "", sr, conditions, statuses, t)
+	statuses[3] = corev1.ConditionFalse
+	is = &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "bar",
+			Annotations: map[string]string{
+				v1alpha1.SamplesVersionAnnotation: v1alpha1.CodeLevel,
+			},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			Tags: []imagev1.TagReference{
+				{
+					Name:       "bar",
+					Generation: &tagVersion,
+				},
+			},
+		},
+		Status: imagev1.ImageStreamStatus{
+			Tags: []imagev1.NamedTagEventList{
+				{
+					Tag: "bar",
+					Items: []imagev1.TagEvent{
+						{
+							Generation: tagVersion,
+						},
+					},
+				},
+			},
+		},
+	}
+	h.processImageStreamWatchEvent(is)
+	validate(true, err, "", sr, conditions, statuses, t)
 }
 
 func TestTemplateEvent(t *testing.T) {
 	h, sr, event := setup()
 	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OKDContentRootDir)
 	err := h.Handle(nil, event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}
-	conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue}
+	conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid, v1alpha1.ImageChangesInProgress}
 	validate(true, err, "", sr, conditions, statuses, t)
 
 	template := &templatev1.Template{
@@ -349,16 +446,22 @@ func TestCreateDeleteSecretBeforeCR(t *testing.T) {
 	}
 
 	err := h.Handle(nil, event)
-	validate(false, err, "Received secret samples-registry-credentials but do not have the SamplesResource yet", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue}, t)
+	validate(false, err, "Received secret samples-registry-credentials but do not have the SamplesResource yet", sr,
+		[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid},
+		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue}, t)
 	event.Deleted = true
 	err = h.Handle(nil, event)
-	validate(false, err, "Received secret samples-registry-credentials but do not have the SamplesResource yet", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue}, t)
+	validate(false, err, "Received secret samples-registry-credentials but do not have the SamplesResource yet", sr,
+		[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid},
+		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue}, t)
 
 	event.Deleted = false
 	event.Object = sr
 	h.sdkwrapper.(*fakeSDKWrapper).sr = sr
 	err = h.Handle(nil, event)
-	validate(true, err, "", sr, []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}, t)
+	validate(true, err, "", sr,
+		[]v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid},
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue}, t)
 
 }
 
@@ -457,6 +560,8 @@ func TestImageGetError(t *testing.T) {
 			statuses[0] = corev1.ConditionUnknown
 			validate(false, err, "getstreamerror", sr, conditions, statuses, t)
 		} else {
+			statuses = append(statuses, corev1.ConditionTrue)
+			conditions = append(conditions, v1alpha1.ImageChangesInProgress)
 			validate(true, err, "", sr, conditions, statuses, t)
 		}
 	}
@@ -477,8 +582,8 @@ func TestTemplateGetEreror(t *testing.T) {
 		faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 		faketclient.geterrors = map[string]error{"bo": terr}
 
-		statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionFalse, corev1.ConditionTrue}
-		conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid}
+		statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue}
+		conditions := []v1alpha1.SamplesResourceConditionType{v1alpha1.SamplesExist, v1alpha1.ImportCredentialsExist, v1alpha1.ConfigurationValid, v1alpha1.ImageChangesInProgress}
 		err := h.Handle(nil, event)
 		validate(false, err, "gettemplateerror", sr, conditions, statuses, t)
 	}

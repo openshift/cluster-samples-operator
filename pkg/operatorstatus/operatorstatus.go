@@ -85,8 +85,15 @@ func (o *CVOOperatorStatusHandler) UpdateOperatorStatus(sampleResource *v1alpha1
 		return err
 	}
 
-	// We have no meaningful "progressing" status, everything we do basically either instantly succeeds or fails.
-	err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorProgressing, osapi.ConditionFalse, "")
+	switch {
+	case sampleResource.ConditionTrue(v1alpha1.ImageChangesInProgress):
+		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorProgressing, osapi.ConditionTrue, "The samples operator is in the middle of changing the imagestreams")
+	case sampleResource.ConditionFalse(v1alpha1.ImageChangesInProgress):
+		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorProgressing, osapi.ConditionFalse, "The samples operator is not in the process of initiating changes to the imagestreams")
+	default:
+		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorProgressing, osapi.ConditionUnknown, "The samples operator in progress state is unknown")
+	}
+
 	return err
 }
 
