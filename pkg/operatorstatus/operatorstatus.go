@@ -10,13 +10,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
 
+	ocfgapi "github.com/openshift/cluster-version-operator/pkg/apis/config.openshift.io/v1"
 	osapi "github.com/openshift/cluster-version-operator/pkg/apis/operatorstatus.openshift.io/v1"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 
 	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
 )
 
-// CVOOperatorStatusHandler allows for wrappering sdk access to osapi.ClusterOperator
+// CVOOperatorStatusHandler allows for wrappering sdk access to ocfgapi.ClusterVersion
 type CVOOperatorStatusHandler struct {
 	SDKwrapper OperatorStatusSDKWrapper
 	Namespace  string
@@ -29,18 +30,18 @@ func NewCVOOperatorStatusHandler(namespace string) *CVOOperatorStatusHandler {
 
 // OperatorStatusSDKWrapper is the interface that wrappers actuall access to github.com/operator-framework/operator-sdk/pkg/sdk
 type OperatorStatusSDKWrapper interface {
-	Get(name, namespace string) (*osapi.ClusterOperator, error)
-	Update(state *osapi.ClusterOperator) (err error)
-	Create(state *osapi.ClusterOperator) (err error)
+	Get(name, namespace string) (*ocfgapi.ClusterVersion, error)
+	Update(state *ocfgapi.ClusterVersion) (err error)
+	Create(state *ocfgapi.ClusterVersion) (err error)
 }
 
 type defaultOperatorStatusSDKWrapper struct{}
 
-func (s *defaultOperatorStatusSDKWrapper) Get(name, namespace string) (*osapi.ClusterOperator, error) {
-	state := &osapi.ClusterOperator{
+func (s *defaultOperatorStatusSDKWrapper) Get(name, namespace string) (*ocfgapi.ClusterVersion, error) {
+	state := &ocfgapi.ClusterVersion{
 		TypeMeta: metaapi.TypeMeta{
-			APIVersion: osapi.SchemeGroupVersion.String(),
-			Kind:       "ClusterOperator",
+			APIVersion: ocfgapi.SchemeGroupVersion.String(),
+			Kind:       "ClusterVersion",
 		},
 		ObjectMeta: metaapi.ObjectMeta{
 			Name:      name,
@@ -51,11 +52,11 @@ func (s *defaultOperatorStatusSDKWrapper) Get(name, namespace string) (*osapi.Cl
 	return state, err
 }
 
-func (s *defaultOperatorStatusSDKWrapper) Update(state *osapi.ClusterOperator) error {
+func (s *defaultOperatorStatusSDKWrapper) Update(state *ocfgapi.ClusterVersion) error {
 	return sdk.Update(state)
 }
 
-func (s *defaultOperatorStatusSDKWrapper) Create(state *osapi.ClusterOperator) error {
+func (s *defaultOperatorStatusSDKWrapper) Create(state *ocfgapi.ClusterVersion) error {
 	return sdk.Create(state)
 }
 
@@ -99,7 +100,7 @@ func (o *CVOOperatorStatusHandler) setOperatorStatus(name string, condtype osapi
 				return fmt.Errorf("failed to get cluster operator resource %s/%s: %s", state.ObjectMeta.Namespace, state.ObjectMeta.Name, err)
 			}
 
-			state.Status.Version = v1alpha1.CodeLevel
+			state.Status.VersionHash = v1alpha1.CodeLevel
 
 			state.Status.Conditions = []osapi.ClusterOperatorStatusCondition{
 				{
@@ -141,7 +142,7 @@ func (o *CVOOperatorStatusHandler) setOperatorStatus(name string, condtype osapi
 	})
 }
 
-func (o *CVOOperatorStatusHandler) updateOperatorCondition(op *osapi.ClusterOperator, condition *osapi.ClusterOperatorStatusCondition) (modified bool) {
+func (o *CVOOperatorStatusHandler) updateOperatorCondition(op *ocfgapi.ClusterVersion, condition *osapi.ClusterOperatorStatusCondition) (modified bool) {
 	found := false
 	conditions := []osapi.ClusterOperatorStatusCondition{}
 

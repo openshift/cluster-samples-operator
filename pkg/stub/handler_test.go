@@ -21,6 +21,7 @@ import (
 	templatev1 "github.com/openshift/api/template/v1"
 
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
+	ocfgapi "github.com/openshift/cluster-version-operator/pkg/apis/config.openshift.io/v1"
 	osapi "github.com/openshift/cluster-version-operator/pkg/apis/operatorstatus.openshift.io/v1"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 )
@@ -746,16 +747,16 @@ func NewTestHandler() Handler {
 
 	h.sdkwrapper = &fakeSDKWrapper{}
 	cvowrapper := &fakeCVOSDKWrapper{}
-	cvowrapper.state = &osapi.ClusterOperator{
+	cvowrapper.state = &ocfgapi.ClusterVersion{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: osapi.SchemeGroupVersion.String(),
+			APIVersion: ocfgapi.SchemeGroupVersion.String(),
 			Kind:       "ClusterOperator",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "goo",
 			Namespace: "gaa",
 		},
-		Status: osapi.ClusterOperatorStatus{
+		Status: ocfgapi.ClusterVersionStatus{
 			Conditions: []osapi.ClusterOperatorStatusCondition{},
 		},
 	}
@@ -1071,13 +1072,13 @@ type fakeCVOSDKWrapper struct {
 	updateerr error
 	createerr error
 	geterr    error
-	state     *osapi.ClusterOperator
+	state     *ocfgapi.ClusterVersion
 }
 
-func (f *fakeCVOSDKWrapper) Update(state *osapi.ClusterOperator) error { return f.updateerr }
+func (f *fakeCVOSDKWrapper) Update(state *ocfgapi.ClusterVersion) error { return f.updateerr }
 
-func (f *fakeCVOSDKWrapper) Create(state *osapi.ClusterOperator) error { return f.createerr }
+func (f *fakeCVOSDKWrapper) Create(state *ocfgapi.ClusterVersion) error { return f.createerr }
 
-func (f *fakeCVOSDKWrapper) Get(name, namespace string) (*osapi.ClusterOperator, error) {
+func (f *fakeCVOSDKWrapper) Get(name, namespace string) (*ocfgapi.ClusterVersion, error) {
 	return f.state, f.geterr
 }

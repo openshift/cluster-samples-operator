@@ -40,9 +40,9 @@ rules:
   verbs:
   - "*"
 - apiGroups:
-  - "operatorstatus.openshift.io"
+  - "config.openshift.io"
   resources:
-  - clusteroperators
+  - clusterversions
   verbs:
   - "*"
 

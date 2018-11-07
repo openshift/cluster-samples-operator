@@ -13,6 +13,8 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 
+	ocfgapi "github.com/openshift/cluster-version-operator/pkg/apis/config.openshift.io/v1"
+
 	"github.com/sirupsen/logrus"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
@@ -42,6 +44,7 @@ func main() {
 	sdk.Watch("v1", "Secret", "openshift", resyncPeriod)
 	k8sutil.AddToSDKScheme(imagev1.AddToScheme)
 	k8sutil.AddToSDKScheme(templatev1.AddToScheme)
+	k8sutil.AddToSDKScheme(ocfgapi.AddToScheme)
 	sdk.Watch(imagev1.SchemeGroupVersion.String(), "ImageStream", "openshift", resyncPeriod)
 	sdk.Watch(templatev1.SchemeGroupVersion.String(), "Template", "openshift", resyncPeriod)
 	sdk.Handle(stub.NewHandler())
