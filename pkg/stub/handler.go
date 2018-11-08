@@ -321,13 +321,19 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 }
 
 func (h *Handler) StoreCurrentValidConfig(srcfg *v1alpha1.SamplesResource) error {
-
+	//TODO remove/alter https://bugzilla.redhat.com/show_bug.cgi?id=1645463 related debug
+	// either after resolving that issue, or when we ditch the config map ... whatever
+	// happens first
+	// Consciously making the logging "always on" to facilitate debug gather with QA
+	prefix := "bz1645463 DBG - "
 	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
 	if err != nil && !kerrors.IsNotFound(err) {
+		logrus.Printf(prefix+" could not get cfgmap %#v", err)
 		// just return error to sdk for retry
 		return err
 	}
 	if kerrors.IsNotFound(err) {
+		logrus.Printf(prefix + " cfg map not found ?!?!?")
 		err = fmt.Errorf("Operator in compromised state; Could not find config map even though samplesresource exists")
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v")
 		h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
@@ -358,9 +364,11 @@ func (h *Handler) StoreCurrentValidConfig(srcfg *v1alpha1.SamplesResource) error
 
 	cm.Data[regkey] = srcfg.Spec.SamplesRegistry
 	var value string
+	logrus.Printf(prefix+" len skipped imgstrms %d", len(srcfg.Spec.SkippedImagestreams))
 	for _, val := range srcfg.Spec.SkippedImagestreams {
 		value = value + val + " "
 	}
+	logrus.Printf(prefix+"adding value %s to cfgmap key %s", value, skippedstreamskey)
 	cm.Data[skippedstreamskey] = value
 
 	value = ""
@@ -377,6 +385,7 @@ func (h *Handler) StoreCurrentValidConfig(srcfg *v1alpha1.SamplesResource) error
 	}
 
 	_, err = h.configmapclientwrapper.Update(h.namespace, cm)
+	logrus.Printf(prefix+" update to cm %s in namespace %s got err %#v", cm.Name, h.namespace, err)
 	return err
 }
 
