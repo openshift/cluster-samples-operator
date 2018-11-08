@@ -115,16 +115,18 @@ func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]strin
 	if h.deleteInProgress {
 		return nil, "", false
 	}
-	if annotations != nil {
-		isv, ok := annotations[v1alpha1.SamplesVersionAnnotation]
-		if ok && isv == v1alpha1.CodeLevel {
-			return nil, "", false
-		}
-	}
 	srcfg, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
 	if srcfg == nil || err != nil {
 		logrus.Printf("Received watch event %s but ignoring since not have the SamplesResource yet: %#v %#v", kind+"/"+name, err, srcfg)
 		return nil, "", false
+	}
+	if annotations != nil {
+		isv, ok := annotations[v1alpha1.SamplesVersionAnnotation]
+		if ok && isv == v1alpha1.CodeLevel {
+			logrus.Debugf("ignoring %s/%s cause operator version matches", kind, name)
+			// but return srcfg to potentially toggle pending condition
+			return srcfg, "", false
+		}
 	}
 	proceed, err := h.ProcessManagementField(srcfg)
 	if !proceed || err != nil {
@@ -145,45 +147,100 @@ func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]strin
 	return srcfg, filePath, true
 }
 
-func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) {
+func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) error {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
 	srcfg, filePath, ok := h.prepWatchEvent("imagestream", is.Name, is.Annotations)
 	if !ok {
-		return
+		if srcfg != nil {
+			logrus.Debugf("checking tag spec/status for %s spec len %d status len %d", is.Name, len(is.Spec.Tags), len(is.Status.Tags))
+			// won't be updating imagestream this go around, which sets pending==true, so see if we should turn off pending
+			pending := false
+			if len(is.Spec.Tags) == len(is.Status.Tags) {
+				for _, specTag := range is.Spec.Tags {
+					matched := false
+					for _, statusTag := range is.Status.Tags {
+						logrus.Debugf("checking spec tag %s against status tag %s with num items %d", specTag.Name, statusTag.Tag, len(statusTag.Items))
+						if specTag.Name == statusTag.Tag {
+							for _, event := range statusTag.Items {
+								logrus.Debugf("checking status tag %d against spec tag %#v", event.Generation, specTag.Generation)
+								if specTag.Generation != nil &&
+									*specTag.Generation <= event.Generation {
+									logrus.Debugf("got match")
+									matched = true
+									break
+								}
+							}
+						}
+
+					}
+					if !matched {
+						pending = true
+						break
+					}
+				}
+			}
+
+			logrus.Debugf("pending is %v for %s", pending, is.Name)
+
+			if !pending {
+				processing := srcfg.Condition(v1alpha1.ImageChangesInProgress)
+				now := kapis.Now()
+				// remove this imagestream name, including the space separator
+				logrus.Debugf("current reason %s ", processing.Reason)
+				processing.Reason = strings.Replace(processing.Reason, is.Name+" ", "", -1)
+				logrus.Debugf("reason now %s", processing.Reason)
+				if len(strings.TrimSpace(processing.Reason)) == 0 {
+					logrus.Debugf(" reason empty setting to false")
+					processing.Status = corev1.ConditionFalse
+					processing.Reason = ""
+				}
+				processing.LastTransitionTime = now
+				processing.LastUpdateTime = now
+				srcfg.ConditionUpdate(processing)
+				h.sdkwrapper.Update(srcfg)
+				return nil
+			}
+			// return error here so we retry the imagestream event
+			return fmt.Errorf("imagestream %s still in progress", is.Name)
+		}
+
+		return nil
 	}
 
 	imagestream, err := h.fileimagegetter.Get(filePath)
 	if err != nil {
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
+		// if we get this, don't bother retrying
+		err = nil
 	} else {
 		err = h.upsertImageStream(imagestream, is, srcfg)
 	}
-	if err != nil {
-		h.sdkwrapper.Update(srcfg)
-	}
+	h.sdkwrapper.Update(srcfg)
+	return err
 
 }
 
-func (h *Handler) processTemplateWatchEvent(t *templatev1.Template) {
+func (h *Handler) processTemplateWatchEvent(t *templatev1.Template) error {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
 	srcfg, filePath, ok := h.prepWatchEvent("template", t.Name, t.Annotations)
 	if !ok {
-		return
+		return nil
 	}
 
 	template, err := h.filetemplategetter.Get(filePath)
 	if err != nil {
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
+		// if we get this, don't bother retrying
+		err = nil
 	} else {
 		err = h.upsertTemplate(template, t, srcfg)
 	}
-	if err != nil {
-		h.sdkwrapper.Update(srcfg)
-	}
+	h.sdkwrapper.Update(srcfg)
+	return err
 
 }
 
@@ -313,10 +370,10 @@ func (h *Handler) StoreCurrentValidConfig(srcfg *v1alpha1.SamplesResource) error
 	cm.Data[skippedtempskey] = value
 
 	for key, path := range h.imagestreamFile {
-		cm.Data["imagestream"+"-"+key] = path
+		cm.Data["imagestream-"+key] = path
 	}
 	for key, path := range h.templateFile {
-		cm.Data["template"+"-"+key] = path
+		cm.Data["template-"+key] = path
 	}
 
 	_, err = h.configmapclientwrapper.Update(h.namespace, cm)
@@ -780,14 +837,16 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		if is.Namespace != "openshift" {
 			return nil
 		}
-		h.processImageStreamWatchEvent(is)
+		err := h.processImageStreamWatchEvent(is)
+		return err
 
 	case *templatev1.Template:
 		t, _ := event.Object.(*templatev1.Template)
 		if t.Namespace != "openshift" {
 			return nil
 		}
-		h.processTemplateWatchEvent(t)
+		err := h.processTemplateWatchEvent(t)
+		return err
 
 	case *corev1.Secret:
 		dockercfgSecret, _ := event.Object.(*corev1.Secret)
@@ -991,6 +1050,16 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 		}
 		return nil
 	}
+
+	progress := opcfg.Condition(v1alpha1.ImageChangesInProgress)
+	progress.Status = corev1.ConditionTrue
+	now := kapis.Now()
+	progress.LastUpdateTime = now
+	progress.LastTransitionTime = now
+	if !strings.Contains(progress.Reason, imagestreamInOperatorImage.Name) {
+		progress.Reason = progress.Reason + imagestreamInOperatorImage.Name + " "
+	}
+	opcfg.ConditionUpdate(progress)
 
 	h.updateDockerPullSpec([]string{"docker.io", "registry.redhat.io", "registry.access.redhat.com", "quay.io"}, imagestreamInOperatorImage, opcfg)
 
