@@ -245,6 +245,12 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template) error {
 }
 
 func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *corev1.ConfigMap) (bool, error) {
+	//TODO remove/alter https://bugzilla.redhat.com/show_bug.cgi?id=1645463 related debug
+	// either after resolving that issue, or when we ditch the config map ... whatever
+	// happens first
+	// Consciously making the logging "always on" to facilitate debug gather with QA
+	prefix := "bz1645463 DBG - "
+	logrus.Printf(prefix+"srcfg skipped streams %#v", srcfg.Spec.SkippedImagestreams)
 	samplesRegistry, ok := cm.Data[regkey]
 	if !ok {
 		err := fmt.Errorf("could not find the registry setting in the config map %#v", cm.Data)
@@ -256,6 +262,7 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 	}
 
 	skippedStreams, ok := cm.Data[skippedstreamskey]
+	logrus.Printf(prefix+"cm skipped streams %s and ok %v", skippedStreams, ok)
 	if !ok {
 		err := fmt.Errorf("could not find the skipped stream setting in the config map %#v", cm.Data)
 		return false, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
@@ -270,6 +277,7 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 		streams = strings.Split(skippedStreams, " ")
 	}
 
+	logrus.Printf(prefix+"cm array len %d and contents %#v and srcfg len %d and contents %#v", len(streams), streams, len(srcfg.Spec.SkippedImagestreams), srcfg.Spec.SkippedImagestreams)
 	if len(streams) != len(srcfg.Spec.SkippedImagestreams) {
 		logrus.Printf("SkippedImageStreams number of entries changed from %s, processing %v", skippedStreams, srcfg)
 		return true, nil
