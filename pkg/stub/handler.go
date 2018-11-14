@@ -152,6 +152,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) error {
 	defer h.mutex.Unlock()
 
 	srcfg, filePath, ok := h.prepWatchEvent("imagestream", is.Name, is.Annotations)
+	logrus.Debugf("prep watch event imgstr %s ok %v", is.Name, ok)
 	if !ok {
 		if srcfg != nil {
 			logrus.Debugf("checking tag spec/status for %s spec len %d status len %d", is.Name, len(is.Spec.Tags), len(is.Status.Tags))
@@ -164,7 +165,9 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) error {
 						logrus.Debugf("checking spec tag %s against status tag %s with num items %d", specTag.Name, statusTag.Tag, len(statusTag.Items))
 						if specTag.Name == statusTag.Tag {
 							for _, event := range statusTag.Items {
-								logrus.Debugf("checking status tag %d against spec tag %#v", event.Generation, specTag.Generation)
+								if specTag.Generation != nil {
+									logrus.Debugf("checking status tag %d against spec tag %d", event.Generation, *specTag.Generation)
+								}
 								if specTag.Generation != nil &&
 									*specTag.Generation <= event.Generation {
 									logrus.Debugf("got match")
@@ -192,7 +195,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) error {
 				processing.Reason = strings.Replace(processing.Reason, is.Name+" ", "", -1)
 				logrus.Debugf("reason now %s", processing.Reason)
 				if len(strings.TrimSpace(processing.Reason)) == 0 {
-					logrus.Debugf(" reason empty setting to false")
+					logrus.Debugf("reason empty setting to false")
 					processing.Status = corev1.ConditionFalse
 					processing.Reason = ""
 				}
@@ -245,12 +248,7 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template) error {
 }
 
 func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *corev1.ConfigMap) (bool, error) {
-	//TODO remove/alter https://bugzilla.redhat.com/show_bug.cgi?id=1645463 related debug
-	// either after resolving that issue, or when we ditch the config map ... whatever
-	// happens first
-	// Consciously making the logging "always on" to facilitate debug gather with QA
-	prefix := "bz1645463 DBG - "
-	logrus.Printf(prefix+"srcfg skipped streams %#v", srcfg.Spec.SkippedImagestreams)
+	logrus.Debugf("srcfg skipped streams %#v", srcfg.Spec.SkippedImagestreams)
 	samplesRegistry, ok := cm.Data[regkey]
 	if !ok {
 		err := fmt.Errorf("could not find the registry setting in the config map %#v", cm.Data)
@@ -262,7 +260,7 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 	}
 
 	skippedStreams, ok := cm.Data[skippedstreamskey]
-	logrus.Printf(prefix+"cm skipped streams %s and ok %v", skippedStreams, ok)
+	logrus.Debugf("cm skipped streams %s and ok %v", skippedStreams, ok)
 	if !ok {
 		err := fmt.Errorf("could not find the skipped stream setting in the config map %#v", cm.Data)
 		return false, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
@@ -277,7 +275,7 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 		streams = strings.Split(skippedStreams, " ")
 	}
 
-	logrus.Printf(prefix+"cm array len %d and contents %#v and srcfg len %d and contents %#v", len(streams), streams, len(srcfg.Spec.SkippedImagestreams), srcfg.Spec.SkippedImagestreams)
+	logrus.Debugf("cm array len %d and contents %#v and srcfg len %d and contents %#v", len(streams), streams, len(srcfg.Spec.SkippedImagestreams), srcfg.Spec.SkippedImagestreams)
 	if len(streams) != len(srcfg.Spec.SkippedImagestreams) {
 		logrus.Printf("SkippedImageStreams number of entries changed from %s, processing %v", skippedStreams, srcfg)
 		return true, nil
@@ -329,19 +327,14 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 }
 
 func (h *Handler) StoreCurrentValidConfig(srcfg *v1alpha1.SamplesResource) error {
-	//TODO remove/alter https://bugzilla.redhat.com/show_bug.cgi?id=1645463 related debug
-	// either after resolving that issue, or when we ditch the config map ... whatever
-	// happens first
-	// Consciously making the logging "always on" to facilitate debug gather with QA
-	prefix := "bz1645463 DBG - "
 	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
 	if err != nil && !kerrors.IsNotFound(err) {
-		logrus.Printf(prefix+" could not get cfgmap %#v", err)
+		logrus.Debugf("could not get cfgmap %#v", err)
 		// just return error to sdk for retry
 		return err
 	}
 	if kerrors.IsNotFound(err) {
-		logrus.Printf(prefix + " cfg map not found ?!?!?")
+		logrus.Debugf("cfg map not found ?!?!?")
 		err = fmt.Errorf("Operator in compromised state; Could not find config map even though samplesresource exists")
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v")
 		h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
@@ -372,11 +365,11 @@ func (h *Handler) StoreCurrentValidConfig(srcfg *v1alpha1.SamplesResource) error
 
 	cm.Data[regkey] = srcfg.Spec.SamplesRegistry
 	var value string
-	logrus.Printf(prefix+" len skipped imgstrms %d", len(srcfg.Spec.SkippedImagestreams))
+	logrus.Debugf("len skipped imgstrms %d", len(srcfg.Spec.SkippedImagestreams))
 	for _, val := range srcfg.Spec.SkippedImagestreams {
 		value = value + val + " "
 	}
-	logrus.Printf(prefix+"adding value %s to cfgmap key %s", value, skippedstreamskey)
+	logrus.Debugf("adding value %s to cfgmap key %s", value, skippedstreamskey)
 	cm.Data[skippedstreamskey] = value
 
 	value = ""
@@ -393,7 +386,7 @@ func (h *Handler) StoreCurrentValidConfig(srcfg *v1alpha1.SamplesResource) error
 	}
 
 	_, err = h.configmapclientwrapper.Update(h.namespace, cm)
-	logrus.Printf(prefix+" update to cm %s in namespace %s got err %#v", cm.Name, h.namespace, err)
+	logrus.Debugf("update to cm %s in namespace %s got err %#v", cm.Name, h.namespace, err)
 	return err
 }
 
