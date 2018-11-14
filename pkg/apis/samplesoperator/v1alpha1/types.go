@@ -104,6 +104,13 @@ type SamplesResourceSpec struct {
 	SkippedTemplates []string `json:"skippedTemplates,omitempty" protobuf:"bytes,6,opt,name=skippedTemplates"`
 }
 type SamplesResourceStatus struct {
+	// operatorsv1alpha1api.OperatorStatus reflects the current operational status of the on/off switch for
+	// the operator.  This operator compares the ManagementState as part of determining that we are turning
+	// the operator back on (i.e. "Managed") when it was previously "Unmanaged".  The "Removed" to "Managed"
+	// transition is currently handled by the fact that our config map is missing.
+	// TODO when we ditch the config map and store current config in the operator's status, we'll most likely
+	// need to track "Removed" to "Managed" transitions via compares here as well.
+	operatorsv1alpha1api.OperatorStatus `json:",inline"`
 	// Conditions represents the available maintenance status of the sample
 	// imagestreams and templates.
 	Conditions []SamplesResourceCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
@@ -131,6 +138,16 @@ const (
 	// in the Reason field of the condition.  The Reason field being empty corresponds
 	// with this condition being marked true.
 	ImageChangesInProgress SamplesResourceConditionType = "ChangesInProgress"
+	// RemovedManagementStateOnHold represents whether the SamplesResource ManagementState
+	// has been set to Removed while a samples creation/update cycle is still in progress.  In other
+	// words, when ImageChangesInProgress is True.  We
+	// do not want to the create/updates and deletes of the samples to be occurring in parallel.
+	// So the actual Removed processing will be initated only after ImageChangesInProgress is set
+	// to false.  NOTE:  the optimistic update contention between the imagestream watch trying to
+	// update ImageChangesInProgress and the sampleresource watch simply returning an error an initiating
+	// a retry when ManagementState was set to Removed lead to a prolonged, sometimes seemingly unresolved,
+	// period of circular contention
+	RemovedManagementStateOnHold SamplesResourceConditionType = "PendingRemove"
 )
 
 // SamplesResourceCondition captures various conditions of the SamplesResource
