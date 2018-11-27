@@ -399,7 +399,7 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) (*corev1.Confi
 		case v1alpha1.X86Architecture:
 		case v1alpha1.PPCArchitecture:
 			if srcfg.Spec.InstallType == v1alpha1.CentosSamplesDistribution {
-				err := fmt.Errorf("do not support centos distribution on ppc64l3")
+				err := fmt.Errorf("do not support centos distribution on ppc64le")
 				return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 			}
 		default:
