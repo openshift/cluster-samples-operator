@@ -1432,18 +1432,22 @@ func (h *Handler) coreUpdateDockerPullSpec(oldreg, newreg string, oldies []strin
 	if strings.Count(oldreg, "/") == 2 {
 		hasRegistry = true
 	}
+	logrus.Debugf("coreUpdatePull hasRegistry %v", hasRegistry)
 	if hasRegistry {
 		for _, old := range oldies {
 			if strings.HasPrefix(oldreg, old) {
 				oldreg = strings.Replace(oldreg, old, newreg, 1)
+				logrus.Debugf("coreUpdatePull hasReg1 reg now %s", oldreg)
 			} else {
 				// the content from openshift/library has something odd in in ... replace the registry piece
 				parts := strings.Split(oldreg, "/")
 				oldreg = newreg + "/" + parts[1] + "/" + parts[2]
+				logrus.Debugf("coreUpdatePull hasReg2 reg now %s", oldreg)
 			}
 		}
 	} else {
 		oldreg = newreg + "/" + oldreg
+		logrus.Debugf("coreUpdatePull no hasReg reg now %s", oldreg)
 	}
 
 	return oldreg
@@ -1451,7 +1455,10 @@ func (h *Handler) coreUpdateDockerPullSpec(oldreg, newreg string, oldies []strin
 
 func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.ImageStream, opcfg *v1alpha1.SamplesResource) {
 	if len(opcfg.Spec.SamplesRegistry) > 0 {
-		if !strings.HasPrefix(imagestream.Spec.DockerImageRepository, opcfg.Spec.SamplesRegistry) {
+		logrus.Debugf("updateDockerPullSpec stream %s has repo %s", imagestream.Name, imagestream.Spec.DockerImageRepository)
+		// don't mess with deprecated field unless it is actually set with something
+		if len(imagestream.Spec.DockerImageRepository) > 0 &&
+			!strings.HasPrefix(imagestream.Spec.DockerImageRepository, opcfg.Spec.SamplesRegistry) {
 			// if not one of our 4 defaults ...
 			imagestream.Spec.DockerImageRepository = h.coreUpdateDockerPullSpec(imagestream.Spec.DockerImageRepository,
 				opcfg.Spec.SamplesRegistry,
@@ -1459,10 +1466,18 @@ func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.Ima
 		}
 
 		for _, tagref := range imagestream.Spec.Tags {
-			if !strings.HasPrefix(tagref.From.Name, opcfg.Spec.SamplesRegistry) {
-				tagref.From.Name = h.coreUpdateDockerPullSpec(tagref.From.Name,
-					opcfg.Spec.SamplesRegistry,
-					oldies)
+			logrus.Debugf("updateDockerPullSpec stream %s and tag %s has from %#v", imagestream.Name, tagref.Name, tagref.From)
+			if tagref.From != nil {
+				switch tagref.From.Kind {
+				// ImageStreamTag and ImageStreamImage will ultimately point to a DockerImage From object reference
+				// we are only updating the actual registry pull specs
+				case "DockerImage":
+					if !strings.HasPrefix(tagref.From.Name, opcfg.Spec.SamplesRegistry) {
+						tagref.From.Name = h.coreUpdateDockerPullSpec(tagref.From.Name,
+							opcfg.Spec.SamplesRegistry,
+							oldies)
+					}
+				}
 			}
 		}
 	}
