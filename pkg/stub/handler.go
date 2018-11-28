@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
@@ -54,9 +53,9 @@ func NewHandler() sdk.Handler {
 
 	h.sdkwrapper = &defaultSDKWrapper{h: &h}
 
-	h.fileimagegetter = &defaultImageStreamFromFileGetter{h: &h}
-	h.filetemplategetter = &defaultTemplateFromFileGetter{h: &h}
-	h.filefinder = &defaultResourceFileLister{h: &h}
+	h.Fileimagegetter = &DefaultImageStreamFromFileGetter{}
+	h.Filetemplategetter = &DefaultTemplateFromFileGetter{}
+	h.Filefinder = &DefaultResourceFileLister{}
 
 	h.imageclientwrapper = &defaultImageStreamClientWrapper{h: &h}
 	h.templateclientwrapper = &defaultTemplateClientWrapper{h: &h}
@@ -69,8 +68,7 @@ func NewHandler() sdk.Handler {
 	h.skippedImagestreams = make(map[string]bool)
 	h.skippedTemplates = make(map[string]bool)
 
-	h.mutex = &sync.Mutex{}
-	h.CreateDefaultResourceIfNeeded()
+	h.CreateDefaultResourceIfNeeded(nil)
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
@@ -94,9 +92,9 @@ type Handler struct {
 	secretclientwrapper    SecretClientWrapper
 	configmapclientwrapper ConfigMapClientWrapper
 
-	fileimagegetter    ImageStreamFromFileGetter
-	filetemplategetter TemplateFromFileGetter
-	filefinder         ResourceFileLister
+	Fileimagegetter    ImageStreamFromFileGetter
+	Filetemplategetter TemplateFromFileGetter
+	Filefinder         ResourceFileLister
 
 	namespace string
 
@@ -105,145 +103,201 @@ type Handler struct {
 
 	imagestreamFile map[string]string
 	templateFile    map[string]string
-
-	deleteInProgress bool
-
-	mutex *sync.Mutex
 }
 
-func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]string) (*v1alpha1.SamplesResource, string, bool) {
-	if h.deleteInProgress {
-		return nil, "", false
-	}
+// prepWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
+// the return values:
+// - srcfg: return this if we want to check the status of a prior upsert
+// - filePath: used to the caller to look up the image content for the upsert
+// - doUpsert: whether to do the upsert of not ... not doing the upsert optionally triggers the need for checking status of prior upsert
+// - err: if a problem occurred getting the samplesresource, we return the error to bubble up and initiate a retry
+func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]string) (*v1alpha1.SamplesResource, string, bool, error) {
 	srcfg, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
 	if srcfg == nil || err != nil {
-		logrus.Printf("Received watch event %s but ignoring since not have the SamplesResource yet: %#v %#v", kind+"/"+name, err, srcfg)
-		return nil, "", false
+		logrus.Printf("Received watch event %s but not upserting since not have the SamplesResource yet: %#v %#v", kind+"/"+name, err, srcfg)
+		return nil, "", false, err
 	}
+
+	if srcfg.ConditionFalse(v1alpha1.ImageChangesInProgress) {
+		// we do no return the srcfg in these cases because we do not want to bother with any progress tracking
+
+		if srcfg.DeletionTimestamp != nil {
+			logrus.Printf("Received watch event %s but not upserting since deletion of the SamplesResource is in progress and image changes are not in progress", kind+"/"+name)
+			return nil, "", false, nil
+		}
+		switch srcfg.Spec.ManagementState {
+		case operatorsv1alpha1api.Removed:
+			logrus.Debugf("Not upserting %s/%s event because operator is in removed state and image changes are not in progress", kind, name)
+			return nil, "", false, nil
+		case operatorsv1alpha1api.Unmanaged:
+			logrus.Debugf("Not upserting %s/%s event because operator is in unmanaged state and image changes are not in progress", kind, name)
+			return nil, "", false, nil
+		}
+	}
+
 	if annotations != nil {
 		isv, ok := annotations[v1alpha1.SamplesVersionAnnotation]
 		if ok && isv == v1alpha1.CodeLevel {
-			logrus.Debugf("ignoring %s/%s cause operator version matches", kind, name)
+			logrus.Debugf("Not upserting %s/%s cause operator version matches", kind, name)
 			// but return srcfg to potentially toggle pending condition
-			return srcfg, "", false
+			return srcfg, "", false, nil
 		}
 	}
-	proceed, err := h.ProcessManagementField(srcfg)
-	if !proceed || err != nil {
-		return nil, "", false
-	}
-
 	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
 	if err != nil {
 		logrus.Warningf("Problem accessing config map during image stream watch event processing: %#v", err)
-		return nil, "", false
+		return nil, "", false, nil
 	}
 	filePath, ok := cm.Data[kind+"-"+name]
 	if !ok {
 		logrus.Printf("watch event %s not part of operators inventory", name)
-		return nil, "", false
+		return nil, "", false, nil
 	}
 
-	return srcfg, filePath, true
+	return srcfg, filePath, true, nil
 }
 
 func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) error {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
+	// our pattern is the top most caller locks the mutex
 
-	srcfg, filePath, ok := h.prepWatchEvent("imagestream", is.Name, is.Annotations)
-	logrus.Debugf("prep watch event imgstr %s ok %v", is.Name, ok)
-	if !ok {
-		if srcfg != nil {
-			logrus.Debugf("checking tag spec/status for %s spec len %d status len %d", is.Name, len(is.Spec.Tags), len(is.Status.Tags))
-			// won't be updating imagestream this go around, which sets pending==true, so see if we should turn off pending
-			pending := false
-			if len(is.Spec.Tags) == len(is.Status.Tags) {
-				for _, specTag := range is.Spec.Tags {
-					matched := false
-					for _, statusTag := range is.Status.Tags {
-						logrus.Debugf("checking spec tag %s against status tag %s with num items %d", specTag.Name, statusTag.Tag, len(statusTag.Items))
-						if specTag.Name == statusTag.Tag {
-							for _, event := range statusTag.Items {
-								if specTag.Generation != nil {
-									logrus.Debugf("checking status tag %d against spec tag %d", event.Generation, *specTag.Generation)
-								}
-								if specTag.Generation != nil &&
-									*specTag.Generation <= event.Generation {
-									logrus.Debugf("got match")
+	srcfg, filePath, doUpsert, err := h.prepWatchEvent("imagestream", is.Name, is.Annotations)
+	logrus.Debugf("prep watch event imgstr %s ok %v", is.Name, doUpsert)
+	if !doUpsert {
+		if err != nil {
+			return err
+		}
+		if srcfg == nil {
+			return nil
+		}
+		processing := srcfg.Condition(v1alpha1.ImageChangesInProgress)
+		if processing.Status == corev1.ConditionFalse {
+			return nil
+		}
+
+		// so reaching this point means we have a prior upsert in progress, and we just want to track the status
+
+		logrus.Debugf("checking tag spec/status for %s spec len %d status len %d", is.Name, len(is.Spec.Tags), len(is.Status.Tags))
+		// won't be updating imagestream this go around, which sets pending==true, so see if we should turn off pending
+		pending := false
+		if len(is.Spec.Tags) == len(is.Status.Tags) {
+			for _, specTag := range is.Spec.Tags {
+				matched := false
+				for _, statusTag := range is.Status.Tags {
+					logrus.Debugf("checking spec tag %s against status tag %s with num items %d", specTag.Name, statusTag.Tag, len(statusTag.Items))
+					if specTag.Name == statusTag.Tag {
+						for _, event := range statusTag.Items {
+							if specTag.Generation != nil {
+								logrus.Debugf("checking status tag %d against spec tag %d", event.Generation, *specTag.Generation)
+							}
+							if specTag.Generation != nil &&
+								*specTag.Generation <= event.Generation {
+								logrus.Debugf("got match")
+								matched = true
+								break
+							}
+						}
+						if !matched {
+							// if an error occurred, let's give up as we are no longer "in progress"
+							// in that case as well
+							//TODO do we need yet another condition to report these errors separately from the
+							// in progress condition?
+							for _, condition := range statusTag.Conditions {
+								if condition.Status == corev1.ConditionFalse &&
+									len(condition.Message) > 0 &&
+									len(condition.Reason) > 0 {
+									logrus.Warningf("Image import for imagestream %s failed with reason %s and detailed message %s", is.Name, condition.Reason, condition.Message)
 									matched = true
 									break
 								}
 							}
+
 						}
 
-					}
-					if !matched {
-						pending = true
-						break
+						if matched {
+							break
+						}
 					}
 				}
-			}
-
-			logrus.Debugf("pending is %v for %s", pending, is.Name)
-
-			if !pending {
-				processing := srcfg.Condition(v1alpha1.ImageChangesInProgress)
-				now := kapis.Now()
-				// remove this imagestream name, including the space separator
-				logrus.Debugf("current reason %s ", processing.Reason)
-				processing.Reason = strings.Replace(processing.Reason, is.Name+" ", "", -1)
-				logrus.Debugf("reason now %s", processing.Reason)
-				if len(strings.TrimSpace(processing.Reason)) == 0 {
-					logrus.Debugf("reason empty setting to false")
-					processing.Status = corev1.ConditionFalse
-					processing.Reason = ""
+				if !matched {
+					pending = true
+					break
 				}
-				processing.LastTransitionTime = now
-				processing.LastUpdateTime = now
-				srcfg.ConditionUpdate(processing)
-				h.sdkwrapper.Update(srcfg)
-				return nil
 			}
-			// return error here so we retry the imagestream event
-			return fmt.Errorf("imagestream %s still in progress", is.Name)
+		}
+
+		logrus.Debugf("pending is %v for %s", pending, is.Name)
+
+		if !pending {
+			now := kapis.Now()
+			// remove this imagestream name, including the space separator
+			logrus.Debugf("current reason %s ", processing.Reason)
+			processing.Reason = strings.Replace(processing.Reason, is.Name+" ", "", -1)
+			logrus.Debugf("reason now %s", processing.Reason)
+			if len(strings.TrimSpace(processing.Reason)) == 0 {
+				logrus.Debugf("reason empty setting to false")
+				processing.Status = corev1.ConditionFalse
+				processing.Reason = ""
+			}
+			processing.LastTransitionTime = now
+			processing.LastUpdateTime = now
+			srcfg.ConditionUpdate(processing)
+			logrus.Debugf("SDKUPDATE no pending imgstr update")
+			return h.sdkwrapper.Update(srcfg)
 		}
 
 		return nil
 	}
 
-	imagestream, err := h.fileimagegetter.Get(filePath)
+	// prepWatchEvent has determined we actually need to do the upsert
+
+	imagestream, err := h.Fileimagegetter.Get(filePath)
 	if err != nil {
+		// still attempt to report error in status
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
+		logrus.Debugf("SDKUPDATE event img update err bad fs read")
+		h.sdkwrapper.Update(srcfg)
 		// if we get this, don't bother retrying
-		err = nil
+		return nil
 	} else {
 		err = h.upsertImageStream(imagestream, is, srcfg)
+		if err != nil {
+			h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing imagestream %s", imagestream.Name)
+			logrus.Debugf("SDKUPDATE event img update err bad api obj update")
+			h.sdkwrapper.Update(srcfg)
+		}
+		return err
 	}
-	h.sdkwrapper.Update(srcfg)
-	return err
 
 }
 
 func (h *Handler) processTemplateWatchEvent(t *templatev1.Template) error {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
+	// our pattern is the top most caller locks the mutex
 
-	srcfg, filePath, ok := h.prepWatchEvent("template", t.Name, t.Annotations)
-	if !ok {
+	srcfg, filePath, doUpsert, err := h.prepWatchEvent("template", t.Name, t.Annotations)
+	if err != nil {
+		return err
+	}
+	if !doUpsert {
 		return nil
 	}
 
-	template, err := h.filetemplategetter.Get(filePath)
+	template, err := h.Filetemplategetter.Get(filePath)
 	if err != nil {
+		// still attempt to report error in status
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
+		logrus.Debugf("SDKUPDATE event temp udpate err")
+		h.sdkwrapper.Update(srcfg)
 		// if we get this, don't bother retrying
-		err = nil
+		return nil
 	} else {
 		err = h.upsertTemplate(template, t, srcfg)
+		if err != nil {
+			h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing template %s", template.Name)
+			logrus.Debugf("SDKUPDATE event temp update err bad api obj update")
+			h.sdkwrapper.Update(srcfg)
+		}
+		return err
 	}
-	h.sdkwrapper.Update(srcfg)
-	return err
 
 }
 
@@ -322,7 +376,7 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 		}
 	}
 
-	logrus.Printf("Incoming samplesresource unchanged from last processed version")
+	logrus.Debugf("Incoming samplesresource unchanged from last processed version")
 	return false, nil
 }
 
@@ -421,7 +475,7 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) (*corev1.Confi
 
 	// if we have not had a valid SamplesResource processed, allow caller to try with
 	// the srcfg contents
-	if !srcfg.ConditionTrue(v1alpha1.SamplesExist) {
+	if !srcfg.ConditionTrue(v1alpha1.SamplesExist) && !srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
 		logrus.Println("Spec is valid because this operator has not processed a config yet")
 		return nil, nil
 	}
@@ -508,12 +562,10 @@ func (h *Handler) RemoveFinalizer(srcfg *v1alpha1.SamplesResource) {
 }
 
 func (h *Handler) NeedsFinalizing(srcfg *v1alpha1.SamplesResource) bool {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-	if h.deleteInProgress {
+	if srcfg.ConditionFalse(v1alpha1.SamplesExist) {
 		return false
 	}
-	h.deleteInProgress = true
+
 	for _, f := range srcfg.Finalizers {
 		if f == v1alpha1.SamplesResourceFinalizer {
 			return true
@@ -561,23 +613,22 @@ func (h *Handler) IsRetryableAPIError(err error) bool {
 	return false
 }
 
-func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, error) {
+func (h *Handler) CreateDefaultResourceIfNeeded(srcfg *v1alpha1.SamplesResource) (*v1alpha1.SamplesResource, error) {
+	// assume the caller has call lock on the mutex .. out pattern is to have that as
+	// high up the stack as possible ... loc because need to
 	// coordinate with event handler processing
-	// where it will set h.sampleResource
 	// when it completely updates all imagestreams/templates/statuses
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
 
-	deleteInProgress := h.deleteInProgress
+	deleteInProgress := srcfg != nil && srcfg.DeletionTimestamp != nil
 
 	var err error
 	if deleteInProgress {
-		srcfg := &v1alpha1.SamplesResource{}
+		srcfg = &v1alpha1.SamplesResource{}
 		srcfg.Name = v1alpha1.SamplesResourceName
 		srcfg.Kind = "SamplesResource"
 		srcfg.APIVersion = v1alpha1.GroupName + "/" + v1alpha1.Version
 		err = wait.PollImmediate(3*time.Second, 30*time.Second, func() (bool, error) {
-			srcfg, e := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
+			s, e := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
 			if kerrors.IsNotFound(e) {
 				return true, nil
 			}
@@ -586,7 +637,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, er
 			}
 			// based on 4.0 testing, we've been seeing empty resources returned
 			// in the not found case, but just in case ...
-			if srcfg == nil {
+			if s == nil {
 				return true, nil
 			}
 			// means still found ... will return wait.ErrWaitTimeout if this continues
@@ -595,9 +646,10 @@ func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, er
 		if err != nil {
 			return nil, h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "issues waiting for delete to complete: %v")
 		}
+		srcfg = nil
+		logrus.Println("delete of SamplesResource recognized")
 	}
 
-	srcfg, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
 	if srcfg == nil || kerrors.IsNotFound(err) {
 		h.CreateConfigMapIfNeeded()
 		// "4a" in the "startup" workflow, just create default
@@ -608,6 +660,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, er
 		srcfg.APIVersion = v1alpha1.GroupName + "/" + v1alpha1.Version
 		srcfg.Spec.Architectures = append(srcfg.Spec.Architectures, v1alpha1.X86Architecture)
 		srcfg.Spec.InstallType = v1alpha1.CentosSamplesDistribution
+		srcfg.Spec.ManagementState = operatorsv1alpha1api.Managed
 		now := kapis.Now()
 		exist := srcfg.Condition(v1alpha1.SamplesExist)
 		exist.Status = corev1.ConditionFalse
@@ -624,6 +677,17 @@ func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, er
 		valid.LastUpdateTime = now
 		valid.LastTransitionTime = now
 		srcfg.ConditionUpdate(valid)
+		inProgress := srcfg.Condition(v1alpha1.ImageChangesInProgress)
+		inProgress.Status = corev1.ConditionFalse
+		inProgress.LastUpdateTime = now
+		inProgress.LastTransitionTime = now
+		srcfg.ConditionUpdate(inProgress)
+		onHold := srcfg.Condition(v1alpha1.RemovedManagementStateOnHold)
+		onHold.Status = corev1.ConditionFalse
+		onHold.LastUpdateTime = now
+		onHold.LastTransitionTime = now
+		srcfg.ConditionUpdate(onHold)
+		h.AddFinalizer(srcfg)
 		logrus.Println("creating default SamplesResource")
 		err = h.sdkwrapper.Create(srcfg)
 		if err != nil {
@@ -638,7 +702,6 @@ func (h *Handler) CreateDefaultResourceIfNeeded() (*v1alpha1.SamplesResource, er
 		logrus.Printf("SamplesResource %#v found during operator startup", srcfg)
 	}
 
-	h.deleteInProgress = false
 	return srcfg, nil
 }
 
@@ -660,7 +723,7 @@ func (h *Handler) CreateConfigMapIfNeeded() error {
 		}
 	} else {
 		if err == nil {
-			logrus.Printf("ConfigMap for SamplesResource %#v found during operator startup", cm)
+			logrus.Debugf("ConfigMap for SamplesResource %#v found during operator startup", cm)
 		} else {
 			logrus.Printf("Could not ascertain presence of ConfigMap: %v", err)
 		}
@@ -751,31 +814,45 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResou
 	iopts := metav1.ListOptions{LabelSelector: v1alpha1.SamplesManagedLabel + "=true"}
 
 	streamList, err := h.imageclientwrapper.List("openshift", iopts)
-	if err != nil {
+	if err != nil && !kerrors.IsNotFound(err) {
 		logrus.Warnf("Problem listing openshift imagestreams on SamplesResource delete: %#v", err)
+		return err
 	} else {
-		for _, stream := range streamList.Items {
-			if _, ok := h.skippedImagestreams[stream.Name]; ok {
-				continue
-			}
-			err = h.imageclientwrapper.Delete("openshift", stream.Name, &metav1.DeleteOptions{})
-			if err != nil && !kerrors.IsNotFound(err) {
-				logrus.Warnf("Problem deleteing openshift imagestream %s on SamplesResource delete: %#v", stream.Name, err)
+		if streamList.Items != nil {
+			for _, stream := range streamList.Items {
+				// this should filter both skipped imagestreams and imagestreams we
+				// do not manage
+				manage, ok := stream.Labels[v1alpha1.SamplesManagedLabel]
+				if !ok || strings.TrimSpace(manage) != "true" {
+					continue
+				}
+				err = h.imageclientwrapper.Delete("openshift", stream.Name, &metav1.DeleteOptions{})
+				if err != nil && !kerrors.IsNotFound(err) {
+					logrus.Warnf("Problem deleting openshift imagestream %s on SamplesResource delete: %#v", stream.Name, err)
+					return err
+				}
 			}
 		}
 	}
 
 	tempList, err := h.templateclientwrapper.List("openshift", iopts)
-	if err != nil {
-		logrus.Warnf("Problem listing openshift imagestreams on SamplesResource delete: %#v", err)
+	if err != nil && !kerrors.IsNotFound(err) {
+		logrus.Warnf("Problem listing openshift templates on SamplesResource delete: %#v", err)
+		return err
 	} else {
-		for _, temp := range tempList.Items {
-			if _, ok := h.skippedTemplates[temp.Name]; ok {
-				continue
-			}
-			err = h.templateclientwrapper.Delete("openshift", temp.Name, &metav1.DeleteOptions{})
-			if err != nil && !kerrors.IsNotFound(err) {
-				logrus.Warnf("Problem deleting openshift template %s on SamplesResource delete: %#v", temp.Name, err)
+		if tempList.Items != nil {
+			for _, temp := range tempList.Items {
+				// this should filter both skipped templates and templates we
+				// do not manage
+				manage, ok := temp.Labels[v1alpha1.SamplesManagedLabel]
+				if !ok || strings.TrimSpace(manage) != "true" {
+					continue
+				}
+				err = h.templateclientwrapper.Delete("openshift", temp.Name, &metav1.DeleteOptions{})
+				if err != nil && !kerrors.IsNotFound(err) {
+					logrus.Warnf("Problem deleting openshift template %s on SamplesResource delete: %#v", temp.Name, err)
+					return err
+				}
 			}
 		}
 	}
@@ -783,11 +860,17 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResou
 	err = h.secretclientwrapper.Delete("openshift", v1alpha1.SamplesRegistryCredentials, &metav1.DeleteOptions{})
 	if err != nil && !kerrors.IsNotFound(err) {
 		logrus.Warnf("Problem deleting openshift secret %s on SamplesResource delete: %#v", v1alpha1.SamplesRegistryCredentials, err)
+		return err
 	}
+
+	//TODO when we start copying secrets from kubesystem to act as the default secret for pulling rhel content
+	// we'll want to delete that one too ... we'll need to put a marking on the secret to indicate we created it
+	// vs. the admin creating it
 
 	err = h.configmapclientwrapper.Delete(h.namespace, v1alpha1.SamplesResourceName)
 	if err != nil && !kerrors.IsNotFound(err) {
 		logrus.Warnf("Problem deleting openshift configmap %s on SamplesResource delete: %#v", v1alpha1.SamplesResourceName, err)
+		return err
 	}
 	return nil
 }
@@ -795,48 +878,87 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResou
 // ProcessManagementField returns true if the operator should handle the SampleResource event
 // and false if it should not, as well as an err in case we want to bubble that up to
 // the controller level logic for retry
-func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool, error) {
+// the returns are
+// first bool - whether to process this event
+// second bool - whether to update the samples resources with the new conditions
+// err - any errors that occurred interacting with the api server during cleanup
+func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool, bool, error) {
 	switch srcfg.Spec.ManagementState {
 	case operatorsv1alpha1api.Removed:
-		// if samples exists already is false, that means the samples related artifacts are gone,
-		// and we can ignore, unless this is the rhel scenario where we have not installed the
-		// rhel samples because the secret is missing, but then they manage to add the secret AND
-		// mark this resource as Removed before we manage to install the samples ... if so, let's
-		// at least delete the secret ... won't distinguish between centos and rhel though in case
-		// they have also overriden the registry to pull from, and have loaded the centos content there
-		if srcfg.ConditionFalse(v1alpha1.SamplesExist) &&
-			srcfg.ConditionFalse(v1alpha1.ImportCredentialsExist) {
-			logrus.Debugf("ignoring subequent samplesresource with managed==removed after remove is processed")
-			return false, nil
+		// first, we will not process a Removed setting if a prior create/update cycle is still in progress;
+		// if still creating/updating, set the remove on hold condition and we'll try the remove once that
+		// is false
+		if srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) && srcfg.ConditionTrue(v1alpha1.RemovedManagementStateOnHold) {
+			return false, false, nil
 		}
 
-		logrus.Println("management state set to removed so deleting samples and configmap")
-		err := h.CleanUpOpenshiftNamespaceOnDelete(srcfg)
-		if err != nil {
-			return false, h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "The error %v during openshift namespace cleanup has left the samples in an unknown state")
+		if srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) && !srcfg.ConditionTrue(v1alpha1.RemovedManagementStateOnHold) {
+			now := kapis.Now()
+			condition := srcfg.Condition(v1alpha1.RemovedManagementStateOnHold)
+			condition.LastTransitionTime = now
+			condition.LastUpdateTime = now
+			condition.Status = corev1.ConditionTrue
+			srcfg.ConditionUpdate(condition)
+			return false, true, nil
 		}
-		// explicitly reset samples exist to false since the samplesresource has not
-		// actually been deleted
-		now := kapis.Now()
-		condition := srcfg.Condition(v1alpha1.SamplesExist)
-		condition.LastTransitionTime = now
-		condition.LastUpdateTime = now
-		condition.Status = corev1.ConditionFalse
-		srcfg.ConditionUpdate(condition)
-		return false, nil
+
+		// turn off on hold if need be
+		if srcfg.ConditionTrue(v1alpha1.RemovedManagementStateOnHold) && srcfg.ConditionFalse(v1alpha1.ImageChangesInProgress) {
+			now := kapis.Now()
+			condition := srcfg.Condition(v1alpha1.RemovedManagementStateOnHold)
+			condition.LastTransitionTime = now
+			condition.LastUpdateTime = now
+			condition.Status = corev1.ConditionFalse
+			srcfg.ConditionUpdate(condition)
+			return false, true, nil
+		}
+
+		// now actually process removed state
+		if srcfg.Spec.ManagementState != srcfg.Status.State ||
+			srcfg.ConditionTrue(v1alpha1.SamplesExist) ||
+			srcfg.ConditionTrue(v1alpha1.ImportCredentialsExist) {
+			logrus.Println("management state set to removed so deleting samples, credentials, and configmap")
+			err := h.CleanUpOpenshiftNamespaceOnDelete(srcfg)
+			if err != nil {
+				return false, true, h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "The error %v during openshift namespace cleanup has left the samples in an unknown state")
+			}
+			// explicitly reset samples exist and import cred to false since the samplesresource has not
+			// actually been deleted; secret watch ignores events when samples resource is in removed state
+			now := kapis.Now()
+			condition := srcfg.Condition(v1alpha1.SamplesExist)
+			condition.LastTransitionTime = now
+			condition.LastUpdateTime = now
+			condition.Status = corev1.ConditionFalse
+			srcfg.ConditionUpdate(condition)
+			cred := srcfg.Condition(v1alpha1.ImportCredentialsExist)
+			cred.LastTransitionTime = now
+			cred.LastUpdateTime = now
+			cred.Status = corev1.ConditionFalse
+			srcfg.ConditionUpdate(cred)
+			srcfg.Status.State = operatorsv1alpha1api.Removed
+			return false, true, nil
+		}
+		return false, false, nil
 	case operatorsv1alpha1api.Managed:
-		// in case configmap was removed via dealing or removed mgmt state
-		// ensure config map is created
-		if !srcfg.ConditionTrue(v1alpha1.SamplesExist) {
+		if srcfg.Spec.ManagementState != srcfg.Status.State {
 			logrus.Println("management state set to managed")
-			h.CreateConfigMapIfNeeded()
 		}
-		return true, nil
+		h.CreateConfigMapIfNeeded()
+		// will set status state to managed at top level caller
+		// to deal with config change processing
+		return true, false, nil
 	case operatorsv1alpha1api.Unmanaged:
-		logrus.Println("management state set to unmanaged")
-		return false, nil
+		if srcfg.Spec.ManagementState != srcfg.Status.State {
+			logrus.Println("management state set to unmanaged")
+			srcfg.Status.State = operatorsv1alpha1api.Unmanaged
+			return false, true, nil
+		}
+		return false, false, nil
 	default:
-		return true, nil
+		// force it to Managed if they passed in something funky, including the empty string
+		logrus.Warningf("Unknown management state %s specified; switch to Managed", srcfg.Spec.ManagementState)
+		srcfg.Spec.ManagementState = operatorsv1alpha1api.Managed
+		return true, false, nil
 	}
 }
 
@@ -863,27 +985,32 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		if dockercfgSecret.Name != v1alpha1.SamplesRegistryCredentials {
 			return nil
 		}
-		h.mutex.Lock()
-		defer h.mutex.Unlock()
+
+		//TODO what do we do about possible missed delete events since we
+		// cannot add a finalizer in our namespace secret
 
 		srcfg, _ := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
 		if srcfg != nil {
-			doit, err := h.ProcessManagementField(srcfg)
-			if !doit || err != nil {
-				return err
+			switch srcfg.Spec.ManagementState {
+			case operatorsv1alpha1api.Removed:
+				logrus.Debugln("Ignoring secret event because samples resource is in removed state")
+				return nil
+			case operatorsv1alpha1api.Unmanaged:
+				logrus.Debugln("Ignoring secret event because samples resource is in unmanaged state")
+				return nil
 			}
-			err = h.manageDockerCfgSecret(event.Deleted, srcfg, dockercfgSecret)
+			err := h.manageDockerCfgSecret(event.Deleted, srcfg, dockercfgSecret)
 			if err != nil {
 				return err
 			}
 			// flush the status changes generated by the processing
+			logrus.Debugf("SDKUPDATE event secret update")
 			return h.sdkwrapper.Update(srcfg)
 		} else {
 			return fmt.Errorf("Received secret %s but do not have the SamplesResource yet, requeuing", dockercfgSecret.Name)
 		}
 
 	case *v1alpha1.SamplesResource:
-		newStatus := corev1.ConditionTrue
 		srcfg, _ := event.Object.(*v1alpha1.SamplesResource)
 
 		if srcfg.Name != v1alpha1.SamplesResourceName || srcfg.Namespace != "" {
@@ -902,67 +1029,112 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		// 2) then after we remove finalizer, comes in with delete timestamp
 		// and event delete flag true
 		if event.Deleted {
-			// possibly tell poller to stop
 			logrus.Info("A previous delete attempt has been successfully completed")
 			return nil
 		}
 		if srcfg.DeletionTimestamp != nil {
+			// before we kick off the delete cycle though, we make sure a prior creation
+			// cycle is not still in progress, because we don't want the create adding back
+			// in things we just deleted ... if an upsert is still in progress, return nil
+			if srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
+				return nil
+			}
+
 			if h.NeedsFinalizing(srcfg) {
+				// so we initiate the delete and set exists to false first, where if we get
+				// conflicts because of start up imagestream events, the retry should work
+				// cause the finalizer is still there; also, needs finalizing sets the deleteInProgress
+				// flag (which imagestream event processing checks)
+				//
+				// when we come back in with the deleteInProgress already true, with a delete timestamp
+				// we then remove the finalizer and create the new samplesresource
+				//
+				// note, as part of resetting the delete flag during error retries, we still need
+				// a way to tell the imagestream event processing to not bother with pending updates,
+				// so we have an additional flag for that special case
+				logrus.Println("Initiating samples delete and marking exists false")
+				err := h.CleanUpOpenshiftNamespaceOnDelete(srcfg)
+				if err != nil {
+					return err
+				}
+				h.GoodConditionUpdate(srcfg, corev1.ConditionFalse, v1alpha1.SamplesExist)
+				logrus.Debugf("SDKUPDATE exist false update")
+				err = h.sdkwrapper.Update(srcfg)
+				if err != nil {
+					logrus.Printf("error on samplesresource update after setting exists condition to false (returning error to retry): %v", err)
+					return err
+				}
+			} else {
 				logrus.Println("Initiating finalizer processing for a SampleResource delete attempt")
 				h.RemoveFinalizer(srcfg)
-				h.CleanUpOpenshiftNamespaceOnDelete(srcfg)
-				h.GoodConditionUpdate(srcfg, corev1.ConditionFalse, v1alpha1.SamplesExist)
+				logrus.Debugf("SDKUPDATE remove finalizer update")
 				err := h.sdkwrapper.Update(srcfg)
+				if err != nil {
+					logrus.Printf("error removing samplesresource finalizer during delete (hopefully retry on return of error works): %v", err)
+					return err
+				}
 				go func() {
-					h.CreateDefaultResourceIfNeeded()
+					h.CreateDefaultResourceIfNeeded(srcfg)
 				}()
-				return err
 			}
 			return nil
 		}
 
-		doit, err := h.ProcessManagementField(srcfg)
+		doit, srcfgUpdate, err := h.ProcessManagementField(srcfg)
 		if !doit || err != nil {
-			// flush status update
-			h.sdkwrapper.Update(srcfg)
+			if err != nil || srcfgUpdate {
+				// flush status update
+				logrus.Debugf("SDKUPDATE process mgmt update")
+				h.sdkwrapper.Update(srcfg)
+			}
 			return err
 		}
-
-		// coordinate with timer's check on creating
-		// default resource ... looks at h.sampleResource,
-		// which is not set until this whole case is completed
-		h.mutex.Lock()
-		defer h.mutex.Unlock()
 
 		cm, err := h.SpecValidation(srcfg)
 		if err != nil {
 			// flush status update
+			logrus.Debugf("SDKUPDATE bad spec validation update")
 			h.sdkwrapper.Update(srcfg)
 			return err
 		}
 
-		if cm != nil {
-			changed, err := h.VariableConfigChanged(srcfg, cm)
-			if err != nil {
-				// flush status update
-				h.sdkwrapper.Update(srcfg)
-				return err
-			}
-			if !changed {
-				return nil
+		if srcfg.Spec.ManagementState == srcfg.Status.State {
+			if cm != nil {
+				changed, err := h.VariableConfigChanged(srcfg, cm)
+				if err != nil {
+					// flush status update
+					logrus.Debugf("SDKUPDATE var cfg chg err update")
+					h.sdkwrapper.Update(srcfg)
+					return err
+				}
+				// so ignore if config does not change and the samples exist and
+				// we are not in progress
+				if !changed &&
+					srcfg.ConditionTrue(v1alpha1.SamplesExist) &&
+					srcfg.ConditionFalse(v1alpha1.ImageChangesInProgress) {
+					logrus.Debugf("Handle ignoring because config the same and exists is true and in progress false")
+					return nil
+				}
 			}
 		}
 
+		srcfg.Status.State = operatorsv1alpha1api.Managed
+
 		// if trying to do rhel to the default registry.redhat.io registry requires the secret
 		// be in place since registry.redhat.io requires auth to pull; if it is not ready
-		// error state will be logged by WaitingForCredential, so return error and requeue
+		// error state will be logged by WaitingForCredential
 		err = h.WaitingForCredential(srcfg)
 		if err != nil {
-			// flush status update
-			h.sdkwrapper.Update(srcfg)
-			// abort processing, but not returning error to initiate requeue
-			return nil
+			// flush status update ... the only error generated by WaitingForCredential, not
+			// by api obj access
+			logrus.Println("samplesresource update ignored since need the RHEL credential")
+			// if update to set import cred condition to false fails, return that error
+			// to requeue
+			return h.sdkwrapper.Update(srcfg)
 		}
+
+		// lastly, if we are in samples exists and progressing both true, we can forgo cycling
+		// through the image content
 
 		h.buildSkipFilters(srcfg)
 
@@ -974,37 +1146,74 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			srcfg.Spec.InstallType = v1alpha1.CentosSamplesDistribution
 		}
 
-		for _, arch := range srcfg.Spec.Architectures {
-			dir := h.GetBaseDir(arch, srcfg)
-			files, err := h.filefinder.List(dir)
-			if err != nil {
-				err = h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
-				h.sdkwrapper.Update(srcfg)
-				return err
-			}
-			err = h.processFiles(dir, files, srcfg)
-			if err != nil {
-				err = h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error processing content : %v")
-				h.sdkwrapper.Update(srcfg)
-				return err
-			}
-
+		err = h.StoreCurrentValidConfig(srcfg)
+		if err != nil {
+			err = h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "error %v updating configmap, subsequent config validations untenable")
+			return err
 		}
 
-		h.AddFinalizer(srcfg)
-
-		if !h.deleteInProgress {
-			err = h.StoreCurrentValidConfig(srcfg)
-			if err != nil {
-				err = h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "error %v updating configmap, subsequent config validations untenable")
-				return err
+		if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 {
+			for _, arch := range srcfg.Spec.Architectures {
+				dir := h.GetBaseDir(arch, srcfg)
+				files, err := h.Filefinder.List(dir)
+				if err != nil {
+					err = h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
+					logrus.Debugf("SDKUPDATE file list err update")
+					h.sdkwrapper.Update(srcfg)
+					return err
+				}
+				err = h.processFiles(dir, files, srcfg)
+				if err != nil {
+					err = h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error processing content : %v")
+					logrus.Debugf("SDKUPDATE proc file err update")
+					h.sdkwrapper.Update(srcfg)
+					return err
+				}
 			}
 		}
 
-		// this also atomically updates the ConfigValid condition to True
-		h.GoodConditionUpdate(srcfg, newStatus, v1alpha1.SamplesExist)
-		// flush updates from processing
-		return h.sdkwrapper.Update(srcfg)
+		if !srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
+			// optimistically set in progress true before upserting samples
+			// to avoid samples watches updating the samplesresource before
+			// we actually set in progress to true on the samplesresource;
+			// we'll revert the in progress change in the error case
+			now := kapis.Now()
+			progressing := srcfg.Condition(v1alpha1.ImageChangesInProgress)
+			progressing.LastUpdateTime = now
+			progressing.LastTransitionTime = now
+			logrus.Debugf("Handle changing processing from false to true")
+			progressing.Status = corev1.ConditionTrue
+			for isName := range h.imagestreamFile {
+				if !strings.Contains(progressing.Reason, isName+" ") {
+					progressing.Reason = progressing.Reason + isName + " "
+				}
+			}
+			logrus.Debugf("Handle Reason field set to %s", progressing.Reason)
+			srcfg.ConditionUpdate(progressing)
+			logrus.Debugf("SDKUPDATE progressing true update")
+			err = h.sdkwrapper.Update(srcfg)
+			if err != nil {
+				return err
+			}
+			err = h.createSamples(srcfg)
+			if err != nil {
+				h.processError(srcfg, v1alpha1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
+				e := h.sdkwrapper.Update(srcfg)
+				if e != nil {
+					return e
+				}
+				return err
+			}
+			return nil
+		}
+
+		if !srcfg.ConditionTrue(v1alpha1.SamplesExist) {
+			h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.SamplesExist)
+			// flush updates from processing
+			logrus.Debugf("SDKUPDATE good cond update")
+			return h.sdkwrapper.Update(srcfg)
+		}
+
 	}
 	return nil
 }
@@ -1060,16 +1269,6 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 		}
 		return nil
 	}
-
-	progress := opcfg.Condition(v1alpha1.ImageChangesInProgress)
-	progress.Status = corev1.ConditionTrue
-	now := kapis.Now()
-	progress.LastUpdateTime = now
-	progress.LastTransitionTime = now
-	if !strings.Contains(progress.Reason, imagestreamInOperatorImage.Name) {
-		progress.Reason = progress.Reason + imagestreamInOperatorImage.Name + " "
-	}
-	opcfg.ConditionUpdate(progress)
 
 	h.updateDockerPullSpec([]string{"docker.io", "registry.redhat.io", "registry.access.redhat.com", "quay.io"}, imagestreamInOperatorImage, opcfg)
 
@@ -1141,11 +1340,57 @@ func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *tem
 	return nil
 }
 
+func (h *Handler) createSamples(srcfg *v1alpha1.SamplesResource) error {
+	for _, fileName := range h.imagestreamFile {
+		imagestream, err := h.Fileimagegetter.Get(fileName)
+		if err != nil {
+			return err
+		}
+		is, err := h.imageclientwrapper.Get("openshift", imagestream.Name, metav1.GetOptions{})
+		if err != nil && !kerrors.IsNotFound(err) {
+			return err
+		}
+
+		if kerrors.IsNotFound(err) {
+			// testing showed that we get an empty is vs. nil in this case
+			is = nil
+		}
+
+		err = h.upsertImageStream(imagestream, is, srcfg)
+		if err != nil {
+			return err
+		}
+	}
+	for _, fileName := range h.templateFile {
+		template, err := h.Filetemplategetter.Get(fileName)
+		if err != nil {
+			return err
+		}
+
+		t, err := h.templateclientwrapper.Get("openshift", template.Name, metav1.GetOptions{})
+		if err != nil && !kerrors.IsNotFound(err) {
+			return err
+		}
+
+		if kerrors.IsNotFound(err) {
+			// testing showed that we get an empty is vs. nil in this case
+			t = nil
+		}
+
+		err = h.upsertTemplate(template, t, srcfg)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.SamplesResource) error {
+
 	for _, file := range files {
 		if file.IsDir() {
 			logrus.Printf("processing subdir %s from dir %s", file.Name(), dir)
-			subfiles, err := h.filefinder.List(dir + "/" + file.Name())
+			subfiles, err := h.Filefinder.List(dir + "/" + file.Name())
 			if err != nil {
 				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content: %v")
 			}
@@ -1153,55 +1398,28 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1alpha1.
 			if err != nil {
 				return err
 			}
+
+			continue
 		}
 		logrus.Printf("processing file %s from dir %s", file.Name(), dir)
 
 		if strings.HasSuffix(dir, "imagestreams") {
-			imagestream, err := h.fileimagegetter.Get(dir + "/" + file.Name())
+			imagestream, err := h.Fileimagegetter.Get(dir + "/" + file.Name())
 			if err != nil {
 				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", dir+"/"+file.Name())
 			}
-
 			h.imagestreamFile[imagestream.Name] = dir + "/" + file.Name()
-
-			is, err := h.imageclientwrapper.Get("openshift", imagestream.Name, metav1.GetOptions{})
-			if err != nil && !kerrors.IsNotFound(err) {
-				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "unexpected imagestream get error: %v")
-			}
-
-			if kerrors.IsNotFound(err) {
-				// testing showed that we get an empty is vs. nil in this case
-				is = nil
-			}
-
-			err = h.upsertImageStream(imagestream, is, opcfg)
-			if err != nil {
-				return err
-			}
+			continue
 		}
 
 		if strings.HasSuffix(dir, "templates") {
-			template, err := h.filetemplategetter.Get(dir + "/" + file.Name())
+			template, err := h.Filetemplategetter.Get(dir + "/" + file.Name())
 			if err != nil {
 				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", dir+"/"+file.Name())
 			}
 
 			h.templateFile[template.Name] = dir + "/" + file.Name()
 
-			t, err := h.templateclientwrapper.Get("openshift", template.Name, metav1.GetOptions{})
-			if err != nil && !kerrors.IsNotFound(err) {
-				return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "unexpected template get error: %v")
-			}
-
-			if kerrors.IsNotFound(err) {
-				// testing showed that we get an empty is vs. nil in this case
-				t = nil
-			}
-
-			err = h.upsertTemplate(template, t, opcfg)
-			if err != nil {
-				return err
-			}
 		}
 	}
 	return nil
@@ -1422,11 +1640,10 @@ type ImageStreamFromFileGetter interface {
 	Get(fullFilePath string) (is *imagev1.ImageStream, err error)
 }
 
-type defaultImageStreamFromFileGetter struct {
-	h *Handler
+type DefaultImageStreamFromFileGetter struct {
 }
 
-func (g *defaultImageStreamFromFileGetter) Get(fullFilePath string) (is *imagev1.ImageStream, err error) {
+func (g *DefaultImageStreamFromFileGetter) Get(fullFilePath string) (is *imagev1.ImageStream, err error) {
 	isjsonfile, err := ioutil.ReadFile(fullFilePath)
 	if err != nil {
 		return nil, err
@@ -1445,11 +1662,10 @@ type TemplateFromFileGetter interface {
 	Get(fullFilePath string) (t *templatev1.Template, err error)
 }
 
-type defaultTemplateFromFileGetter struct {
-	h *Handler
+type DefaultTemplateFromFileGetter struct {
 }
 
-func (g *defaultTemplateFromFileGetter) Get(fullFilePath string) (t *templatev1.Template, err error) {
+func (g *DefaultTemplateFromFileGetter) Get(fullFilePath string) (t *templatev1.Template, err error) {
 	tjsonfile, err := ioutil.ReadFile(fullFilePath)
 	if err != nil {
 		return nil, err
@@ -1467,11 +1683,10 @@ type ResourceFileLister interface {
 	List(dir string) (files []os.FileInfo, err error)
 }
 
-type defaultResourceFileLister struct {
-	h *Handler
+type DefaultResourceFileLister struct {
 }
 
-func (g *defaultResourceFileLister) List(dir string) (files []os.FileInfo, err error) {
+func (g *DefaultResourceFileLister) List(dir string) (files []os.FileInfo, err error) {
 	files, err = ioutil.ReadDir(dir)
 	return files, err
 
