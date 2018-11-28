@@ -80,7 +80,7 @@ type SamplesResourceSpec struct {
 	// by the ImageStreams for their image content.  Defaults depend on the InstallType.
 	// An InstallType of 'rhel' defaults to registry.redhat.io, and an InstallType of
 	// 'centos' defaults to docker.io.
-	SamplesRegistry string `json:"sampleRegistry,omitempty" protobuf:"bytes,1,opt,name=sampleRegistry"`
+	SamplesRegistry string `json:"samplesRegistry,omitempty" protobuf:"bytes,1,opt,name=samplesRegistry"`
 
 	// InstallType specifies whether to install the RHEL or Centos distributions.
 	InstallType SamplesDistributionType `json:"installType,omitempty" protobuf:"bytes,2,opt,name=installType"`
