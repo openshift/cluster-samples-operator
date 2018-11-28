@@ -73,6 +73,7 @@ func NewHandler() sdk.Handler {
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
+	h.imagestreamRetryCount = make(map[string]int8)
 
 	return &h
 }
@@ -105,6 +106,8 @@ type Handler struct {
 
 	imagestreamFile map[string]string
 	templateFile    map[string]string
+
+	imagestreamRetryCount map[string]int8
 }
 
 // prepWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
@@ -172,9 +175,29 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) error {
 			return nil
 		}
 		processing := srcfg.Condition(v1alpha1.ImageChangesInProgress)
-		if processing.Status == corev1.ConditionFalse {
-			return nil
+		if processing.Status != corev1.ConditionTrue {
+			// if somebody edited our sample but left the version annotation correct, instead of this
+			// operator initiating a change, we could get in a lengthy retry loop.  So we are going
+			// to maintain a retry count in this operator and give up when it is exceeded.  If the operator
+			// is restarted and we loose this state, the only implication is a couple of extra retries;
+			// if the operator is continually restarting, we have bigger issues; in the advent that this
+			// operator has made the update, in progress should be set to true soon enough
+			retryCount, ok := h.imagestreamRetryCount[is.Name]
+			if !ok {
+				retryCount = 0
+			}
+			retryCount++
+			if retryCount > 5 {
+				h.imagestreamRetryCount[is.Name] = 0
+				// ignore this change of imagestream
+				logrus.Printf("retry count for imagestream event for %s exceeded; ignoring this change", is.Name)
+				return nil
+			}
+			h.imagestreamRetryCount[is.Name] = retryCount
+			return fmt.Errorf("retry imagestream %s because in progress is not yet true and retryCount is not exceeded", is.Name)
 		}
+
+		h.imagestreamRetryCount[is.Name] = 0
 
 		// so reaching this point means we have a prior upsert in progress, and we just want to track the status
 
@@ -589,6 +612,7 @@ func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus
 		condition.Status = newStatus
 		condition.LastTransitionTime = now
 		condition.Message = ""
+		condition.Reason = ""
 		srcfg.ConditionUpdate(condition)
 
 		logrus.Println("")
@@ -1092,12 +1116,18 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return err
 		}
 
+		existingValidStatus := srcfg.Condition(v1alpha1.ConfigurationValid).Status
 		cm, err := h.SpecValidation(srcfg)
 		if err != nil {
 			// flush status update
 			logrus.Debugf("SDKUPDATE bad spec validation update")
 			h.sdkwrapper.Update(srcfg)
 			return err
+		}
+		// if a bad config was corrected, update and return
+		if existingValidStatus != srcfg.Condition(v1alpha1.ConfigurationValid).Status {
+			logrus.Debugf("SDKUPDATE spec corrected")
+			return h.sdkwrapper.Update(srcfg)
 		}
 
 		if srcfg.Spec.ManagementState == srcfg.Status.ManagementState {
@@ -1116,6 +1146,15 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 					srcfg.ConditionFalse(v1alpha1.ImageChangesInProgress) {
 					logrus.Debugf("Handle ignoring because config the same and exists is true and in progress false")
 					return nil
+				}
+				// if config changed, but a prior config action is still in progress,
+				// reset in progress to false and return; the next event should drive the actual
+				// processing of the config change and replace whatever was previously
+				// in progress
+				if changed && srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
+					h.GoodConditionUpdate(srcfg, corev1.ConditionFalse, v1alpha1.ImageChangesInProgress)
+					logrus.Debugf("SDKUPDATE change in progress from true to false for config change")
+					return sdk.Update(srcfg)
 				}
 			}
 		}
@@ -1175,10 +1214,15 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		}
 
 		if !srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
-			// optimistically set in progress true before upserting samples
-			// to avoid samples watches updating the samplesresource before
-			// we actually set in progress to true on the samplesresource;
-			// we'll revert the in progress change in the error case
+			err = h.createSamples(srcfg)
+			if err != nil {
+				h.processError(srcfg, v1alpha1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
+				e := h.sdkwrapper.Update(srcfg)
+				if e != nil {
+					return e
+				}
+				return err
+			}
 			now := kapis.Now()
 			progressing := srcfg.Condition(v1alpha1.ImageChangesInProgress)
 			progressing.LastUpdateTime = now
@@ -1186,7 +1230,8 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			logrus.Debugf("Handle changing processing from false to true")
 			progressing.Status = corev1.ConditionTrue
 			for isName := range h.imagestreamFile {
-				if !strings.Contains(progressing.Reason, isName+" ") {
+				_, skipped := h.skippedImagestreams[isName]
+				if !strings.Contains(progressing.Reason, isName+" ") && !skipped {
 					progressing.Reason = progressing.Reason + isName + " "
 				}
 			}
@@ -1195,15 +1240,6 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			logrus.Debugf("SDKUPDATE progressing true update")
 			err = h.sdkwrapper.Update(srcfg)
 			if err != nil {
-				return err
-			}
-			err = h.createSamples(srcfg)
-			if err != nil {
-				h.processError(srcfg, v1alpha1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
-				e := h.sdkwrapper.Update(srcfg)
-				if e != nil {
-					return e
-				}
 				return err
 			}
 			return nil

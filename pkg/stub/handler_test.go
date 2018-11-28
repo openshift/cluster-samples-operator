@@ -239,6 +239,9 @@ func TestConfigurationValidCondition(t *testing.T) {
 	sr.Spec.InstallType = "centos"
 	sr.ResourceVersion = "4"
 	err = h.Handle(nil, event)
+	validate(true, err, "", sr, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse}, t)
+	sr.ResourceVersion = "5"
+	err = h.Handle(nil, event)
 	validate(true, err, "", sr, conditions, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse}, t)
 }
 
@@ -1015,6 +1018,7 @@ func NewTestHandler() Handler {
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
+	h.imagestreamRetryCount = make(map[string]int8)
 
 	return h
 }
