@@ -680,7 +680,7 @@ func (h *Handler) WaitingForCredential(srcfg *v1alpha1.SamplesResource) error {
 		(srcfg.Spec.SamplesRegistry == "" || srcfg.Spec.SamplesRegistry == "registry.redhat.io") {
 		// currently do not attempt to avoid multiple settings of this conditions/message prior to an event
 		// where the situation is addressed
-		err := fmt.Errorf("Cannot create rhel imagestreams to registry.redhat.io without the credentials being available: %#v", srcfg)
+		err := fmt.Errorf("Cannot create rhel imagestreams to registry.redhat.io without the credentials being available")
 		h.processError(srcfg, v1alpha1.ImportCredentialsExist, corev1.ConditionFalse, err, "%v")
 		return err
 	}
