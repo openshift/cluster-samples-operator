@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
+	"github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -16,12 +17,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 
+	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
+	operatorsv1api "github.com/openshift/api/operator/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 
-	operatorsv1alpha1api "github.com/openshift/api/operator/v1alpha1"
-	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
-	osapi "github.com/openshift/cluster-version-operator/pkg/apis/operatorstatus.openshift.io/v1"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 )
 
@@ -247,7 +247,7 @@ func TestManagementState(t *testing.T) {
 	iskeys := getISKeys()
 	tkeys := getTKeys()
 	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OKDContentRootDir)
-	sr.Spec.ManagementState = operatorsv1alpha1api.Unmanaged
+	sr.Spec.ManagementState = operatorsv1api.Unmanaged
 
 	err := h.Handle(nil, event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -267,7 +267,7 @@ func TestManagementState(t *testing.T) {
 	}
 
 	sr.ResourceVersion = "2"
-	sr.Spec.ManagementState = operatorsv1alpha1api.Managed
+	sr.Spec.ManagementState = operatorsv1api.Managed
 	err = h.Handle(nil, event)
 	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse}
 	validate(true, err, "", sr, conditions, statuses, t)
@@ -299,7 +299,7 @@ func TestManagementState(t *testing.T) {
 	progressing.Status = corev1.ConditionTrue
 	sr.ConditionUpdate(progressing)
 	sr.ResourceVersion = "3"
-	sr.Spec.ManagementState = operatorsv1alpha1api.Removed
+	sr.Spec.ManagementState = operatorsv1api.Removed
 	err = h.Handle(nil, event)
 	statuses[4] = corev1.ConditionTrue
 	validate(true, err, "", sr, conditions, statuses, t)
@@ -969,22 +969,23 @@ func NewTestHandler() Handler {
 	h.initter = &fakeInClusterInitter{}
 
 	h.sdkwrapper = &fakeSDKWrapper{}
-	cvowrapper := &fakeCVOSDKWrapper{}
-	cvowrapper.state = &osapi.ClusterOperator{
+	cvowrapper := fakeCVOSDKWrapper{}
+	cvowrapper.state = &configv1.ClusterOperator{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: osapi.SchemeGroupVersion.String(),
+			APIVersion: configv1.SchemeGroupVersion.String(),
 			Kind:       "ClusterOperator",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "goo",
 			Namespace: "gaa",
 		},
-		Status: osapi.ClusterOperatorStatus{
-			Conditions: []osapi.ClusterOperatorStatusCondition{},
+		Status: configv1.ClusterOperatorStatus{
+			Conditions: []configv1.ClusterOperatorStatusCondition{},
 		},
 	}
 
-	h.cvowrapper = &operatorstatus.CVOOperatorStatusHandler{SDKwrapper: cvowrapper}
+	h.cvowrapper = operator.NewClusterOperatorHandler(nil)
+	h.cvowrapper.ClusterOperatorWrapper = &cvowrapper
 
 	h.namespace = "foo"
 
@@ -1293,13 +1294,13 @@ type fakeCVOSDKWrapper struct {
 	updateerr error
 	createerr error
 	geterr    error
-	state     *osapi.ClusterOperator
+	state     *configv1.ClusterOperator
 }
 
-func (f *fakeCVOSDKWrapper) Update(state *osapi.ClusterOperator) error { return f.updateerr }
+func (f *fakeCVOSDKWrapper) UpdateStatus(state *configv1.ClusterOperator) error { return f.updateerr }
 
-func (f *fakeCVOSDKWrapper) Create(state *osapi.ClusterOperator) error { return f.createerr }
+func (f *fakeCVOSDKWrapper) Create(state *configv1.ClusterOperator) error { return f.createerr }
 
-func (f *fakeCVOSDKWrapper) Get(name, namespace string) (*osapi.ClusterOperator, error) {
+func (f *fakeCVOSDKWrapper) Get(name string) (*configv1.ClusterOperator, error) {
 	return f.state, f.geterr
 }

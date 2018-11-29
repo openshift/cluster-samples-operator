@@ -10,6 +10,7 @@ import (
 	k8sutil "github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
 
+	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 
@@ -42,6 +43,7 @@ func main() {
 	sdk.Watch("v1", "Secret", "openshift", resyncPeriod)
 	k8sutil.AddToSDKScheme(imagev1.AddToScheme)
 	k8sutil.AddToSDKScheme(templatev1.AddToScheme)
+	k8sutil.AddToSDKScheme(configv1.AddToScheme)
 	sdk.Watch(imagev1.SchemeGroupVersion.String(), "ImageStream", "openshift", resyncPeriod)
 	sdk.Watch(templatev1.SchemeGroupVersion.String(), "Template", "openshift", resyncPeriod)
 	sdk.Handle(stub.NewHandler())

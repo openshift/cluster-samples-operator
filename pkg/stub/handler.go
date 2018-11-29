@@ -27,10 +27,11 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 
+	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	templatev1client "github.com/openshift/client-go/template/clientset/versioned/typed/template/v1"
 
-	operatorsv1alpha1api "github.com/openshift/api/operator/v1alpha1"
+	operatorsv1api "github.com/openshift/api/operator/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 )
@@ -61,9 +62,9 @@ func NewHandler() sdk.Handler {
 	h.templateclientwrapper = &defaultTemplateClientWrapper{h: &h}
 	h.secretclientwrapper = &defaultSecretClientWrapper{h: &h}
 	h.configmapclientwrapper = &defaultConfigMapClientWrapper{h: &h}
+	h.cvowrapper = operatorstatus.NewClusterOperatorHandler(h.configclient)
 
 	h.namespace = getNamespace()
-	h.cvowrapper = operatorstatus.NewCVOOperatorStatusHandler(h.namespace)
 
 	h.skippedImagestreams = make(map[string]bool)
 	h.skippedTemplates = make(map[string]bool)
@@ -80,12 +81,13 @@ type Handler struct {
 	initter InClusterInitter
 
 	sdkwrapper SDKWrapper
-	cvowrapper *operatorstatus.CVOOperatorStatusHandler
+	cvowrapper *operatorstatus.ClusterOperatorHandler
 
-	restconfig  *restclient.Config
-	tempclient  *templatev1client.TemplateV1Client
-	imageclient *imagev1client.ImageV1Client
-	coreclient  *corev1client.CoreV1Client
+	restconfig   *restclient.Config
+	tempclient   *templatev1client.TemplateV1Client
+	imageclient  *imagev1client.ImageV1Client
+	coreclient   *corev1client.CoreV1Client
+	configclient *configv1client.ConfigV1Client
 
 	imageclientwrapper     ImageStreamClientWrapper
 	templateclientwrapper  TemplateClientWrapper
@@ -126,10 +128,10 @@ func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]strin
 			return nil, "", false, nil
 		}
 		switch srcfg.Spec.ManagementState {
-		case operatorsv1alpha1api.Removed:
+		case operatorsv1api.Removed:
 			logrus.Debugf("Not upserting %s/%s event because operator is in removed state and image changes are not in progress", kind, name)
 			return nil, "", false, nil
-		case operatorsv1alpha1api.Unmanaged:
+		case operatorsv1api.Unmanaged:
 			logrus.Debugf("Not upserting %s/%s event because operator is in unmanaged state and image changes are not in progress", kind, name)
 			return nil, "", false, nil
 		}
@@ -660,7 +662,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded(srcfg *v1alpha1.SamplesResource)
 		srcfg.APIVersion = v1alpha1.GroupName + "/" + v1alpha1.Version
 		srcfg.Spec.Architectures = append(srcfg.Spec.Architectures, v1alpha1.X86Architecture)
 		srcfg.Spec.InstallType = v1alpha1.CentosSamplesDistribution
-		srcfg.Spec.ManagementState = operatorsv1alpha1api.Managed
+		srcfg.Spec.ManagementState = operatorsv1api.Managed
 		now := kapis.Now()
 		exist := srcfg.Condition(v1alpha1.SamplesExist)
 		exist.Status = corev1.ConditionFalse
@@ -884,7 +886,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResou
 // err - any errors that occurred interacting with the api server during cleanup
 func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool, bool, error) {
 	switch srcfg.Spec.ManagementState {
-	case operatorsv1alpha1api.Removed:
+	case operatorsv1api.Removed:
 		// first, we will not process a Removed setting if a prior create/update cycle is still in progress;
 		// if still creating/updating, set the remove on hold condition and we'll try the remove once that
 		// is false
@@ -914,7 +916,7 @@ func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool,
 		}
 
 		// now actually process removed state
-		if srcfg.Spec.ManagementState != srcfg.Status.State ||
+		if srcfg.Spec.ManagementState != srcfg.Status.ManagementState ||
 			srcfg.ConditionTrue(v1alpha1.SamplesExist) ||
 			srcfg.ConditionTrue(v1alpha1.ImportCredentialsExist) {
 			logrus.Println("management state set to removed so deleting samples, credentials, and configmap")
@@ -935,29 +937,29 @@ func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool,
 			cred.LastUpdateTime = now
 			cred.Status = corev1.ConditionFalse
 			srcfg.ConditionUpdate(cred)
-			srcfg.Status.State = operatorsv1alpha1api.Removed
+			srcfg.Status.ManagementState = operatorsv1api.Removed
 			return false, true, nil
 		}
 		return false, false, nil
-	case operatorsv1alpha1api.Managed:
-		if srcfg.Spec.ManagementState != srcfg.Status.State {
+	case operatorsv1api.Managed:
+		if srcfg.Spec.ManagementState != srcfg.Status.ManagementState {
 			logrus.Println("management state set to managed")
 		}
 		h.CreateConfigMapIfNeeded()
 		// will set status state to managed at top level caller
 		// to deal with config change processing
 		return true, false, nil
-	case operatorsv1alpha1api.Unmanaged:
-		if srcfg.Spec.ManagementState != srcfg.Status.State {
+	case operatorsv1api.Unmanaged:
+		if srcfg.Spec.ManagementState != srcfg.Status.ManagementState {
 			logrus.Println("management state set to unmanaged")
-			srcfg.Status.State = operatorsv1alpha1api.Unmanaged
+			srcfg.Status.ManagementState = operatorsv1api.Unmanaged
 			return false, true, nil
 		}
 		return false, false, nil
 	default:
 		// force it to Managed if they passed in something funky, including the empty string
 		logrus.Warningf("Unknown management state %s specified; switch to Managed", srcfg.Spec.ManagementState)
-		srcfg.Spec.ManagementState = operatorsv1alpha1api.Managed
+		srcfg.Spec.ManagementState = operatorsv1api.Managed
 		return true, false, nil
 	}
 }
@@ -992,10 +994,10 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		srcfg, _ := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
 		if srcfg != nil {
 			switch srcfg.Spec.ManagementState {
-			case operatorsv1alpha1api.Removed:
+			case operatorsv1api.Removed:
 				logrus.Debugln("Ignoring secret event because samples resource is in removed state")
 				return nil
-			case operatorsv1alpha1api.Unmanaged:
+			case operatorsv1api.Unmanaged:
 				logrus.Debugln("Ignoring secret event because samples resource is in unmanaged state")
 				return nil
 			}
@@ -1098,7 +1100,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return err
 		}
 
-		if srcfg.Spec.ManagementState == srcfg.Status.State {
+		if srcfg.Spec.ManagementState == srcfg.Status.ManagementState {
 			if cm != nil {
 				changed, err := h.VariableConfigChanged(srcfg, cm)
 				if err != nil {
@@ -1118,7 +1120,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			}
 		}
 
-		srcfg.Status.State = operatorsv1alpha1api.Managed
+		srcfg.Status.ManagementState = operatorsv1api.Managed
 
 		// if trying to do rhel to the default registry.redhat.io registry requires the secret
 		// be in place since registry.redhat.io requires auth to pull; if it is not ready
@@ -1742,6 +1744,12 @@ func (g *defaultInClusterInitter) init() {
 		panic(err)
 	}
 	g.h.coreclient = coreclient
+	configclient, err := configv1client.NewForConfig(restconfig)
+	if err != nil {
+		logrus.Errorf("failed to get config client : %v", err)
+		panic(err)
+	}
+	g.h.configclient = configclient
 }
 
 type SDKWrapper interface {
