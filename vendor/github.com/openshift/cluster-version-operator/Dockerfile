@@ -1,15 +1,10 @@
-FROM golang:1.10.3 AS build-env
-
-COPY . /go/src/github.com/openshift/cluster-version-operator
+FROM registry.svc.ci.openshift.org/openshift/release:golang-1.10 AS builder
 WORKDIR /go/src/github.com/openshift/cluster-version-operator
-RUN ./hack/build-go.sh
+COPY . .
+RUN hack/build-go.sh
 
-# Using alpine instead of scratch because the Job
-# used to extract updatepayload from CVO image uses
-# cp command.
-FROM alpine
-COPY --from=build-env /go/src/github.com/openshift/cluster-version-operator/_output/linux/amd64/cluster-version-operator /bin/cluster-version-operator
+FROM registry.svc.ci.openshift.org/openshift/origin-v4.0:base
+COPY --from=builder /go/src/github.com/openshift/cluster-version-operator/_output/linux/amd64/cluster-version-operator /usr/bin/
 COPY install /manifests
 COPY bootstrap /bootstrap
-
-ENTRYPOINT ["/bin/cluster-version-operator"]
+ENTRYPOINT ["/usr/bin/cluster-version-operator"]
