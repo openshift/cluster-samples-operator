@@ -9,10 +9,10 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/google/uuid"
+	clientset "github.com/openshift/client-go/config/clientset/versioned"
+	informers "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/cluster-version-operator/pkg/autoupdate"
 	"github.com/openshift/cluster-version-operator/pkg/cvo"
-	clientset "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned"
-	informers "github.com/openshift/cluster-version-operator/pkg/generated/informers/externalversions"
 	"github.com/openshift/cluster-version-operator/pkg/version"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
@@ -57,7 +57,7 @@ var (
 
 func init() {
 	rootCmd.AddCommand(startCmd)
-	startCmd.PersistentFlags().StringVar(&startOpts.listenAddr, "listen", "0.0.0.0:11345", "Address to listen on for metrics")
+	startCmd.PersistentFlags().StringVar(&startOpts.listenAddr, "listen", "0.0.0.0:9099", "Address to listen on for metrics")
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name CVO is scheduled on.")
 	startCmd.PersistentFlags().BoolVar(&startOpts.enableAutoUpdate, "enable-auto-update", true, "Enables the autoupdate controller.")
@@ -234,9 +234,9 @@ func createControllerContext(cb *clientBuilder, stop <-chan struct{}) *controlle
 		InformerFactory:       sharedInformers,
 		KubeInformerFactory:   kubeSharedInformer,
 		APIExtInformerFactory: apiExtSharedInformer,
-		Stop:             stop,
-		InformersStarted: make(chan struct{}),
-		ResyncPeriod:     resyncPeriod(),
+		Stop:                  stop,
+		InformersStarted:      make(chan struct{}),
+		ResyncPeriod:          resyncPeriod(),
 	}
 }
 
@@ -253,7 +253,7 @@ func startControllers(ctx *controllerContext) error {
 		overrideDirectory,
 		ctx.ResyncPeriod(),
 		ctx.InformerFactory.Config().V1().ClusterVersions(),
-		ctx.InformerFactory.Operatorstatus().V1().ClusterOperators(),
+		ctx.InformerFactory.Config().V1().ClusterOperators(),
 		ctx.ClientBuilder.RestConfig(),
 		ctx.ClientBuilder.ClientOrDie(componentName),
 		ctx.ClientBuilder.KubeClientOrDie(componentName),
@@ -264,7 +264,7 @@ func startControllers(ctx *controllerContext) error {
 		go autoupdate.New(
 			componentNamespace, componentName,
 			ctx.InformerFactory.Config().V1().ClusterVersions(),
-			ctx.InformerFactory.Operatorstatus().V1().ClusterOperators(),
+			ctx.InformerFactory.Config().V1().ClusterOperators(),
 			ctx.ClientBuilder.ClientOrDie(componentName),
 			ctx.ClientBuilder.KubeClientOrDie(componentName),
 		).Run(2, ctx.Stop)

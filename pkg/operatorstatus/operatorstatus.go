@@ -10,64 +10,62 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
 
-	osapi "github.com/openshift/cluster-version-operator/pkg/apis/operatorstatus.openshift.io/v1"
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
+	configv1 "github.com/openshift/api/config/v1"
+	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
 	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
 )
 
-// CVOOperatorStatusHandler allows for wrappering sdk access to osapi.ClusterOperator
-type CVOOperatorStatusHandler struct {
-	SDKwrapper OperatorStatusSDKWrapper
-	Namespace  string
+const (
+	ClusterOperatorName = "openshift-cluster-samples-operator"
+)
+
+// ClusterOperatorHandler allows for wrappering access to configv1.ClusterOperator
+type ClusterOperatorHandler struct {
+	ClusterOperatorWrapper ClusterOperatorWrapper
 }
 
-// NewCVOOperatorStatusHandler is the default initializer function for CVOOperatorStatusHandler
-func NewCVOOperatorStatusHandler(namespace string) *CVOOperatorStatusHandler {
-	return &CVOOperatorStatusHandler{SDKwrapper: &defaultOperatorStatusSDKWrapper{}, Namespace: namespace}
+// NewClusterOperatorHandler is the default initializer function for CVOOperatorStatusHandler
+func NewClusterOperatorHandler(cfgclient *configv1client.ConfigV1Client) *ClusterOperatorHandler {
+	handler := ClusterOperatorHandler{}
+	handler.ClusterOperatorWrapper = &defaultClusterStatusWrapper{configclient: cfgclient}
+	return &handler
 }
 
-// OperatorStatusSDKWrapper is the interface that wrappers actuall access to github.com/operator-framework/operator-sdk/pkg/sdk
-type OperatorStatusSDKWrapper interface {
-	Get(name, namespace string) (*osapi.ClusterOperator, error)
-	Update(state *osapi.ClusterOperator) (err error)
-	Create(state *osapi.ClusterOperator) (err error)
+type defaultClusterStatusWrapper struct {
+	configclient *configv1client.ConfigV1Client
 }
 
-type defaultOperatorStatusSDKWrapper struct{}
-
-func (s *defaultOperatorStatusSDKWrapper) Get(name, namespace string) (*osapi.ClusterOperator, error) {
-	state := &osapi.ClusterOperator{
-		TypeMeta: metaapi.TypeMeta{
-			APIVersion: osapi.SchemeGroupVersion.String(),
-			Kind:       "ClusterOperator",
-		},
-		ObjectMeta: metaapi.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-	}
-	err := sdk.Get(state)
-	return state, err
+func (g *defaultClusterStatusWrapper) Get(name string) (*configv1.ClusterOperator, error) {
+	return g.configclient.ClusterOperators().Get(name, metaapi.GetOptions{})
 }
 
-func (s *defaultOperatorStatusSDKWrapper) Update(state *osapi.ClusterOperator) error {
-	return sdk.Update(state)
+func (g *defaultClusterStatusWrapper) UpdateStatus(state *configv1.ClusterOperator) error {
+	_, err := g.configclient.ClusterOperators().UpdateStatus(state)
+	return err
 }
 
-func (s *defaultOperatorStatusSDKWrapper) Create(state *osapi.ClusterOperator) error {
-	return sdk.Create(state)
+func (g *defaultClusterStatusWrapper) Create(state *configv1.ClusterOperator) error {
+	_, err := g.configclient.ClusterOperators().Create(state)
+	return err
 }
 
-func (o *CVOOperatorStatusHandler) UpdateOperatorStatus(sampleResource *v1alpha1.SamplesResource) error {
+// ClusterOperatorWrapper is the interface that wrappers actuall access to github.com/operator-framework/operator-sdk/pkg/sdk
+type ClusterOperatorWrapper interface {
+	Get(name string) (*configv1.ClusterOperator, error)
+	UpdateStatus(state *configv1.ClusterOperator) (err error)
+	Create(state *configv1.ClusterOperator) (err error)
+}
+
+func (o *ClusterOperatorHandler) UpdateOperatorStatus(sampleResource *v1alpha1.SamplesResource) error {
 	var err error
 	switch {
 	case sampleResource.ConditionTrue(v1alpha1.SamplesExist):
-		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorAvailable, osapi.ConditionTrue, "Samples exist in the openshift project")
+		err = o.setOperatorStatus(configv1.OperatorAvailable, configv1.ConditionTrue, "Samples exist in the openshift project")
 	case sampleResource.ConditionFalse(v1alpha1.SamplesExist):
-		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorAvailable, osapi.ConditionFalse, "Samples do not exist in the openshift project")
+		err = o.setOperatorStatus(configv1.OperatorAvailable, configv1.ConditionFalse, "Samples do not exist in the openshift project")
 	default:
-		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorAvailable, osapi.ConditionUnknown, "The presence of the samples in the openshift project is unknown")
+		err = o.setOperatorStatus(configv1.OperatorAvailable, configv1.ConditionUnknown, "The presence of the samples in the openshift project is unknown")
 	}
 	if err != nil {
 		return err
@@ -75,11 +73,11 @@ func (o *CVOOperatorStatusHandler) UpdateOperatorStatus(sampleResource *v1alpha1
 
 	switch {
 	case sampleResource.ConditionTrue(v1alpha1.ConfigurationValid):
-		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorFailing, osapi.ConditionFalse, "The samples operator configuration is valid")
+		err = o.setOperatorStatus(configv1.OperatorFailing, configv1.ConditionFalse, "The samples operator configuration is valid")
 	case sampleResource.ConditionFalse(v1alpha1.ConfigurationValid):
-		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorFailing, osapi.ConditionTrue, "The samples operator configuration is invalid")
+		err = o.setOperatorStatus(configv1.OperatorFailing, configv1.ConditionTrue, "The samples operator configuration is invalid")
 	default:
-		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorFailing, osapi.ConditionUnknown, "The samples operator configuration state is unknown")
+		err = o.setOperatorStatus(configv1.OperatorFailing, configv1.ConditionUnknown, "The samples operator configuration state is unknown")
 	}
 	if err != nil {
 		return err
@@ -87,55 +85,56 @@ func (o *CVOOperatorStatusHandler) UpdateOperatorStatus(sampleResource *v1alpha1
 
 	switch {
 	case sampleResource.ConditionTrue(v1alpha1.ImageChangesInProgress):
-		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorProgressing, osapi.ConditionTrue, "The samples operator is in the middle of changing the imagestreams")
+		err = o.setOperatorStatus(configv1.OperatorProgressing, configv1.ConditionTrue, "The samples operator is in the middle of changing the imagestreams")
 	case sampleResource.ConditionFalse(v1alpha1.ImageChangesInProgress):
-		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorProgressing, osapi.ConditionFalse, "The samples operator is not in the process of initiating changes to the imagestreams")
+		err = o.setOperatorStatus(configv1.OperatorProgressing, configv1.ConditionFalse, "The samples operator is not in the process of initiating changes to the imagestreams")
 	default:
-		err = o.setOperatorStatus(sampleResource.Name, osapi.OperatorProgressing, osapi.ConditionUnknown, "The samples operator in progress state is unknown")
+		err = o.setOperatorStatus(configv1.OperatorProgressing, configv1.ConditionUnknown, "The samples operator in progress state is unknown")
 	}
 
 	return err
 }
 
-func (o *CVOOperatorStatusHandler) setOperatorStatus(name string, condtype osapi.ClusterStatusConditionType, status osapi.ConditionStatus, msg string) error {
+func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStatusConditionType, status configv1.ConditionStatus, msg string) error {
 	logrus.Debugf("setting clusteroperator status condition %s to %s", condtype, status)
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		state, err := o.SDKwrapper.Get(name, o.Namespace)
+		state, err := o.ClusterOperatorWrapper.Get(ClusterOperatorName)
 		if err != nil {
 			if !errors.IsNotFound(err) {
 				return fmt.Errorf("failed to get cluster operator resource %s/%s: %s", state.ObjectMeta.Namespace, state.ObjectMeta.Name, err)
 			}
 
+			state.Name = ClusterOperatorName
 			state.Status.Version = v1alpha1.CodeLevel
 
-			state.Status.Conditions = []osapi.ClusterOperatorStatusCondition{
+			state.Status.Conditions = []configv1.ClusterOperatorStatusCondition{
 				{
-					Type:               osapi.OperatorAvailable,
-					Status:             osapi.ConditionUnknown,
+					Type:               configv1.OperatorAvailable,
+					Status:             configv1.ConditionUnknown,
 					LastTransitionTime: metaapi.Now(),
 				},
 				{
-					Type:               osapi.OperatorProgressing,
-					Status:             osapi.ConditionUnknown,
+					Type:               configv1.OperatorProgressing,
+					Status:             configv1.ConditionUnknown,
 					LastTransitionTime: metaapi.Now(),
 				},
 				{
-					Type:               osapi.OperatorFailing,
-					Status:             osapi.ConditionUnknown,
+					Type:               configv1.OperatorFailing,
+					Status:             configv1.ConditionUnknown,
 					LastTransitionTime: metaapi.Now(),
 				},
 			}
 
-			o.updateOperatorCondition(state, &osapi.ClusterOperatorStatusCondition{
+			o.updateOperatorCondition(state, &configv1.ClusterOperatorStatusCondition{
 				Type:               condtype,
 				Status:             status,
 				Message:            msg,
 				LastTransitionTime: metaapi.Now(),
 			})
 
-			return o.SDKwrapper.Create(state)
+			return o.ClusterOperatorWrapper.Create(state)
 		}
-		modified := o.updateOperatorCondition(state, &osapi.ClusterOperatorStatusCondition{
+		modified := o.updateOperatorCondition(state, &configv1.ClusterOperatorStatusCondition{
 			Type:               condtype,
 			Status:             status,
 			Message:            msg,
@@ -144,13 +143,13 @@ func (o *CVOOperatorStatusHandler) setOperatorStatus(name string, condtype osapi
 		if !modified {
 			return nil
 		}
-		return o.SDKwrapper.Update(state)
+		return o.ClusterOperatorWrapper.UpdateStatus(state)
 	})
 }
 
-func (o *CVOOperatorStatusHandler) updateOperatorCondition(op *osapi.ClusterOperator, condition *osapi.ClusterOperatorStatusCondition) (modified bool) {
+func (o *ClusterOperatorHandler) updateOperatorCondition(op *configv1.ClusterOperator, condition *configv1.ClusterOperatorStatusCondition) (modified bool) {
 	found := false
-	conditions := []osapi.ClusterOperatorStatusCondition{}
+	conditions := []configv1.ClusterOperatorStatusCondition{}
 
 	for _, c := range op.Status.Conditions {
 		if condition.Type != c.Type {

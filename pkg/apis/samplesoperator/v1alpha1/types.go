@@ -1,7 +1,7 @@
 package v1alpha1
 
 import (
-	operatorsv1alpha1api "github.com/openshift/api/operator/v1alpha1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -67,27 +67,27 @@ var (
 )
 
 type SamplesResourceSpec struct {
-	// operatorsv1alpha1api.OperatorSpec is top level on/off type of switch for all operators.
+	// ManagementState is top level on/off type of switch for all operators.
 	// When "Managed", this operator processes config and manipulates the samples accordingly.
 	// When "Unmanaged", this operator ignores any updates to the resources it watches.
 	// When "Removed", it reacts that same wasy as it does if the SamplesResource object
 	// is deleted, meaning any ImageStreams or Templates it manages (i.e. it honors the skipped
 	// lists) and the registry secret are deleted, along with the ConfigMap in the operator's
 	// namespace that represents the last config used to manipulate the samples,
-	operatorsv1alpha1api.OperatorSpec `json:",inline"`
+	ManagementState operatorv1.ManagementState `json:"managementState,omitempty" protobuf:"bytes,1,opt,name=managementState"`
 
 	// SamplesRegistry allows for the specification of which registry is accessed
 	// by the ImageStreams for their image content.  Defaults depend on the InstallType.
 	// An InstallType of 'rhel' defaults to registry.redhat.io, and an InstallType of
 	// 'centos' defaults to docker.io.
-	SamplesRegistry string `json:"samplesRegistry,omitempty" protobuf:"bytes,1,opt,name=samplesRegistry"`
+	SamplesRegistry string `json:"samplesRegistry,omitempty" protobuf:"bytes,2,opt,name=samplesRegistry"`
 
 	// InstallType specifies whether to install the RHEL or Centos distributions.
-	InstallType SamplesDistributionType `json:"installType,omitempty" protobuf:"bytes,2,opt,name=installType"`
+	InstallType SamplesDistributionType `json:"installType,omitempty" protobuf:"bytes,3,opt,name=installType"`
 
 	// Architectures determine which hardware architecture(s) to install, where x86_64 and ppc64le are the
 	// supported choices.
-	Architectures []string `json:"architectures,omitempty" protobuf:"bytes,3,opt,name=architectures"`
+	Architectures []string `json:"architectures,omitempty" protobuf:"bytes,4,opt,name=architectures"`
 
 	// SkippedImagestreams specifies names of image streams that should NOT be
 	// created/updated.  Admins can use this to allow them to delete content
@@ -104,16 +104,16 @@ type SamplesResourceSpec struct {
 	SkippedTemplates []string `json:"skippedTemplates,omitempty" protobuf:"bytes,6,opt,name=skippedTemplates"`
 }
 type SamplesResourceStatus struct {
-	// operatorsv1alpha1api.OperatorStatus reflects the current operational status of the on/off switch for
+	// operatorv1.ManagementState reflects the current operational status of the on/off switch for
 	// the operator.  This operator compares the ManagementState as part of determining that we are turning
 	// the operator back on (i.e. "Managed") when it was previously "Unmanaged".  The "Removed" to "Managed"
 	// transition is currently handled by the fact that our config map is missing.
 	// TODO when we ditch the config map and store current config in the operator's status, we'll most likely
 	// need to track "Removed" to "Managed" transitions via compares here as well.
-	operatorsv1alpha1api.OperatorStatus `json:",inline"`
+	ManagementState operatorv1.ManagementState `json:"managementState,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=managementState"`
 	// Conditions represents the available maintenance status of the sample
 	// imagestreams and templates.
-	Conditions []SamplesResourceCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+	Conditions []SamplesResourceCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,2,rep,name=conditions"`
 }
 
 type SamplesResourceConditionType string

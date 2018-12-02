@@ -16,10 +16,12 @@ import (
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 
+	configv1 "github.com/openshift/api/config/v1"
 	imageapiv1 "github.com/openshift/api/image/v1"
-	operatorsv1alpha1api "github.com/openshift/api/operator/v1alpha1"
+	operatorsv1api "github.com/openshift/api/operator/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 	samplesapi "github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
+	"github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/stub"
 )
 
@@ -78,6 +80,50 @@ func verifyConditionsCompleteSamplesRemoved(sr *samplesapi.SamplesResource) erro
 
 		return true, nil
 	})
+}
+
+func verifyClusterOperatorConditionsComplete(t *testing.T) {
+	state := &configv1.ClusterOperator{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: configv1.SchemeGroupVersion.String(),
+			Kind:       "ClusterOperator",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: operator.ClusterOperatorName,
+		},
+	}
+	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
+		if err := sdk.Get(state); err != nil {
+			return false, nil
+		}
+		availableOK := false
+		progressingOK := false
+		failingOK := false
+		for _, condition := range state.Status.Conditions {
+			switch condition.Type {
+			case configv1.OperatorAvailable:
+				if condition.Status == configv1.ConditionTrue {
+					availableOK = true
+				}
+			case configv1.OperatorFailing:
+				if condition.Status == configv1.ConditionFalse {
+					failingOK = true
+				}
+			case configv1.OperatorProgressing:
+				if condition.Status == configv1.ConditionFalse {
+					progressingOK = true
+				}
+			}
+		}
+		if availableOK && progressingOK && failingOK {
+			return true, nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		sr := verifyOperatorUp(t)
+		t.Fatalf("cluster operator conditions never stabilized, cluster op %#v samples resource %#v", state, sr)
+	}
 }
 
 func getContentDir(t *testing.T) string {
@@ -206,7 +252,8 @@ func verifyImageStreamsPresent(t *testing.T, content map[string]bool, timeToComp
 			return true, nil
 		})
 		if err != nil {
-			t.Fatalf("error waiting for example imagestream %s to appear: %v", key, err)
+			sr := verifyOperatorUp(t)
+			t.Fatalf("error waiting for example imagestream %s to appear: %v samples resource %#v", key, err, sr)
 		}
 	}
 }
@@ -234,7 +281,8 @@ func verifyTemplatesPresent(t *testing.T, content map[string]bool, timeToCompare
 			return true, nil
 		})
 		if err != nil {
-			t.Errorf("error waiting for example template %s to appear: %v", key, err)
+			sr := verifyOperatorUp(t)
+			t.Fatalf("error waiting for example template %s to appear: %v samples resource %#v", key, err, sr)
 		}
 	}
 }
@@ -251,6 +299,7 @@ func validateContent(t *testing.T, timeToCompare *kapis.Time) {
 func TestImageStreamInOpenshiftNamespace(t *testing.T) {
 	verifyOperatorUp(t)
 	validateContent(t, nil)
+	verifyClusterOperatorConditionsComplete(t)
 }
 
 func TestRecreateSamplesResourceAfterDelete(t *testing.T) {
@@ -283,6 +332,7 @@ func TestRecreateSamplesResourceAfterDelete(t *testing.T) {
 	}
 
 	validateContent(t, &now)
+	verifyClusterOperatorConditionsComplete(t)
 }
 
 func TestSpecManagementStateField(t *testing.T) {
@@ -290,7 +340,7 @@ func TestSpecManagementStateField(t *testing.T) {
 
 	oldTime := sr.CreationTimestamp
 	now := kapis.Now()
-	sr.Spec.ManagementState = operatorsv1alpha1api.Removed
+	sr.Spec.ManagementState = operatorsv1api.Removed
 	err := sdk.Update(sr)
 	if err != nil {
 		t.Errorf("error updating samplesresource %v", err)
@@ -336,7 +386,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	}
 
 	sr = verifyOperatorUp(t)
-	sr.Spec.ManagementState = operatorsv1alpha1api.Managed
+	sr.Spec.ManagementState = operatorsv1api.Managed
 	err = sdk.Update(sr)
 	if err != nil {
 		t.Errorf("error updating samplesresource %v", err)
@@ -350,7 +400,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	validateContent(t, &now)
 
 	sr = verifyOperatorUp(t)
-	sr.Spec.ManagementState = operatorsv1alpha1api.Unmanaged
+	sr.Spec.ManagementState = operatorsv1api.Unmanaged
 	err = sdk.Update(sr)
 	if err != nil {
 		t.Errorf("error updating samplesresource %v", err)
@@ -386,7 +436,8 @@ func TestSpecManagementStateField(t *testing.T) {
 	time.Sleep(30 * time.Second)
 	err = sdk.Get(is)
 	if err == nil {
-		t.Fatalf("imagestream recreated")
+		sr = verifyOperatorUp(t)
+		t.Fatalf("imagestream recreated, samples resource %#v", sr)
 	}
 
 	// now switch back to default managed for any subsequent tests
@@ -395,7 +446,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	sr = verifyOperatorUp(t)
 	// get timestamp to check against in progress condition
 	now = kapis.Now()
-	sr.Spec.ManagementState = operatorsv1alpha1api.Managed
+	sr.Spec.ManagementState = operatorsv1api.Managed
 	err = sdk.Update(sr)
 	if err != nil {
 		t.Errorf("error updating samplesresource %v", err)
@@ -416,7 +467,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		return false, nil
 	})
 	if err != nil {
-		t.Fatalf("error waiting for samplesresource to get into pending: %v", err)
+		t.Fatalf("error waiting for samplesresource to get into pending: %v samples resource %#v", err, sr)
 	}
 
 	// now wait for it to get out of pending
@@ -426,5 +477,5 @@ func TestSpecManagementStateField(t *testing.T) {
 	}
 
 	validateContent(t, nil)
-
+	verifyClusterOperatorConditionsComplete(t)
 }
