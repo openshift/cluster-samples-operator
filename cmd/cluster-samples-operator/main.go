@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"runtime"
 
 	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
@@ -26,6 +27,15 @@ func printVersion() {
 
 func main() {
 	printVersion()
+
+	if os.Args != nil && len(os.Args) > 0 {
+		for _, arg := range os.Args {
+			if arg == "-v" {
+				logrus.SetLevel(logrus.DebugLevel)
+				break
+			}
+		}
+	}
 
 	sdk.ExposeMetricsPort()
 
