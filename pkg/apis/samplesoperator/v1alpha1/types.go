@@ -114,6 +114,33 @@ type SamplesResourceStatus struct {
 	// Conditions represents the available maintenance status of the sample
 	// imagestreams and templates.
 	Conditions []SamplesResourceCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,2,rep,name=conditions"`
+
+	// SamplesRegistry allows for the specification of which registry is accessed
+	// by the ImageStreams for their image content.  Defaults depend on the InstallType.
+	// An InstallType of 'rhel' defaults to registry.redhat.io, and an InstallType of
+	// 'centos' defaults to docker.io.
+	SamplesRegistry string `json:"samplesRegistry,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,3,rep,name=samplesRegistry"`
+
+	// InstallType specifies whether to install the RHEL or Centos distributions.
+	InstallType SamplesDistributionType `json:"installType,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,4,rep,name=installType"`
+
+	// Architectures determine which hardware architecture(s) to install, where x86_64 and ppc64le are the
+	// supported choices.
+	Architectures []string `json:"architectures,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,5,rep,name=architectures"`
+
+	// SkippedImagestreams specifies names of image streams that should NOT be
+	// created/updated.  Admins can use this to allow them to delete content
+	// they don’t want.  They will still have to manually delete the
+	// content but the operator will not recreate(or update) anything
+	// listed here.
+	SkippedImagestreams []string `json:"skippedImagestreams,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,6,rep,name=skippedImagestreams"`
+
+	// SkippedTemplates specifies names of templates that should NOT be
+	// created/updated.  Admins can use this to allow them to delete content
+	// they don’t want.  They will still have to manually delete the
+	// content but the operator will not recreate(or update) anything
+	// listed here.
+	SkippedTemplates []string `json:"skippedTemplates,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,7,rep,name=skippedTemplates"`
 }
 
 type SamplesResourceConditionType string
