@@ -61,7 +61,6 @@ func NewHandler() sdk.Handler {
 	h.imageclientwrapper = &defaultImageStreamClientWrapper{h: &h}
 	h.templateclientwrapper = &defaultTemplateClientWrapper{h: &h}
 	h.secretclientwrapper = &defaultSecretClientWrapper{h: &h}
-	h.configmapclientwrapper = &defaultConfigMapClientWrapper{h: &h}
 	h.cvowrapper = operatorstatus.NewClusterOperatorHandler(h.configclient)
 
 	h.namespace = getNamespace()
@@ -74,7 +73,6 @@ func NewHandler() sdk.Handler {
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
 	h.imagestreamRetryCount = make(map[string]int8)
-
 	return &h
 }
 
@@ -90,10 +88,9 @@ type Handler struct {
 	coreclient   *corev1client.CoreV1Client
 	configclient *configv1client.ConfigV1Client
 
-	imageclientwrapper     ImageStreamClientWrapper
-	templateclientwrapper  TemplateClientWrapper
-	secretclientwrapper    SecretClientWrapper
-	configmapclientwrapper ConfigMapClientWrapper
+	imageclientwrapper    ImageStreamClientWrapper
+	templateclientwrapper TemplateClientWrapper
+	secretclientwrapper   SecretClientWrapper
 
 	Fileimagegetter    ImageStreamFromFileGetter
 	Filetemplategetter TemplateFromFileGetter
@@ -148,12 +145,23 @@ func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]strin
 			return srcfg, "", false, nil
 		}
 	}
-	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
-	if err != nil {
-		logrus.Warningf("Problem accessing config map during image stream watch event processing: %#v", err)
-		return nil, "", false, nil
+	filePath := ""
+	ok := false
+	// if by some slim chance sample watch events come in before the first
+	// samplesresource event get the file locations
+	if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 {
+		for _, arch := range srcfg.Spec.Architectures {
+			dir := h.GetBaseDir(arch, srcfg)
+			files, _ := h.Filefinder.List(dir)
+			h.processFiles(dir, files, srcfg)
+		}
 	}
-	filePath, ok := cm.Data[kind+"-"+name]
+	switch kind {
+	case "imagestream":
+		filePath, ok = h.imagestreamFile[name]
+	case "template":
+		filePath, ok = h.templateFile[name]
+	}
 	if !ok {
 		logrus.Printf("watch event %s not part of operators inventory", name)
 		return nil, "", false, nil
@@ -326,77 +334,33 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template) error {
 
 }
 
-func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *corev1.ConfigMap) (bool, error) {
+func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource) (bool, error) {
 	logrus.Debugf("srcfg skipped streams %#v", srcfg.Spec.SkippedImagestreams)
-	samplesRegistry, ok := cm.Data[regkey]
-	if !ok {
-		err := fmt.Errorf("could not find the registry setting in the config map %#v", cm.Data)
-		return false, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
-	}
-	if srcfg.Spec.SamplesRegistry != samplesRegistry {
-		logrus.Printf("SamplesRegistry changed from %s, processing %v", samplesRegistry, srcfg)
+	if srcfg.Spec.SamplesRegistry != srcfg.Status.SamplesRegistry {
+		logrus.Printf("SamplesRegistry changed from %s to %s", srcfg.Status.SamplesRegistry, srcfg.Spec.SamplesRegistry)
 		return true, nil
 	}
 
-	skippedStreams, ok := cm.Data[skippedstreamskey]
-	logrus.Debugf("cm skipped streams %s and ok %v", skippedStreams, ok)
-	if !ok {
-		err := fmt.Errorf("could not find the skipped stream setting in the config map %#v", cm.Data)
-		return false, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
-	}
-	streams := []string{}
-	// Split will return an item of len 1 if skippedStreams is empty;
-	// verified via testing and godoc of method
-	if len(skippedStreams) > 0 {
-		// gotta trim any remaining space to get array size comparison correct
-		// a string of say 'jenkins ' will create an array of size 2
-		skippedStreams = strings.TrimSpace(skippedStreams)
-		streams = strings.Split(skippedStreams, " ")
-	}
-
-	logrus.Debugf("cm array len %d and contents %#v and srcfg len %d and contents %#v", len(streams), streams, len(srcfg.Spec.SkippedImagestreams), srcfg.Spec.SkippedImagestreams)
-	if len(streams) != len(srcfg.Spec.SkippedImagestreams) {
-		logrus.Printf("SkippedImageStreams number of entries changed from %s, processing %v", skippedStreams, srcfg)
+	if len(srcfg.Spec.SkippedImagestreams) != len(srcfg.Status.SkippedImagestreams) {
+		logrus.Printf("SkippedImagestreams changed from %#v to %#v", srcfg.Status.SkippedImagestreams, srcfg.Spec.SkippedImagestreams)
 		return true, nil
 	}
 
-	streamsMap := make(map[string]bool)
-	for _, stream := range streams {
-		streamsMap[stream] = true
-	}
-	for _, stream := range srcfg.Spec.SkippedImagestreams {
-		if _, ok := streamsMap[stream]; !ok {
-			logrus.Printf("SkippedImageStreams list of entries changed from %s, processing %v", skippedStreams, srcfg)
+	for i, skip := range srcfg.Status.SkippedImagestreams {
+		if skip != srcfg.Spec.SkippedImagestreams[i] {
+			logrus.Printf("SkippedImagestreams changed from %#v to %#v", srcfg.Status.SkippedImagestreams, srcfg.Spec.SkippedImagestreams)
 			return true, nil
 		}
 	}
 
-	skippedTemps, ok := cm.Data[skippedtempskey]
-	if !ok {
-		err := fmt.Errorf("could not find the skipped template setting in the config map %#v", cm.Data)
-		return false, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
-	}
-	temps := []string{}
-	// Split will return an item of len 1 if skippedStreams is empty;
-	// verified via testing and godoc of method
-	if len(skippedTemps) > 0 {
-		// gotta trim any remaining space to get array size comparison correct
-		// a string of say 'jenkins ' will create an array of size 2
-		skippedTemps = strings.TrimSpace(skippedTemps)
-		temps = strings.Split(skippedTemps, " ")
-	}
-	if len(temps) != len(srcfg.Spec.SkippedTemplates) {
-		logrus.Printf("SkippedTemplates number of entries changed from %s, processing %v", skippedTemps, srcfg)
+	if len(srcfg.Spec.SkippedTemplates) != len(srcfg.Status.SkippedTemplates) {
+		logrus.Printf("SkippedTemplates changed from %#v to %#v", srcfg.Status.SkippedTemplates, srcfg.Spec.SkippedTemplates)
 		return true, nil
 	}
 
-	tempsMap := make(map[string]bool)
-	for _, temp := range temps {
-		tempsMap[temp] = true
-	}
-	for _, temp := range srcfg.Spec.SkippedTemplates {
-		if _, ok := tempsMap[temp]; !ok {
-			logrus.Printf("SkippedTemplates list of entries changed from %s, processing %v", skippedTemps, srcfg)
+	for i, skip := range srcfg.Status.SkippedTemplates {
+		if skip != srcfg.Spec.SkippedTemplates[i] {
+			logrus.Printf("SkippedTemplates changed from %#v to %#v", srcfg.Status.SkippedTemplates, srcfg.Spec.SkippedTemplates)
 			return true, nil
 		}
 	}
@@ -405,71 +369,15 @@ func (h *Handler) VariableConfigChanged(srcfg *v1alpha1.SamplesResource, cm *cor
 	return false, nil
 }
 
-func (h *Handler) StoreCurrentValidConfig(srcfg *v1alpha1.SamplesResource) error {
-	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
-	if err != nil && !kerrors.IsNotFound(err) {
-		logrus.Debugf("could not get cfgmap %#v", err)
-		// just return error to sdk for retry
-		return err
-	}
-	if kerrors.IsNotFound(err) {
-		logrus.Debugf("cfg map not found ?!?!?")
-		err = fmt.Errorf("Operator in compromised state; Could not find config map even though samplesresource exists")
-		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v")
-		h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
-		return err
-	}
-
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
-	}
-
-	if len(srcfg.Spec.InstallType) == 0 {
-		cm.Data[installtypekey] = string(v1alpha1.CentosSamplesDistribution)
-	} else {
-		cm.Data[installtypekey] = string(srcfg.Spec.InstallType)
-	}
-	if len(srcfg.Spec.Architectures) == 0 {
-		cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
-	} else {
-		for _, arch := range srcfg.Spec.Architectures {
-			switch arch {
-			case v1alpha1.X86Architecture:
-				cm.Data[v1alpha1.X86Architecture] = v1alpha1.X86Architecture
-			case v1alpha1.PPCArchitecture:
-				cm.Data[v1alpha1.PPCArchitecture] = v1alpha1.PPCArchitecture
-			}
-		}
-	}
-
-	cm.Data[regkey] = srcfg.Spec.SamplesRegistry
-	var value string
-	logrus.Debugf("len skipped imgstrms %d", len(srcfg.Spec.SkippedImagestreams))
-	for _, val := range srcfg.Spec.SkippedImagestreams {
-		value = value + val + " "
-	}
-	logrus.Debugf("adding value %s to cfgmap key %s", value, skippedstreamskey)
-	cm.Data[skippedstreamskey] = value
-
-	value = ""
-	for _, val := range srcfg.Spec.SkippedTemplates {
-		value = value + val + " "
-	}
-	cm.Data[skippedtempskey] = value
-
-	for key, path := range h.imagestreamFile {
-		cm.Data["imagestream-"+key] = path
-	}
-	for key, path := range h.templateFile {
-		cm.Data["template-"+key] = path
-	}
-
-	_, err = h.configmapclientwrapper.Update(h.namespace, cm)
-	logrus.Debugf("update to cm %s in namespace %s got err %#v", cm.Name, h.namespace, err)
-	return err
+func (h *Handler) StoreCurrentValidConfig(srcfg *v1alpha1.SamplesResource) { //error {
+	srcfg.Status.SamplesRegistry = srcfg.Spec.SamplesRegistry
+	srcfg.Status.InstallType = srcfg.Spec.InstallType
+	srcfg.Status.Architectures = srcfg.Spec.Architectures
+	srcfg.Status.SkippedImagestreams = srcfg.Spec.SkippedImagestreams
+	srcfg.Status.SkippedTemplates = srcfg.Spec.SkippedTemplates
 }
 
-func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) (*corev1.ConfigMap, error) {
+func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) error { //(*corev1.ConfigMap, error) {
 	// the first thing this should do is check that all the config values
 	// are "valid" (the architecture name is known, the distribution name is known, etc)
 	// if that fails, we should immediately error out and set ConfigValid to false.
@@ -479,11 +387,11 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) (*corev1.Confi
 		case v1alpha1.PPCArchitecture:
 			if srcfg.Spec.InstallType == v1alpha1.CentosSamplesDistribution {
 				err := fmt.Errorf("do not support centos distribution on ppc64le")
-				return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+				return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 			}
 		default:
 			err := fmt.Errorf("architecture %s unsupported; only support %s and %s", arch, v1alpha1.X86Architecture, v1alpha1.PPCArchitecture)
-			return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+			return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 		}
 	}
 
@@ -492,7 +400,7 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) (*corev1.Confi
 	case v1alpha1.CentosSamplesDistribution:
 	default:
 		err := fmt.Errorf("invalid install type %s specified, should be rhel or centos", string(srcfg.Spec.InstallType))
-		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
 
 	// only if the values being requested are valid, should we then proceed to check
@@ -502,64 +410,28 @@ func (h *Handler) SpecValidation(srcfg *v1alpha1.SamplesResource) (*corev1.Confi
 	// the srcfg contents
 	if !srcfg.ConditionTrue(v1alpha1.SamplesExist) && !srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
 		logrus.Println("Spec is valid because this operator has not processed a config yet")
-		return nil, nil
+		return nil
 	}
-	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
-	if err != nil && !kerrors.IsNotFound(err) {
-		err = fmt.Errorf("error retrieving previous configuration: %v", err)
-		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
-	}
-	if kerrors.IsNotFound(err) {
-		err = fmt.Errorf("ConfigMap %s does not exist, but it should, so cannot validate config change", v1alpha1.SamplesResourceName)
-		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
+	if len(srcfg.Status.InstallType) > 0 && srcfg.Spec.InstallType != srcfg.Status.InstallType {
+		err := fmt.Errorf("cannot change installtype from %s to %s", srcfg.Status.InstallType, srcfg.Spec.InstallType)
+		return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
 
-	installtype, ok := cm.Data[installtypekey]
-	if !ok {
-		err = fmt.Errorf("could not find the installtype in the config map %#v", cm.Data)
-		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "%v")
-	}
-	switch srcfg.Spec.InstallType {
-	case "", v1alpha1.CentosSamplesDistribution:
-		if installtype != string(v1alpha1.CentosSamplesDistribution) {
-			err = fmt.Errorf("cannot change installtype from %s to %s", installtype, srcfg.Spec.InstallType)
-			return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+	if len(srcfg.Status.Architectures) > 0 {
+		if len(srcfg.Status.Architectures) != len(srcfg.Spec.Architectures) {
+			err := fmt.Errorf("cannot change architectures from %#v to %#v", srcfg.Status.Architectures, srcfg.Spec.Architectures)
+			return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 		}
-	case v1alpha1.RHELSamplesDistribution:
-		if installtype != string(v1alpha1.RHELSamplesDistribution) {
-			err = fmt.Errorf("cannot change installtype from %s to %s", installtype, srcfg.Spec.InstallType)
-			return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+		for i, arch := range srcfg.Status.Architectures {
+			// make 'em keep the order consistent ;-/
+			if arch != srcfg.Spec.Architectures[i] {
+				err := fmt.Errorf("cannot change architectures from %#v to %#v", srcfg.Status.Architectures, srcfg.Spec.Architectures)
+				return h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
+			}
 		}
-	default:
-		// above value check catches this
-	}
-
-	_, hasx86 := cm.Data[v1alpha1.X86Architecture]
-	_, hasppc := cm.Data[v1alpha1.PPCArchitecture]
-
-	wantsx86 := false
-	wantsppc := false
-	if len(srcfg.Spec.Architectures) == 0 {
-		wantsx86 = true
-	}
-	for _, arch := range srcfg.Spec.Architectures {
-		switch arch {
-		case v1alpha1.X86Architecture:
-			wantsx86 = true
-		case v1alpha1.PPCArchitecture:
-			wantsppc = true
-		default:
-			// above value check catches this
-		}
-	}
-
-	if wantsx86 != hasx86 ||
-		wantsppc != hasppc {
-		err = fmt.Errorf("cannot change architectures from %#v to %#v", cm.Data, srcfg.Spec.Architectures)
-		return nil, h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
 	h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.ConfigurationValid)
-	return cm, nil
+	return nil
 }
 
 func (h *Handler) AddFinalizer(srcfg *v1alpha1.SamplesResource) {
@@ -677,10 +549,13 @@ func (h *Handler) CreateDefaultResourceIfNeeded(srcfg *v1alpha1.SamplesResource)
 	}
 
 	if srcfg == nil || kerrors.IsNotFound(err) {
-		h.CreateConfigMapIfNeeded()
 		// "4a" in the "startup" workflow, just create default
 		// resource and set up that way
 		srcfg = &v1alpha1.SamplesResource{}
+		srcfg.Spec.SkippedTemplates = []string{}
+		srcfg.Spec.SkippedImagestreams = []string{}
+		srcfg.Status.SkippedImagestreams = []string{}
+		srcfg.Status.SkippedTemplates = []string{}
 		srcfg.Name = v1alpha1.SamplesResourceName
 		srcfg.Kind = "SamplesResource"
 		srcfg.APIVersion = v1alpha1.GroupName + "/" + v1alpha1.Version
@@ -729,32 +604,6 @@ func (h *Handler) CreateDefaultResourceIfNeeded(srcfg *v1alpha1.SamplesResource)
 	}
 
 	return srcfg, nil
-}
-
-func (h *Handler) CreateConfigMapIfNeeded() error {
-	cm, err := h.configmapclientwrapper.Get(h.namespace, v1alpha1.SamplesResourceName)
-	if cm == nil || kerrors.IsNotFound(err) {
-		logrus.Println("creating config map")
-		cm = &corev1.ConfigMap{}
-		cm.Name = v1alpha1.SamplesResourceName
-		cm.Data = map[string]string{}
-		_, err = h.configmapclientwrapper.Create(h.namespace, cm)
-		if err != nil {
-			if !kerrors.IsAlreadyExists(err) {
-				return err
-			}
-			// in case there is some race condition
-			logrus.Println("got already exists error on create config map")
-			return nil
-		}
-	} else {
-		if err == nil {
-			logrus.Debugf("ConfigMap for SamplesResource %#v found during operator startup", cm)
-		} else {
-			logrus.Printf("Could not ascertain presence of ConfigMap: %v", err)
-		}
-	}
-	return err
 }
 
 func (h *Handler) WaitingForCredential(srcfg *v1alpha1.SamplesResource) error {
@@ -893,11 +742,6 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResou
 	// we'll want to delete that one too ... we'll need to put a marking on the secret to indicate we created it
 	// vs. the admin creating it
 
-	err = h.configmapclientwrapper.Delete(h.namespace, v1alpha1.SamplesResourceName)
-	if err != nil && !kerrors.IsNotFound(err) {
-		logrus.Warnf("Problem deleting openshift configmap %s on SamplesResource delete: %#v", v1alpha1.SamplesResourceName, err)
-		return err
-	}
 	return nil
 }
 
@@ -969,7 +813,6 @@ func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool,
 		if srcfg.Spec.ManagementState != srcfg.Status.ManagementState {
 			logrus.Println("management state set to managed")
 		}
-		h.CreateConfigMapIfNeeded()
 		// will set status state to managed at top level caller
 		// to deal with config change processing
 		return true, false, nil
@@ -1117,7 +960,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		}
 
 		existingValidStatus := srcfg.Condition(v1alpha1.ConfigurationValid).Status
-		cm, err := h.SpecValidation(srcfg)
+		err = h.SpecValidation(srcfg)
 		if err != nil {
 			// flush status update
 			logrus.Debugf("SDKUPDATE bad spec validation update")
@@ -1131,31 +974,29 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		}
 
 		if srcfg.Spec.ManagementState == srcfg.Status.ManagementState {
-			if cm != nil {
-				changed, err := h.VariableConfigChanged(srcfg, cm)
-				if err != nil {
-					// flush status update
-					logrus.Debugf("SDKUPDATE var cfg chg err update")
-					h.sdkwrapper.Update(srcfg)
-					return err
-				}
-				// so ignore if config does not change and the samples exist and
-				// we are not in progress
-				if !changed &&
-					srcfg.ConditionTrue(v1alpha1.SamplesExist) &&
-					srcfg.ConditionFalse(v1alpha1.ImageChangesInProgress) {
-					logrus.Debugf("Handle ignoring because config the same and exists is true and in progress false")
-					return nil
-				}
-				// if config changed, but a prior config action is still in progress,
-				// reset in progress to false and return; the next event should drive the actual
-				// processing of the config change and replace whatever was previously
-				// in progress
-				if changed && srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
-					h.GoodConditionUpdate(srcfg, corev1.ConditionFalse, v1alpha1.ImageChangesInProgress)
-					logrus.Debugf("SDKUPDATE change in progress from true to false for config change")
-					return sdk.Update(srcfg)
-				}
+			changed, err := h.VariableConfigChanged(srcfg)
+			if err != nil {
+				// flush status update
+				logrus.Debugf("SDKUPDATE var cfg chg err update")
+				h.sdkwrapper.Update(srcfg)
+				return err
+			}
+			// so ignore if config does not change and the samples exist and
+			// we are not in progress
+			if !changed &&
+				srcfg.ConditionTrue(v1alpha1.SamplesExist) &&
+				srcfg.ConditionFalse(v1alpha1.ImageChangesInProgress) {
+				logrus.Debugf("Handle ignoring because config the same and exists is true and in progress false")
+				return nil
+			}
+			// if config changed, but a prior config action is still in progress,
+			// reset in progress to false and return; the next event should drive the actual
+			// processing of the config change and replace whatever was previously
+			// in progress
+			if changed && srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
+				h.GoodConditionUpdate(srcfg, corev1.ConditionFalse, v1alpha1.ImageChangesInProgress)
+				logrus.Debugf("SDKUPDATE change in progress from true to false for config change")
+				return sdk.Update(srcfg)
 			}
 		}
 
@@ -1187,11 +1028,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			srcfg.Spec.InstallType = v1alpha1.CentosSamplesDistribution
 		}
 
-		err = h.StoreCurrentValidConfig(srcfg)
-		if err != nil {
-			err = h.processError(srcfg, v1alpha1.ConfigurationValid, corev1.ConditionUnknown, err, "error %v updating configmap, subsequent config validations untenable")
-			return err
-		}
+		h.StoreCurrentValidConfig(srcfg)
 
 		if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 {
 			for _, arch := range srcfg.Spec.Architectures {
@@ -1633,33 +1470,6 @@ func (g *defaultTemplateClientWrapper) Delete(namespace, name string, opts *meta
 func (g *defaultTemplateClientWrapper) Watch(namespace string) (watch.Interface, error) {
 	opts := metav1.ListOptions{}
 	return g.h.tempclient.Templates(namespace).Watch(opts)
-}
-
-type ConfigMapClientWrapper interface {
-	Get(namespace, name string) (*corev1.ConfigMap, error)
-	Create(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error)
-	Update(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error)
-	Delete(namespace, name string) error
-}
-
-type defaultConfigMapClientWrapper struct {
-	h *Handler
-}
-
-func (g *defaultConfigMapClientWrapper) Get(namespace, name string) (*corev1.ConfigMap, error) {
-	return g.h.coreclient.ConfigMaps(namespace).Get(name, metav1.GetOptions{})
-}
-
-func (g *defaultConfigMapClientWrapper) Create(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	return g.h.coreclient.ConfigMaps(namespace).Create(s)
-}
-
-func (g *defaultConfigMapClientWrapper) Update(namespace string, s *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	return g.h.coreclient.ConfigMaps(namespace).Update(s)
-}
-
-func (g *defaultConfigMapClientWrapper) Delete(namespace, name string) error {
-	return g.h.coreclient.ConfigMaps(namespace).Delete(name, &metav1.DeleteOptions{})
 }
 
 type SecretClientWrapper interface {

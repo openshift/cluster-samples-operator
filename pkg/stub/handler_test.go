@@ -480,22 +480,10 @@ func TestImageStreamEvent(t *testing.T) {
 		},
 	}
 
-	fakecmclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: v1alpha1.SamplesResourceName,
-		},
-		Data: map[string]string{
-			"imagestream-foo":        x86OKDContentRootDir + "/imagestreams/foo",
-			"imagestream-bar":        x86OKDContentRootDir + "/imagestreams/bar",
-			installtypekey:           string(v1alpha1.CentosSamplesDistribution),
-			v1alpha1.X86Architecture: v1alpha1.X86Architecture,
-			regkey:            "",
-			skippedstreamskey: "",
-			skippedtempskey:   "",
-		},
-	}
-	fakecmclient.maps[v1alpha1.SamplesResourceName] = cm
+	sr.Status.InstallType = v1alpha1.CentosSamplesDistribution
+	sr.Status.Architectures = []string{v1alpha1.X86Architecture}
+	sr.Status.SkippedImagestreams = []string{}
+	sr.Status.SkippedTemplates = []string{}
 	h.processImageStreamWatchEvent(is)
 	validate(true, err, "", sr, conditions, statuses, t)
 
@@ -1014,7 +1002,6 @@ func NewTestHandler() Handler {
 		upserterrors: map[string]error{},
 	}
 	h.secretclientwrapper = &fakeSecretClientWrapper{}
-	h.configmapclientwrapper = &fakeConfigMapClientWrapper{maps: map[string]*corev1.ConfigMap{}}
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
@@ -1213,39 +1200,6 @@ func (f *fakeTemplateClientWrapper) Delete(namespace, name string, opts *metav1.
 
 func (f *fakeTemplateClientWrapper) Watch(namespace string) (watch.Interface, error) {
 	return nil, nil
-}
-
-type fakeConfigMapClientWrapper struct {
-	maps map[string]*corev1.ConfigMap
-	err  error
-}
-
-func (f *fakeConfigMapClientWrapper) Create(namespace string, cm *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	f.maps[cm.Name] = cm
-	return cm, nil
-}
-
-func (f *fakeConfigMapClientWrapper) Update(namespace string, cm *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	f.maps[cm.Name] = cm
-	return cm, nil
-}
-
-func (f *fakeConfigMapClientWrapper) Get(namespace, name string) (*corev1.ConfigMap, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	cm, _ := f.maps[name]
-	return cm, nil
-}
-
-func (f *fakeConfigMapClientWrapper) Delete(namespace, name string) error {
-	return nil
 }
 
 type fakeSecretClientWrapper struct {
