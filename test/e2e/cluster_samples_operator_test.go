@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,12 +24,53 @@ import (
 	samplesapi "github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
 	"github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/stub"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
 	imagestreamsKey = "imagestreams"
 	templatesKey    = "templates"
 )
+
+func dumpPod(t *testing.T) {
+	kubeConfigFile := os.Getenv("KUBERNETES_CONFIG")
+	if len(kubeConfigFile) == 0 {
+		t.Fatalf("KUBERNETES_CONFIG needs to be set")
+	}
+	kubeConfigFile = os.Getenv("KUBECONFIG")
+	if len(kubeConfigFile) == 0 {
+		t.Fatalf("KUBECONFIG needs to be set")
+	}
+	restClient, err := clientcmd.BuildConfigFromFlags("", kubeConfigFile)
+	if err != nil {
+		t.Fatalf("error getting rest client %v", err)
+	}
+	coreClient, err := corev1client.NewForConfig(restClient)
+	if err != nil {
+		t.Fatalf("error getting core client %v", err)
+	}
+	podClient := coreClient.Pods("openshift-cluster-samples-operator")
+	podList, err := podClient.List(metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("error list pods %v", err)
+	}
+	for _, pod := range podList.Items {
+		if strings.HasPrefix(pod.Name, "cluster-samples-operator") {
+			req := podClient.GetLogs(pod.Name, &corev1.PodLogOptions{})
+			readCloser, err := req.Stream()
+			if err != nil {
+				t.Fatalf("error getting pod logs %v", err)
+			}
+			b, err := ioutil.ReadAll(readCloser)
+			if err != nil {
+				t.Fatalf("error reading pod stream %v", err)
+			}
+			podLog := string(b)
+			t.Logf("pod logs:  %s", podLog)
+		}
+	}
+}
 
 func verifyOperatorUp(t *testing.T) *samplesapi.SamplesResource {
 	sr := &samplesapi.SamplesResource{
@@ -48,7 +90,7 @@ func verifyOperatorUp(t *testing.T) *samplesapi.SamplesResource {
 		return true, nil
 	})
 	if err != nil {
-		t.Errorf("error waiting for samples resource to appear: %v", err)
+		t.Fatalf("error waiting for samples resource to appear: %v", err)
 	}
 	return sr
 }
@@ -121,6 +163,7 @@ func verifyClusterOperatorConditionsComplete(t *testing.T) {
 		return false, nil
 	})
 	if err != nil {
+		dumpPod(t)
 		sr := verifyOperatorUp(t)
 		t.Fatalf("cluster operator conditions never stabilized, cluster op %#v samples resource %#v", state, sr)
 	}
@@ -244,14 +287,18 @@ func verifyImageStreamsPresent(t *testing.T, content map[string]bool, timeToComp
 
 		err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
 			if err := sdk.Get(is); err != nil {
+				t.Logf("%v", err)
 				return false, nil
 			}
 			if timeToCompare != nil && is.CreationTimestamp.Before(timeToCompare) {
-				return false, fmt.Errorf("imagestream %s was created at %#v which is still created before time to compare %#v", is.Name, is.CreationTimestamp, timeToCompare)
+				errstr := fmt.Sprintf("imagestream %s was created at %#v which is still created before time to compare %#v", is.Name, is.CreationTimestamp, timeToCompare)
+				t.Log(errstr)
+				return false, fmt.Errorf(errstr)
 			}
 			return true, nil
 		})
 		if err != nil {
+			dumpPod(t)
 			sr := verifyOperatorUp(t)
 			t.Fatalf("error waiting for example imagestream %s to appear: %v samples resource %#v", key, err, sr)
 		}
@@ -273,14 +320,18 @@ func verifyTemplatesPresent(t *testing.T, content map[string]bool, timeToCompare
 
 		err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
 			if err := sdk.Get(template); err != nil {
+				t.Logf("%v", err)
 				return false, nil
 			}
 			if timeToCompare != nil && template.CreationTimestamp.Before(timeToCompare) {
-				return false, fmt.Errorf("template %s was created at %#v which is still created before time to compare %#v", template.Name, template.CreationTimestamp, timeToCompare)
+				errstr := fmt.Sprintf("template %s was created at %#v which is still created before time to compare %#v", template.Name, template.CreationTimestamp, timeToCompare)
+				t.Log(errstr)
+				return false, fmt.Errorf(errstr)
 			}
 			return true, nil
 		})
 		if err != nil {
+			dumpPod(t)
 			sr := verifyOperatorUp(t)
 			t.Fatalf("error waiting for example template %s to appear: %v samples resource %#v", key, err, sr)
 		}
@@ -294,6 +345,106 @@ func validateContent(t *testing.T, timeToCompare *kapis.Time) {
 	verifyImageStreamsPresent(t, streams, timeToCompare)
 	templates, _ := content[templatesKey]
 	verifyTemplatesPresent(t, templates, timeToCompare)
+}
+
+func verifyConfigurationValid(t *testing.T, sr *samplesapi.SamplesResource, status corev1.ConditionStatus) {
+	err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
+		err := sdk.Get(sr)
+		if err != nil {
+			return false, err
+		}
+		if sr.Condition(samplesapi.ConfigurationValid).Status == status {
+			return true, nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		dumpPod(t)
+		sr := verifyOperatorUp(t)
+		t.Fatalf("error waiting for samples resource to update config valid %v samplesresource %#v", err, sr)
+	}
+}
+
+func verifyDeletedImageStreamNotRecreated(t *testing.T) {
+	is := &imageapiv1.ImageStream{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ImageStream",
+			APIVersion: imageapiv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "jenkins",
+			Namespace: "openshift",
+		},
+	}
+	err := sdk.Delete(is, sdk.WithDeleteOptions(&metav1.DeleteOptions{}))
+	if err != nil {
+		dumpPod(t)
+		sr := verifyOperatorUp(t)
+		t.Fatalf("error deleting jenkins imagestream %v samplesresource %#v", err, sr)
+	}
+	// make sure jenkins imagestream does not appear while unmanaged
+	// first, wait sufficiently to make sure delete has gone though
+	err = wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
+		err := sdk.Get(is)
+		if kerrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		dumpPod(t)
+		sr := verifyOperatorUp(t)
+		t.Fatalf("delete did not occur %v samples resource %#v", err, sr)
+	}
+	// now make sure it has not been recreated
+	time.Sleep(30 * time.Second)
+	err = sdk.Get(is)
+	if err == nil {
+		t.Fatalf("imagestream recreated")
+	}
+
+}
+
+func verifyDeletedTemplatesNotRecreated(t *testing.T) {
+	temp := &templatev1.Template{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Template",
+			APIVersion: templatev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "jenkins-ephemeral",
+			Namespace: "openshift",
+		},
+	}
+	err := sdk.Delete(temp, sdk.WithDeleteOptions(&metav1.DeleteOptions{}))
+	if err != nil {
+		dumpPod(t)
+		sr := verifyOperatorUp(t)
+		t.Fatalf("error deleting jenkins imagestream %v samples resource %#v", err, sr)
+	}
+	// make sure jenkins-ephemeral template does not appear while unmanaged
+	// first, wait sufficiently to make sure delete has gone though
+	err = wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
+		err := sdk.Get(temp)
+		if kerrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		dumpPod(t)
+		sr := verifyOperatorUp(t)
+		t.Fatalf("delete did not occur %v samples resource %#v", err, sr)
+	}
+	// now make sure it has not been recreated
+	time.Sleep(30 * time.Second)
+	err = sdk.Get(temp)
+	if err == nil {
+		dumpPod(t)
+		sr := verifyOperatorUp(t)
+		t.Fatalf("template recreated samples resource %#v", sr)
+	}
+
 }
 
 func TestImageStreamInOpenshiftNamespace(t *testing.T) {
@@ -310,7 +461,8 @@ func TestRecreateSamplesResourceAfterDelete(t *testing.T) {
 
 	err := sdk.Delete(sr, sdk.WithDeleteOptions(&metav1.DeleteOptions{}))
 	if err != nil {
-		t.Errorf("error deleting samplesresource %v", err)
+		dumpPod(t)
+		t.Fatalf("error deleting samplesresource %v", err)
 	}
 
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
@@ -323,12 +475,15 @@ func TestRecreateSamplesResourceAfterDelete(t *testing.T) {
 		return true, nil
 	})
 	if err != nil {
-		t.Errorf("creation times the same after delete: %v, %v, %#v", oldTime, sr.CreationTimestamp, sr)
+		dumpPod(t)
+		t.Fatalf("creation times the same after delete: %v, %v, %#v", oldTime, sr.CreationTimestamp, sr)
 	}
 
 	err = verifyConditionsCompleteSamplesAdded(sr)
 	if err != nil {
-		t.Errorf("samples not re-established after delete %#v", sr)
+		dumpPod(t)
+		sr = verifyOperatorUp(t)
+		t.Fatalf("samples not re-established after delete %#v", sr)
 	}
 
 	validateContent(t, &now)
@@ -343,12 +498,15 @@ func TestSpecManagementStateField(t *testing.T) {
 	sr.Spec.ManagementState = operatorsv1api.Removed
 	err := sdk.Update(sr)
 	if err != nil {
-		t.Errorf("error updating samplesresource %v", err)
+		dumpPod(t)
+		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
 	}
 
 	err = verifyConditionsCompleteSamplesRemoved(sr)
 	if err != nil {
-		t.Errorf("samples not removed in time %#v", sr)
+		dumpPod(t)
+		sr = verifyOperatorUp(t)
+		t.Fatalf("samples not removed in time %#v", sr)
 	}
 
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
@@ -361,7 +519,9 @@ func TestSpecManagementStateField(t *testing.T) {
 		return true, nil
 	})
 	if err != nil {
-		t.Errorf("%v", err)
+		dumpPod(t)
+		sr = verifyOperatorUp(t)
+		t.Fatalf("%v and %#v", err, sr)
 	}
 
 	isl := &imageapiv1.ImageStreamList{
@@ -372,7 +532,9 @@ func TestSpecManagementStateField(t *testing.T) {
 	}
 	sdk.List("openshift", isl, sdk.WithListOptions(&metav1.ListOptions{}))
 	if len(isl.Items) > 0 {
-		t.Errorf("still imagestreams in openshift namespace %#v", isl.Items)
+		dumpPod(t)
+		sr = verifyOperatorUp(t)
+		t.Fatalf("still imagestreams in openshift namespace %#v samples resource %#v", isl.Items, sr)
 	}
 	tl := &templatev1.TemplateList{
 		TypeMeta: metav1.TypeMeta{
@@ -382,19 +544,24 @@ func TestSpecManagementStateField(t *testing.T) {
 	}
 	sdk.List("openshift", tl, sdk.WithListOptions(&metav1.ListOptions{}))
 	if len(tl.Items) > 0 {
-		t.Errorf("still imagestreams in openshift namespace %#v", tl.Items)
+		dumpPod(t)
+		sr = verifyOperatorUp(t)
+		t.Fatalf("still templates in openshift namespace %#v samples resource %#v", tl.Items, sr)
 	}
 
 	sr = verifyOperatorUp(t)
 	sr.Spec.ManagementState = operatorsv1api.Managed
 	err = sdk.Update(sr)
 	if err != nil {
-		t.Errorf("error updating samplesresource %v", err)
+		dumpPod(t)
+		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
 	}
 
 	err = verifyConditionsCompleteSamplesAdded(sr)
 	if err != nil {
-		t.Errorf("samples not re-established when set to managed %#v", sr)
+		dumpPod(t)
+		sr = verifyOperatorUp(t)
+		t.Fatalf("samples not re-established when set to managed %#v", sr)
 	}
 
 	validateContent(t, &now)
@@ -403,53 +570,22 @@ func TestSpecManagementStateField(t *testing.T) {
 	sr.Spec.ManagementState = operatorsv1api.Unmanaged
 	err = sdk.Update(sr)
 	if err != nil {
-		t.Errorf("error updating samplesresource %v", err)
+		dumpPod(t)
+		t.Fatalf("error updating samplesresource %v", err)
 	}
 
-	is := &imageapiv1.ImageStream{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ImageStream",
-			APIVersion: imageapiv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "jenkins",
-			Namespace: "openshift",
-		},
-	}
-	err = sdk.Delete(is, sdk.WithDeleteOptions(&metav1.DeleteOptions{}))
-	if err != nil {
-		t.Errorf("error deleting jenkins imagestream %v", err)
-	}
-	// make sure jenkins imagestream does not appear while unmanaged
-	// first, wait sufficiently to make sure delete has gone though
-	err = wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
-		err := sdk.Get(is)
-		if kerrors.IsNotFound(err) {
-			return true, nil
-		}
-		return false, nil
-	})
-	if err != nil {
-		t.Errorf("delete did not occur %v", err)
-	}
-	// now make sure it has not been recreated
-	time.Sleep(30 * time.Second)
-	err = sdk.Get(is)
-	if err == nil {
-		sr = verifyOperatorUp(t)
-		t.Fatalf("imagestream recreated, samples resource %#v", sr)
-	}
-
+	verifyDeletedImageStreamNotRecreated(t)
+	verifyDeletedTemplatesNotRecreated(t)
 	// now switch back to default managed for any subsequent tests
-	// and confirm all the default samples content, including the jenkins
-	// imagestream, exists
+	// and confirm all the default samples content exists
 	sr = verifyOperatorUp(t)
 	// get timestamp to check against in progress condition
 	now = kapis.Now()
 	sr.Spec.ManagementState = operatorsv1api.Managed
 	err = sdk.Update(sr)
 	if err != nil {
-		t.Errorf("error updating samplesresource %v", err)
+		dumpPod(t)
+		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
 	}
 
 	// wait for it to get into pending
@@ -467,15 +603,95 @@ func TestSpecManagementStateField(t *testing.T) {
 		return false, nil
 	})
 	if err != nil {
+		dumpPod(t)
 		t.Fatalf("error waiting for samplesresource to get into pending: %v samples resource %#v", err, sr)
 	}
 
 	// now wait for it to get out of pending
 	err = verifyConditionsCompleteSamplesAdded(sr)
 	if err != nil {
-		t.Errorf("samples not re-established when set to managed %#v", sr)
+		dumpPod(t)
+		sr = verifyOperatorUp(t)
+		t.Fatalf("samples not re-established when set to managed %#v", sr)
 	}
 
 	validateContent(t, nil)
 	verifyClusterOperatorConditionsComplete(t)
+}
+
+func TestInstallTypeConfigChangeValidation(t *testing.T) {
+	sr := verifyOperatorUp(t)
+
+	sr.Spec.InstallType = samplesapi.RHELSamplesDistribution
+	err := sdk.Update(sr)
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+	}
+
+	verifyConfigurationValid(t, sr, corev1.ConditionFalse)
+
+	//reset install type back
+	sr = verifyOperatorUp(t)
+	sr.Spec.InstallType = samplesapi.CentosSamplesDistribution
+	err = sdk.Update(sr)
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+	}
+
+	verifyConfigurationValid(t, sr, corev1.ConditionTrue)
+}
+
+func TestArchitectureConfigChangeValidation(t *testing.T) {
+	sr := verifyOperatorUp(t)
+
+	sr.Spec.Architectures[0] = samplesapi.PPCArchitecture
+	err := sdk.Update(sr)
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+	}
+
+	verifyConfigurationValid(t, sr, corev1.ConditionFalse)
+
+	//reset install type back
+	sr = verifyOperatorUp(t)
+	sr.Spec.Architectures[0] = samplesapi.X86Architecture
+	err = sdk.Update(sr)
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+	}
+
+	verifyConfigurationValid(t, sr, corev1.ConditionTrue)
+}
+
+func TestSkippedProcessing(t *testing.T) {
+	sr := verifyOperatorUp(t)
+
+	sr.Spec.SkippedImagestreams = append(sr.Spec.SkippedImagestreams, "jenkins")
+	sr.Spec.SkippedTemplates = append(sr.Spec.SkippedTemplates, "jenkins-ephemeral")
+	err := sdk.Update(sr)
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("error updating samples resource %v and %#v", err, sr)
+	}
+
+	verifyDeletedImageStreamNotRecreated(t)
+	verifyDeletedTemplatesNotRecreated(t)
+
+	// reset skipped list back
+	sr = verifyOperatorUp(t)
+	sr.Spec.SkippedImagestreams = []string{}
+	sr.Spec.SkippedTemplates = []string{}
+	err = sdk.Update(sr)
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+	}
+	// checking in progress before validating content helps
+	// isolate potential error causes
+	verifyConditionsCompleteSamplesAdded(sr)
+	validateContent(t, nil)
 }
