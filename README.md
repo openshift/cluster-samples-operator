@@ -29,7 +29,7 @@ The samples resource offers the following configuration fields:
 - ManagementState
 -- Managed: the operator will update the samples as the configuration dictates
 -- Unmanaged: the operator will ignore updates to the samples resource object and any imagestreams or templates in the openshift namespace
--- Removed: the operator will remove the set of managed imagestreams and templates in the openshift namespace. It will ignore new samples created by the cluster admin or any samples in the skipped lists.  After the removals are complete, the operator will work like it is in the 'Unmanaged' state and ignore any watch events on the samples resources, secrets, imagestreams, or templates.  There are some caveats around concurrent creates and removal (see Change behaviors section).
+-- Removed: the operator will remove the set of managed imagestreams and templates in the openshift namespace. It will ignore new samples created by the cluster admin or any samples in the skipped lists.  After the removals are complete, the operator will work like it is in the 'Unmanaged' state and ignore any watch events on the sample resources, imagestreams, or templates.  It will operate on secrets to facilitate the 'centos' to 'rhel' switch.  There are some caveats around concurrent creates and removal (see Change behaviors section).
 - Samples Registry
 -- Override the registry that images are imported from
 - Install Type
@@ -46,8 +46,9 @@ The samples resource offers the following configuration fields:
 The install type and architectures are not allowed to be changed while in the 'Managed' state.
 
 In order to change the install type and architectures values, an administrator must:
-- Mark the ManagementState as 'Removed', saving the change
-- In a subsequent change, switch the Install Type or Architecture and change the ManagementState back to Managed
+- Mark the ManagementState as 'Removed', saving the change.
+- In a subsequent change, switch the install type or architecture and change the ManagementState back to Managed.
+- In the case of changing from 'centos' to 'rhel', the operator will still process Secrets while in Removed state.  You can create the secret either before switching to Removed, while in Removed state before switching to Managed state, or after switching to Managed state (though you'll see delays creating the samples until the secret event is processed if you create the secret after switching to Managed).
 
 ## Config behaviors
 
