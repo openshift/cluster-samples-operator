@@ -60,10 +60,10 @@ const (
 )
 
 var (
-	//TODO eventually we will want this off of the commit or something that correlates to versions in the code repo
 	// CodeLevel is a precise code version level that the operator will use to determine whether it ias
-	// been upgraded, and by extension, whether the samples should be updated.
-	CodeLevel = "v0.0.1"
+	// been upgraded, and by extension, whether the samples should be updated.  It will be set at the same
+	// time the ClusterOperator API Object for the samples operator is set.
+	CodeLevel string
 )
 
 type SamplesResourceSpec struct {
