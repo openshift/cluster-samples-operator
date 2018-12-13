@@ -4,7 +4,7 @@ all: generate build build-image
 generate:
 	operator-sdk generate k8s
 build:
-	go build ./cmd/cluster-samples-operator
+	go build -ldflags '-X github.com/openshift/cluster-samples-operator/vendor/k8s.io/client-go/pkg/version.gitVersion=$(shell git describe) -X github.com/openshift/cluster-samples-operator/vendor/k8s.io/client-go/pkg/version.gitCommit=$(shell git rev-parse HEAD)' ./cmd/cluster-samples-operator
 build-image:
 	# save some time setting up the docker build context by deleting this first.
 	rm -f cluster-samples-operator        

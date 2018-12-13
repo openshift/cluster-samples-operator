@@ -8,6 +8,7 @@ import (
 	metaapi "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/pkg/version"
 	"k8s.io/client-go/util/retry"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -105,7 +106,6 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 			}
 
 			state.Name = ClusterOperatorName
-			state.Status.Version = v1alpha1.CodeLevel
 
 			state.Status.Conditions = []configv1.ClusterOperatorStatusCondition{
 				{
@@ -143,6 +143,19 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 		if !modified {
 			return nil
 		}
+		vinfo := version.Get()
+		versionString := ""
+		switch {
+		case len(vinfo.GitVersion) > 0:
+			versionString = string(vinfo.GitVersion) + "-"
+			fallthrough
+		case len(vinfo.GitCommit) > 0:
+			versionString = versionString + string(vinfo.GitCommit)
+		default:
+			versionString = "v0.0.0-was-not-built-properly"
+		}
+		state.Status.Version = versionString
+		v1alpha1.CodeLevel = versionString
 		return o.ClusterOperatorWrapper.UpdateStatus(state)
 	})
 }
