@@ -365,6 +365,39 @@ func verifyConfigurationValid(t *testing.T, sr *samplesapi.SamplesResource, stat
 	}
 }
 
+func verifyDeletedImageStreamRecreated(t *testing.T) {
+	is := &imageapiv1.ImageStream{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ImageStream",
+			APIVersion: imageapiv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "jenkins",
+			Namespace: "openshift",
+		},
+	}
+	err := sdk.Delete(is, sdk.WithDeleteOptions(&metav1.DeleteOptions{}))
+	if err != nil {
+		dumpPod(t)
+		sr := verifyOperatorUp(t)
+		t.Fatalf("error deleting jenkins imagestream %v samplesresource %#v", err, sr)
+	}
+	err = wait.PollImmediate(1*time.Second, 30*time.Second, func() (bool, error) {
+		err := sdk.Get(is)
+		if err == nil {
+			return true, nil
+		}
+		if kerrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	})
+	if err != nil {
+		t.Fatalf("imagestream not recreated: %v", err)
+		dumpPod(t)
+	}
+}
+
 func verifyDeletedImageStreamNotRecreated(t *testing.T) {
 	is := &imageapiv1.ImageStream{
 		TypeMeta: metav1.TypeMeta{
@@ -403,6 +436,39 @@ func verifyDeletedImageStreamNotRecreated(t *testing.T) {
 		t.Fatalf("imagestream recreated")
 	}
 
+}
+
+func verifyDeletedTemplatesRecreated(t *testing.T) {
+	temp := &templatev1.Template{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Template",
+			APIVersion: templatev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "jenkins-ephemeral",
+			Namespace: "openshift",
+		},
+	}
+	err := sdk.Delete(temp, sdk.WithDeleteOptions(&metav1.DeleteOptions{}))
+	if err != nil {
+		dumpPod(t)
+		sr := verifyOperatorUp(t)
+		t.Fatalf("error deleting jenkins imagestream %v samples resource %#v", err, sr)
+	}
+	err = wait.PollImmediate(1*time.Second, 30*time.Second, func() (bool, error) {
+		err := sdk.Get(temp)
+		if err == nil {
+			return true, nil
+		}
+		if kerrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	})
+	if err != nil {
+		t.Fatalf("template not recreated: %v", err)
+		dumpPod(t)
+	}
 }
 
 func verifyDeletedTemplatesNotRecreated(t *testing.T) {
@@ -692,6 +758,15 @@ func TestSkippedProcessing(t *testing.T) {
 	}
 	// checking in progress before validating content helps
 	// isolate potential error causes
+	sr = verifyOperatorUp(t)
 	verifyConditionsCompleteSamplesAdded(sr)
 	validateContent(t, nil)
+	sr = verifyOperatorUp(t)
+	verifyConditionsCompleteSamplesAdded(sr)
+}
+
+func TestRecreateDeletedManagedSample(t *testing.T) {
+	verifyOperatorUp(t)
+	verifyDeletedImageStreamRecreated(t)
+	verifyDeletedTemplatesRecreated(t)
 }

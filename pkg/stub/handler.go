@@ -114,7 +114,7 @@ type Handler struct {
 // - filePath: used to the caller to look up the image content for the upsert
 // - doUpsert: whether to do the upsert of not ... not doing the upsert optionally triggers the need for checking status of prior upsert
 // - err: if a problem occurred getting the samplesresource, we return the error to bubble up and initiate a retry
-func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]string) (*v1alpha1.SamplesResource, string, bool, error) {
+func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]string, deleted bool) (*v1alpha1.SamplesResource, string, bool, error) {
 	srcfg, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
 	if srcfg == nil || err != nil {
 		logrus.Printf("Received watch event %s but not upserting since not have the SamplesResource yet: %#v %#v", kind+"/"+name, err, srcfg)
@@ -138,6 +138,42 @@ func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]strin
 		}
 	}
 
+	filePath := ""
+	// if by some slim chance sample watch events come in before the first
+	// samplesresource event get the file locations and skipped lists
+	if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 {
+		for _, arch := range srcfg.Spec.Architectures {
+			dir := h.GetBaseDir(arch, srcfg)
+			files, _ := h.Filefinder.List(dir)
+			h.processFiles(dir, files, srcfg)
+		}
+	}
+	h.buildSkipFilters(srcfg)
+
+	inInventory := false
+	skipped := false
+	switch kind {
+	case "imagestream":
+		filePath, inInventory = h.imagestreamFile[name]
+		_, skipped = h.skippedImagestreams[name]
+	case "template":
+		filePath, inInventory = h.templateFile[name]
+		_, skipped = h.skippedTemplates[name]
+	}
+	if !inInventory {
+		logrus.Printf("watch event %s not part of operators inventory", name)
+		return nil, "", false, nil
+	}
+	if skipped {
+		logrus.Printf("watch event %s in skipped list for %s", name, kind)
+		return nil, "", false, nil
+	}
+
+	if deleted {
+		logrus.Printf("going to recreate deleted managed sample %s/%s", kind, name)
+		return srcfg, filePath, true, nil
+	}
+
 	if annotations != nil {
 		isv, ok := annotations[v1alpha1.SamplesVersionAnnotation]
 		if ok && isv == v1alpha1.CodeLevel {
@@ -146,35 +182,13 @@ func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]strin
 			return srcfg, "", false, nil
 		}
 	}
-	filePath := ""
-	ok := false
-	// if by some slim chance sample watch events come in before the first
-	// samplesresource event get the file locations
-	if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 {
-		for _, arch := range srcfg.Spec.Architectures {
-			dir := h.GetBaseDir(arch, srcfg)
-			files, _ := h.Filefinder.List(dir)
-			h.processFiles(dir, files, srcfg)
-		}
-	}
-	switch kind {
-	case "imagestream":
-		filePath, ok = h.imagestreamFile[name]
-	case "template":
-		filePath, ok = h.templateFile[name]
-	}
-	if !ok {
-		logrus.Printf("watch event %s not part of operators inventory", name)
-		return nil, "", false, nil
-	}
-
 	return srcfg, filePath, true, nil
 }
 
-func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) error {
+func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted bool) error {
 	// our pattern is the top most caller locks the mutex
 
-	srcfg, filePath, doUpsert, err := h.prepWatchEvent("imagestream", is.Name, is.Annotations)
+	srcfg, filePath, doUpsert, err := h.prepWatchEvent("imagestream", is.Name, is.Annotations, deleted)
 	logrus.Debugf("prep watch event imgstr %s ok %v", is.Name, doUpsert)
 	if !doUpsert {
 		if err != nil {
@@ -186,11 +200,17 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) error {
 		processing := srcfg.Condition(v1alpha1.ImageChangesInProgress)
 		if processing.Status != corev1.ConditionTrue {
 			// if somebody edited our sample but left the version annotation correct, instead of this
-			// operator initiating a change, we could get in a lengthy retry loop.  So we are going
+			// operator initiating a change, we could get in a lengthy retry loop if we always return errors here.
+			// Conversely, if the first event after an update provides an imagestream whose spec and status generations match,
+			// we do not want to ignore it and wait for the relist to clear out the entry in the in progress condition reason field
+			// So we are going
 			// to maintain a retry count in this operator and give up when it is exceeded.  If the operator
 			// is restarted and we loose this state, the only implication is a couple of extra retries;
 			// if the operator is continually restarting, we have bigger issues; in the advent that this
 			// operator has made the update, in progress should be set to true soon enough
+			//TODO how to best distinguish from relists when the imagestream is not changing though.....?
+			//TODO would short term transient "operator upserting content" state in this operator be tolerable?
+			//TODO adding yet another condition to mark only when upserting ...... meh
 			retryCount, ok := h.imagestreamRetryCount[is.Name]
 			if !ok {
 				retryCount = 0
@@ -283,6 +303,9 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) error {
 	}
 
 	// prepWatchEvent has determined we actually need to do the upsert
+	if srcfg == nil {
+		return fmt.Errorf("cannot upsert imagestream %s because could not obtain samplesresource", is.Name)
+	}
 
 	imagestream, err := h.Fileimagegetter.Get(filePath)
 	if err != nil {
@@ -292,22 +315,43 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) error {
 		h.sdkwrapper.Update(srcfg)
 		// if we get this, don't bother retrying
 		return nil
-	} else {
-		err = h.upsertImageStream(imagestream, is, srcfg)
-		if err != nil {
-			h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing imagestream %s", imagestream.Name)
-			logrus.Debugf("SDKUPDATE event img update err bad api obj update")
-			h.sdkwrapper.Update(srcfg)
-		}
+	}
+	if deleted {
+		// set is to nil so upsert will create
+		is = nil
+	}
+	err = h.upsertImageStream(imagestream, is, srcfg)
+	if err != nil {
+		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing imagestream %s", imagestream.Name)
+		logrus.Debugf("SDKUPDATE event img update err bad api obj update")
+		h.sdkwrapper.Update(srcfg)
 		return err
 	}
+	// refetch srcfg to narrow conflict window
+	s, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
+	if err == nil {
+		srcfg = s
+	}
+	// now update progressing condition
+	progressing := srcfg.Condition(v1alpha1.ImageChangesInProgress)
+	now := kapis.Now()
+	progressing.LastUpdateTime = now
+	progressing.LastTransitionTime = now
+	logrus.Debugf("Handle changing processing from false to true for imagestream %s", imagestream.Name)
+	progressing.Status = corev1.ConditionTrue
+	if !strings.Contains(progressing.Reason, imagestream.Name+" ") {
+		progressing.Reason = progressing.Reason + imagestream.Name + " "
+	}
+	srcfg.ConditionUpdate(progressing)
+	logrus.Debugf("SDKUPDATE progressing true update for imagestream %s", imagestream.Name)
+	return h.sdkwrapper.Update(srcfg)
 
 }
 
-func (h *Handler) processTemplateWatchEvent(t *templatev1.Template) error {
+func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool) error {
 	// our pattern is the top most caller locks the mutex
 
-	srcfg, filePath, doUpsert, err := h.prepWatchEvent("template", t.Name, t.Annotations)
+	srcfg, filePath, doUpsert, err := h.prepWatchEvent("template", t.Name, t.Annotations, deleted)
 	if err != nil {
 		return err
 	}
@@ -323,15 +367,18 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template) error {
 		h.sdkwrapper.Update(srcfg)
 		// if we get this, don't bother retrying
 		return nil
-	} else {
-		err = h.upsertTemplate(template, t, srcfg)
-		if err != nil {
-			h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing template %s", template.Name)
-			logrus.Debugf("SDKUPDATE event temp update err bad api obj update")
-			h.sdkwrapper.Update(srcfg)
-		}
-		return err
 	}
+	if deleted {
+		// set t to nil so upsert will create
+		t = nil
+	}
+	err = h.upsertTemplate(template, t, srcfg)
+	if err != nil {
+		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing template %s", template.Name)
+		logrus.Debugf("SDKUPDATE event temp update err bad api obj update")
+		h.sdkwrapper.Update(srcfg)
+	}
+	return err
 
 }
 
@@ -876,7 +923,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		if is.Namespace != "openshift" {
 			return nil
 		}
-		err := h.processImageStreamWatchEvent(is)
+		err := h.processImageStreamWatchEvent(is, event.Deleted)
 		return err
 
 	case *templatev1.Template:
@@ -884,7 +931,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		if t.Namespace != "openshift" {
 			return nil
 		}
-		err := h.processTemplateWatchEvent(t)
+		err := h.processTemplateWatchEvent(t, event.Deleted)
 		return err
 
 	case *corev1.Secret:
