@@ -57,6 +57,11 @@ const (
 	// and secret that this operator manages that signifies the version of the operator that
 	// last managed the particular resource.
 	SamplesVersionAnnotation = GroupName + "/version"
+	// SamplesRecreateCredentialAnnotation is the key for an annotation set on the secret used
+	// for authentication when configuration moves from Removed to Managed but the associated secret
+	// in the openshift namespace does not exist.  This will initiate creation of the credential
+	// in the openshift namespace.
+	SamplesRecreateCredentialAnnotation = GroupName + "/recreate"
 )
 
 var (

@@ -105,6 +105,7 @@ type Handler struct {
 	templateFile    map[string]string
 
 	imagestreamRetryCount map[string]int8
+	secretRetryCount      int8
 }
 
 // prepWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
@@ -195,7 +196,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream) error {
 				retryCount = 0
 			}
 			retryCount++
-			if retryCount > 5 {
+			if retryCount > 3 {
 				h.imagestreamRetryCount[is.Name] = 0
 				// ignore this change of imagestream
 				logrus.Printf("retry count for imagestream event for %s exceeded; ignoring this change", is.Name)
@@ -606,9 +607,14 @@ func (h *Handler) CreateDefaultResourceIfNeeded(srcfg *v1alpha1.SamplesResource)
 	return srcfg, nil
 }
 
-func (h *Handler) WaitingForCredential(srcfg *v1alpha1.SamplesResource) error {
+// WaitingForCredential determines whether we should proceed with processing the sample resource event,
+// where we should *NOT* proceed if we are RHEL and using the default redhat registry;  The return from
+// this method is in 2 flavors:  1) if the first boolean is true, tell the caller to just return nil to the sdk;
+// 2) the second boolean being true means we've updated the samplesresource with cred exists == false and the caller should call
+// the sdk to update the object
+func (h *Handler) WaitingForCredential(srcfg *v1alpha1.SamplesResource) (bool, bool) {
 	if srcfg.ConditionTrue(v1alpha1.ImportCredentialsExist) {
-		return nil
+		return false, false
 	}
 
 	// if trying to do rhel to the default registry.redhat.io registry requires the secret
@@ -616,13 +622,21 @@ func (h *Handler) WaitingForCredential(srcfg *v1alpha1.SamplesResource) error {
 	// log error state
 	if srcfg.Spec.InstallType == v1alpha1.RHELSamplesDistribution &&
 		(srcfg.Spec.SamplesRegistry == "" || srcfg.Spec.SamplesRegistry == "registry.redhat.io") {
-		// currently do not attempt to avoid multiple settings of this conditions/message prior to an event
-		// where the situation is addressed
+		cred := srcfg.Condition(v1alpha1.ImportCredentialsExist)
+		// - if import cred is false, and the message is empty, that means we have NOT registered the error, and need to do so
+		// - if cred is false, and the message is there, we can just return nil to the sdk, which "true" for the boolean return value indicates;
+		// not returning the same error multiple times to the sdk avoids additional churn; once the secret comes in, it will update the samplesresource
+		// with cred == true, and then we'll get another samplesresource event that will trigger config processing
+		if len(cred.Message) > 0 {
+			return true, false
+		}
 		err := fmt.Errorf("Cannot create rhel imagestreams to registry.redhat.io without the credentials being available")
 		h.processError(srcfg, v1alpha1.ImportCredentialsExist, corev1.ConditionFalse, err, "%v")
-		return err
+		return true, true
 	}
-	return nil
+	// this is either centos, or the cluster admin is using their own registry for rhel content, so we do not
+	// enforce the need for the credential
+	return false, false
 }
 
 func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.SamplesResource, s *corev1.Secret) error {
@@ -686,6 +700,9 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResource) error {
 	h.buildSkipFilters(srcfg)
 
+	h.imagestreamFile = map[string]string{}
+	h.templateFile = map[string]string{}
+
 	iopts := metav1.ListOptions{LabelSelector: v1alpha1.SamplesManagedLabel + "=true"}
 
 	streamList, err := h.imageclientwrapper.List("openshift", iopts)
@@ -732,6 +749,11 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(srcfg *v1alpha1.SamplesResou
 		}
 	}
 
+	if srcfg.ConditionTrue(v1alpha1.ImportCredentialsExist) {
+		logrus.Println("Operator is deleting the credential in the openshift namespace that was previously created.")
+		logrus.Println("If you are Removing content as part of switching from 'centos' to 'rhel', the credential will be recreated in the openshift namespace when you move back to 'Managed' state.")
+
+	}
 	err = h.secretclientwrapper.Delete("openshift", v1alpha1.SamplesRegistryCredentials, &metav1.DeleteOptions{})
 	if err != nil && !kerrors.IsNotFound(err) {
 		logrus.Warnf("Problem deleting openshift secret %s on SamplesResource delete: %#v", v1alpha1.SamplesRegistryCredentials, err)
@@ -785,9 +807,8 @@ func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool,
 
 		// now actually process removed state
 		if srcfg.Spec.ManagementState != srcfg.Status.ManagementState ||
-			srcfg.ConditionTrue(v1alpha1.SamplesExist) ||
-			srcfg.ConditionTrue(v1alpha1.ImportCredentialsExist) {
-			logrus.Println("management state set to removed so deleting samples, credentials, and configmap")
+			srcfg.ConditionTrue(v1alpha1.SamplesExist) {
+			logrus.Println("management state set to removed so deleting samples")
 			err := h.CleanUpOpenshiftNamespaceOnDelete(srcfg)
 			if err != nil {
 				return false, true, h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "The error %v during openshift namespace cleanup has left the samples in an unknown state")
@@ -812,6 +833,23 @@ func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool,
 	case operatorsv1api.Managed:
 		if srcfg.Spec.ManagementState != srcfg.Status.ManagementState {
 			logrus.Println("management state set to managed")
+			if srcfg.Spec.InstallType == v1alpha1.RHELSamplesDistribution &&
+				srcfg.ConditionFalse(v1alpha1.ImportCredentialsExist) {
+				secret, err := h.secretclientwrapper.Get(h.namespace, v1alpha1.SamplesRegistryCredentials)
+				if err == nil && secret != nil {
+					// as part of going from centos to rhel, if the secret was created *BEFORE* we went to
+					// removed state, it got removed in the openshift namespace as part of going to remove;
+					// so we want to get it back into the openshift namespace;  to do so, we
+					// initiate a secret event vs. doing the copy ourselves here
+					logrus.Println("updating operator namespace credential to initiate creation of credential in openshift namespace")
+					if secret.Annotations == nil {
+						secret.Annotations = map[string]string{}
+					}
+					// testing showed that we needed to change something for the update to actually go through
+					secret.Annotations[v1alpha1.SamplesRecreateCredentialAnnotation] = kapis.Now().String()
+					h.secretclientwrapper.Update(h.namespace, secret)
+				}
+			}
 		}
 		// will set status state to managed at top level caller
 		// to deal with config change processing
@@ -862,13 +900,71 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		if srcfg != nil {
 			switch srcfg.Spec.ManagementState {
 			case operatorsv1api.Removed:
-				logrus.Debugln("Ignoring secret event because samples resource is in removed state")
-				return nil
+				// so our current recipe to switch to rhel is to
+				// - mark mgmt state removed
+				// - after that complete, edit again, mark install type to rhel and mgmt state to managed
+				// but what about the secret needed for rhel ... do we force the user to create the secret
+				// while still in managed/centos state?  Even with that, the "removed" action removes the
+				// secret the operator creates in the openshift namespace since it was owned/created by
+				// the operator
+				// So we allow the processing of the secret event while in removed state to
+				// facilitate the switch from centos to rhel, as necessitating use of removed as the means for
+				// changing from centos to rhel since  we allow changing the distribution once the samples have initially been created
+				logrus.Printf("processing secret watch event while in Removed state; deletion event: %v", event.Deleted)
 			case operatorsv1api.Unmanaged:
 				logrus.Debugln("Ignoring secret event because samples resource is in unmanaged state")
 				return nil
+			case operatorsv1api.Managed:
+				logrus.Printf("processing secret watch event while in Managed state; deletion event: %v", event.Deleted)
+			default:
+				logrus.Printf("processing secret watch event like we are in Managed state, even though it is set to %v; deletion event %v", srcfg.Spec.ManagementState, event.Deleted)
 			}
-			err := h.manageDockerCfgSecret(event.Deleted, srcfg, dockercfgSecret)
+			deleted := event.Deleted
+			if dockercfgSecret.Namespace == "openshift" {
+				if !deleted {
+					if dockercfgSecret.Annotations != nil {
+						_, ok := dockercfgSecret.Annotations[v1alpha1.SamplesVersionAnnotation]
+						if ok {
+							// this is just a notification from our prior create
+							logrus.Println("creation of credential in openshift namespace recognized")
+							return nil
+						}
+					}
+					// not foolproof protection of course, but the lack of the annotation
+					// means somebody tried to create our credential in the openshift namespace
+					// on there own ... we are not allowing that
+					err := fmt.Errorf("the samples credential was created in the openshift namespace without the version annotation")
+					return h.processError(srcfg, v1alpha1.ImportCredentialsExist, corev1.ConditionUnknown, err, "%v")
+				}
+				// if deleted, but import credential == true, that means somebody deleted the credential in the openshift
+				// namespace while leaving the secret in the operator namespace alone; we don't like that either, and will
+				// recreate; but we have to account for the fact that on a valid delete/remove, the secret deletion occurs
+				// before the updating of the samples resource, so we employ a short term retry
+				if srcfg.ConditionTrue(v1alpha1.ImportCredentialsExist) {
+					if h.secretRetryCount < 3 {
+						err := fmt.Errorf("retry on credential deletion in the openshift namespace to make sure the operator deleted it")
+						h.secretRetryCount++
+						return err
+					}
+					logrus.Println("credential in openshift namespace deleted while it still exists in operator namespace so recreating")
+					s, err := h.secretclientwrapper.Get(h.namespace, v1alpha1.SamplesRegistryCredentials)
+					if err != nil {
+						if !kerrors.IsNotFound(err) {
+							// retry
+							return err
+						}
+						// if the credential is missing there too, move on and make sure import cred is false
+					} else {
+						// reset deleted flag, dockercfgSecret so manageDockerCfgSecret will recreate
+						deleted = false
+						dockercfgSecret = s
+					}
+				}
+				logrus.Println("deletion of credential in openshift namespace after deletion of credential in operator namespace recognized")
+				return nil
+			}
+			h.secretRetryCount = 0
+			err := h.manageDockerCfgSecret(deleted, srcfg, dockercfgSecret)
 			if err != nil {
 				return err
 			}
@@ -1005,14 +1101,18 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		// if trying to do rhel to the default registry.redhat.io registry requires the secret
 		// be in place since registry.redhat.io requires auth to pull; if it is not ready
 		// error state will be logged by WaitingForCredential
-		err = h.WaitingForCredential(srcfg)
-		if err != nil {
+		stillWaitingForSecret, callSDKToUpdate := h.WaitingForCredential(srcfg)
+		if callSDKToUpdate {
 			// flush status update ... the only error generated by WaitingForCredential, not
 			// by api obj access
 			logrus.Println("samplesresource update ignored since need the RHEL credential")
 			// if update to set import cred condition to false fails, return that error
 			// to requeue
 			return h.sdkwrapper.Update(srcfg)
+		}
+		if stillWaitingForSecret {
+			// means we previously udpated srcfg but nothing has changed wrt the secret's presence
+			return nil
 		}
 
 		// lastly, if we are in samples exists and progressing both true, we can forgo cycling
