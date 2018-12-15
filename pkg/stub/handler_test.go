@@ -484,7 +484,7 @@ func TestImageStreamEvent(t *testing.T) {
 	sr.Status.Architectures = []string{v1alpha1.X86Architecture}
 	sr.Status.SkippedImagestreams = []string{}
 	sr.Status.SkippedTemplates = []string{}
-	h.processImageStreamWatchEvent(is)
+	h.processImageStreamWatchEvent(is, false)
 	validate(true, err, "", sr, conditions, statuses, t)
 
 	// now make sure when a non standard change event is not ignored and that we update
@@ -492,7 +492,7 @@ func TestImageStreamEvent(t *testing.T) {
 	delete(is.Annotations, v1alpha1.SamplesVersionAnnotation)
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	delete(fakeisclient.upsertkeys, "foo")
-	h.processImageStreamWatchEvent(is)
+	h.processImageStreamWatchEvent(is, false)
 	if _, ok := fakeisclient.upsertkeys["foo"]; !ok {
 		t.Fatalf("is did not reach client %s: %#v", "foo", h)
 	}
@@ -505,7 +505,7 @@ func TestImageStreamEvent(t *testing.T) {
 	// with the update above, now process both of the imagestreams and see the in progress condition
 	// go false
 	is.Annotations[v1alpha1.SamplesVersionAnnotation] = v1alpha1.CodeLevel
-	h.processImageStreamWatchEvent(is)
+	h.processImageStreamWatchEvent(is, false)
 	validate(true, err, "", sr, conditions, statuses, t)
 	statuses[3] = corev1.ConditionFalse
 	is = &imagev1.ImageStream{
@@ -536,7 +536,7 @@ func TestImageStreamEvent(t *testing.T) {
 			},
 		},
 	}
-	h.processImageStreamWatchEvent(is)
+	h.processImageStreamWatchEvent(is, false)
 	validate(true, err, "", sr, conditions, statuses, t)
 }
 
@@ -558,7 +558,7 @@ func TestTemplateEvent(t *testing.T) {
 
 	faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 	delete(faketclient.upsertkeys, "bo")
-	h.processTemplateWatchEvent(template)
+	h.processTemplateWatchEvent(template, false)
 	if _, ok := faketclient.upsertkeys["bo"]; !ok {
 		t.Fatalf("template did not reach client %s: %#v", "bo", h)
 	}
