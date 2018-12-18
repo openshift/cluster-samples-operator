@@ -1,9 +1,13 @@
 package v1alpha1
 
 import (
+	"fmt"
+
+	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/pkg/version"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -64,12 +68,21 @@ const (
 	SamplesRecreateCredentialAnnotation = GroupName + "/recreate"
 )
 
-var (
-	// CodeLevel is a precise code version level that the operator will use to determine whether it ias
-	// been upgraded, and by extension, whether the samples should be updated.  It will be set at the same
-	// time the ClusterOperator API Object for the samples operator is set.
-	CodeLevel string
-)
+func GitVersionString() string {
+	vinfo := version.Get()
+	versionString := "4.0.0-alpha1-"
+	switch {
+	case len(vinfo.GitVersion) > 0:
+		versionString = string(vinfo.GitVersion) + "-"
+		fallthrough
+	case len(vinfo.GitCommit) > 0:
+		c := string(vinfo.GitCommit)[0:9]
+		versionString = versionString + c
+	default:
+		versionString = "4.0.0-was-not-built-properly"
+	}
+	return versionString
+}
 
 type SamplesResourceSpec struct {
 	// ManagementState is top level on/off type of switch for all operators.
@@ -107,6 +120,11 @@ type SamplesResourceSpec struct {
 	// content but the operator will not recreate(or update) anything
 	// listed here.
 	SkippedTemplates []string `json:"skippedTemplates,omitempty" protobuf:"bytes,6,opt,name=skippedTemplates"`
+
+	// Version is the value of the operator's git based version indicator when the SamplesResource is being processed.
+	// The operator will use it to determine whether it has
+	// been upgraded, and by extension, whether the samples should be updated.
+	Version string `json:"version,omitempty" protobuf:"bytes,7,opt,name=version"`
 }
 type SamplesResourceStatus struct {
 	// operatorv1.ManagementState reflects the current operational status of the on/off switch for
@@ -146,6 +164,9 @@ type SamplesResourceStatus struct {
 	// content but the operator will not recreate(or update) anything
 	// listed here.
 	SkippedTemplates []string `json:"skippedTemplates,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,7,rep,name=skippedTemplates"`
+
+	// Version is the value of the operator's git based version indicator when it was last successfully processed
+	Version string `json:"version,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,8,rep,name=version"`
 }
 
 type SamplesResourceConditionType string
@@ -180,6 +201,15 @@ const (
 	// a retry when ManagementState was set to Removed lead to a prolonged, sometimes seemingly unresolved,
 	// period of circular contention
 	RemovedManagementStateOnHold SamplesResourceConditionType = "PendingRemove"
+	// MigrationInProgress represents the special case where the operator is running off of
+	// a new version of its image, and samples are deployed of a previous version.  This condition
+	// facilitates the maintenance of this operator's ClusterOperator object.
+	MigrationInProgress SamplesResourceConditionType = "MigrationInProgress"
+	// ImportImageErrorsExist registers any image import failures, separate from ImageChangeInProgress,
+	// so that we can a) indicate a problem to the ClusterOperator status, b) mark the current
+	// change cycle as complete in both ClusterOperator and SamplesResource; retry on import will
+	// occur by the next relist interval if it was an intermittent issue;
+	ImportImageErrorsExist SamplesResourceConditionType = "ImportImageErrorsExist"
 )
 
 // SamplesResourceCondition captures various conditions of the SamplesResource
@@ -223,6 +253,37 @@ func (s *SamplesResource) ConditionFalse(c SamplesResourceConditionType) bool {
 	return false
 }
 
+func (s *SamplesResource) ConditionUnknown(c SamplesResourceConditionType) bool {
+	if s.Status.Conditions == nil {
+		return false
+	}
+	for _, rc := range s.Status.Conditions {
+		if rc.Type == c && rc.Status == corev1.ConditionUnknown {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SamplesResource) AnyConditionUnknown() bool {
+	for _, rc := range s.Status.Conditions {
+		if rc.Status == corev1.ConditionUnknown {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SamplesResource) ConditionsMessages() string {
+	consolidatedMessage := ""
+	for _, c := range s.Status.Conditions {
+		if len(c.Message) > 0 {
+			consolidatedMessage = consolidatedMessage + c.Message + ";"
+		}
+	}
+	return consolidatedMessage
+}
+
 func (s *SamplesResource) ConditionUpdate(c *SamplesResourceCondition) {
 	if s.Status.Conditions == nil {
 		return
@@ -248,4 +309,117 @@ func (s *SamplesResource) Condition(c SamplesResourceConditionType) *SamplesReso
 	}
 	s.Status.Conditions = append(s.Status.Conditions, newCondition)
 	return &newCondition
+}
+
+const (
+	noInstall         = "Samples installation in error at %s"
+	noInstallDetailed = "Samples installation in error at %s: %s"
+	installed         = "Samples installation successful at %s"
+	moving            = "Samples moving to %s"
+)
+
+// ClusterOperatorStatusAvailableCondition return values are as follows:
+// 1) the value to set on the ClusterOperator Available condition
+// 2) string is the message to set on the Available condition
+func (s *SamplesResource) ClusterOperatorStatusAvailableCondition() (configv1.ConditionStatus, string) {
+	apiError := s.AnyConditionUnknown()
+	needCreds := !s.ConditionTrue(ImportCredentialsExist) &&
+		s.Spec.InstallType == RHELSamplesDistribution
+	notAtAnyVersionYet := len(s.Status.Version) == 0
+
+	falseRC := configv1.ConditionFalse
+	falseMsg := fmt.Sprintf(noInstall, s.Spec.Version)
+
+	// bad interactions with the api server or file system mean the samples are in
+	// an indeterminate state; mark available per
+	// https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions
+	// mark as false
+	if apiError {
+		return falseRC, falseMsg
+	}
+
+	// REMINDER: the intital config is always valid; only config changes after
+	// the initial install result in ConfigurationValid == CondtitionFalse
+	// Next, if bad config is injected after installing at a certain level,
+	// the samples are still available at the old config setting; the
+	// config issues will be highlighted in the progressing/failing messages, per
+	// https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions
+
+	// However, rhel and lack of creds is possible on intitial install, and if the
+	// creds are deleted after the initial install, it can prevent imagestream
+	// scheduled imports for example to fail ... the imagesstream "state" could
+	// be sufficiently compromised, so we'll flag false there
+	if needCreds {
+		return falseRC, falseMsg
+	}
+
+	// currently SampleExist==true in a vaccum level detail .. meaning api objs created,
+	// but images importing, is not considered here ... in our case, available means
+	// created plus images imported ... so we do not bother with it in this method.
+
+	// And with that in mind, the value of the status version is sufficient for our needs here.
+	// It is only set in the event handler for the SamplesResource when
+	// a) upserts completed and exists is true
+	// b) image in progress went from true to false as imagestream imports completed
+
+	if notAtAnyVersionYet {
+		// return false for the initial state; don't set any messages yet
+		return falseRC, ""
+	}
+
+	// otherwise version of last successful install
+	return configv1.ConditionTrue, fmt.Sprintf(installed, s.Status.Version)
+
+}
+
+// ClusterOperatorStatusFailingCondition return values are as follows:
+// 1) the value to set on the ClusterOperator Failing condition
+// 2) the first string is the succinct text to apply to the Progressing condition on failure
+// 3) the second string is the fully detailed text to apply the the Failing condition
+func (s *SamplesResource) ClusterOperatorStatusFailingCondition() (configv1.ConditionStatus, string, string) {
+	// the ordering here is not random; an invalid config will be caught first;
+	// the lack of credenitials will be caught second; any hiccups manipulating API objects
+	// will be potentially anywhere in the process
+	trueRC := configv1.ConditionTrue
+	if s.ConditionFalse(ConfigurationValid) {
+		return trueRC,
+			"invalid configuration",
+			fmt.Sprintf(noInstallDetailed, s.Spec.Version, s.Condition(ConfigurationValid).Message)
+	}
+	if s.Spec.InstallType == RHELSamplesDistribution && s.ConditionFalse(ImportCredentialsExist) {
+		return trueRC,
+			"image pull credentials needed",
+			fmt.Sprintf(noInstallDetailed, s.Spec.Version, s.Condition(ImportCredentialsExist).Message)
+	}
+	// right now, any condition being unknown is indicative of a failure
+	// condition, either api server interaction or file system interaction;
+	// Conversely, those errors result in a ConditionUnknown setting on one
+	// of the conditions;
+	// but if for some reason that ever changes, we'll need to adjust this
+	if s.AnyConditionUnknown() {
+		return trueRC, "bad API object operation", s.ConditionsMessages()
+	}
+	// return the initial state, don't set any messages.
+	return configv1.ConditionFalse, "", ""
+
+}
+
+// ClusterOperatorStatusProgressingCondition has the following parameters
+// 1) failingState, the succinct text from ClusterOperatorStatusFailingCondition() to use when
+//    progressing but failed per https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions
+// 2) whether the samplesresource is in available state
+// and the following return values:
+// 1) is the value to set on the ClusterOperator Progressing condition
+// 2) string is the message to set on the condition
+func (s *SamplesResource) ClusterOperatorStatusProgressingCondition(failingState string, available configv1.ConditionStatus) (configv1.ConditionStatus, string) {
+	if len(failingState) > 0 {
+		return configv1.ConditionFalse, fmt.Sprintf(noInstallDetailed, s.Spec.Version, failingState)
+	}
+	if s.ConditionTrue(ImageChangesInProgress) {
+		return configv1.ConditionTrue, fmt.Sprintf(moving, s.Spec.Version)
+	}
+	if available == configv1.ConditionTrue {
+		return configv1.ConditionFalse, fmt.Sprintf(installed, s.Status.Version)
+	}
+	return configv1.ConditionFalse, ""
 }

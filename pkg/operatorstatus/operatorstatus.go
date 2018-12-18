@@ -8,7 +8,6 @@ import (
 	metaapi "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/pkg/version"
 	"k8s.io/client-go/util/retry"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -59,44 +58,38 @@ type ClusterOperatorWrapper interface {
 }
 
 func (o *ClusterOperatorHandler) UpdateOperatorStatus(sampleResource *v1alpha1.SamplesResource) error {
+
 	var err error
-	switch {
-	case sampleResource.ConditionTrue(v1alpha1.SamplesExist):
-		err = o.setOperatorStatus(configv1.OperatorAvailable, configv1.ConditionTrue, "Samples exist in the openshift project")
-	case sampleResource.ConditionFalse(v1alpha1.SamplesExist):
-		err = o.setOperatorStatus(configv1.OperatorAvailable, configv1.ConditionFalse, "Samples do not exist in the openshift project")
-	default:
-		err = o.setOperatorStatus(configv1.OperatorAvailable, configv1.ConditionUnknown, "The presence of the samples in the openshift project is unknown")
-	}
+	failing, stateForPending, msgForFailing := sampleResource.ClusterOperatorStatusFailingCondition()
+	err = o.setOperatorStatus(configv1.OperatorFailing,
+		failing,
+		msgForFailing,
+		sampleResource.Spec.Version)
 	if err != nil {
 		return err
 	}
 
-	switch {
-	case sampleResource.ConditionTrue(v1alpha1.ConfigurationValid):
-		err = o.setOperatorStatus(configv1.OperatorFailing, configv1.ConditionFalse, "The samples operator configuration is valid")
-	case sampleResource.ConditionFalse(v1alpha1.ConfigurationValid):
-		err = o.setOperatorStatus(configv1.OperatorFailing, configv1.ConditionTrue, "The samples operator configuration is invalid")
-	default:
-		err = o.setOperatorStatus(configv1.OperatorFailing, configv1.ConditionUnknown, "The samples operator configuration state is unknown")
-	}
+	available, msgForAvailable := sampleResource.ClusterOperatorStatusAvailableCondition()
+	err = o.setOperatorStatus(configv1.OperatorAvailable,
+		available,
+		msgForAvailable,
+		sampleResource.Status.Version)
 	if err != nil {
 		return err
 	}
 
-	switch {
-	case sampleResource.ConditionTrue(v1alpha1.ImageChangesInProgress):
-		err = o.setOperatorStatus(configv1.OperatorProgressing, configv1.ConditionTrue, "The samples operator is in the middle of changing the imagestreams")
-	case sampleResource.ConditionFalse(v1alpha1.ImageChangesInProgress):
-		err = o.setOperatorStatus(configv1.OperatorProgressing, configv1.ConditionFalse, "The samples operator is not in the process of initiating changes to the imagestreams")
-	default:
-		err = o.setOperatorStatus(configv1.OperatorProgressing, configv1.ConditionUnknown, "The samples operator in progress state is unknown")
+	progressing, msgForProgressing := sampleResource.ClusterOperatorStatusProgressingCondition(stateForPending, available)
+	err = o.setOperatorStatus(configv1.OperatorProgressing,
+		progressing,
+		msgForProgressing,
+		sampleResource.Status.Version)
+	if err != nil {
+		return nil
 	}
-
-	return err
+	return nil
 }
 
-func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStatusConditionType, status configv1.ConditionStatus, msg string) error {
+func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStatusConditionType, status configv1.ConditionStatus, msg, currentVersion string) error {
 	logrus.Debugf("setting clusteroperator status condition %s to %s", condtype, status)
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		state, err := o.ClusterOperatorWrapper.Get(ClusterOperatorName)
@@ -140,22 +133,11 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 			Message:            msg,
 			LastTransitionTime: metaapi.Now(),
 		})
-		if !modified {
+		if !modified && state.Status.Version == currentVersion {
 			return nil
 		}
-		vinfo := version.Get()
-		versionString := ""
-		switch {
-		case len(vinfo.GitVersion) > 0:
-			versionString = string(vinfo.GitVersion) + "-"
-			fallthrough
-		case len(vinfo.GitCommit) > 0:
-			versionString = versionString + string(vinfo.GitCommit)
-		default:
-			versionString = "v0.0.0-was-not-built-properly"
-		}
-		state.Status.Version = versionString
-		v1alpha1.CodeLevel = versionString
+		// set a new current version when it is provided
+		state.Status.Version = currentVersion
 		return o.ClusterOperatorWrapper.UpdateStatus(state)
 	})
 }
@@ -170,6 +152,9 @@ func (o *ClusterOperatorHandler) updateOperatorCondition(op *configv1.ClusterOpe
 			continue
 		}
 		if condition.Status != c.Status {
+			modified = true
+		}
+		if condition.Message != c.Message {
 			modified = true
 		}
 		conditions = append(conditions, *condition)
