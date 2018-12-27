@@ -1005,7 +1005,6 @@ func NewTestHandler() Handler {
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
-	h.imagestreamRetryCount = make(map[string]int8)
 
 	return h
 }

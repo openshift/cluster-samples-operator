@@ -72,7 +72,6 @@ func NewHandler() sdk.Handler {
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
-	h.imagestreamRetryCount = make(map[string]int8)
 	return &h
 }
 
@@ -104,8 +103,8 @@ type Handler struct {
 	imagestreamFile map[string]string
 	templateFile    map[string]string
 
-	imagestreamRetryCount map[string]int8
-	secretRetryCount      int8
+	creationInProgress bool
+	secretRetryCount   int8
 }
 
 // prepWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
@@ -200,36 +199,18 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			return nil
 		}
 		processing := srcfg.Condition(v1alpha1.ImageChangesInProgress)
-		importError := srcfg.Condition(v1alpha1.ImportImageErrorsExist)
-		if processing.Status != corev1.ConditionTrue {
-			// if somebody edited our sample but left the version annotation correct, instead of this
-			// operator initiating a change, we could get in a lengthy retry loop if we always return errors here.
-			// Conversely, if the first event after an update provides an imagestream whose spec and status generations match,
-			// we do not want to ignore it and wait for the relist to clear out the entry in the in progress condition reason field
-			// So we are going
-			// to maintain a retry count in this operator and give up when it is exceeded.  If the operator
-			// is restarted and we loose this state, the only implication is a couple of extra retries;
-			// if the operator is continually restarting, we have bigger issues; in the advent that this
-			// operator has made the update, in progress should be set to true soon enough
-			//TODO how to best distinguish from relists when the imagestream is not changing though.....?
-			//TODO would short term transient "operator upserting content" state in this operator be tolerable?
-			//TODO adding yet another condition to mark only when upserting ...... meh
-			retryCount, ok := h.imagestreamRetryCount[is.Name]
-			if !ok {
-				retryCount = 0
-			}
-			retryCount++
-			if retryCount > 3 {
-				h.imagestreamRetryCount[is.Name] = 0
-				// ignore this change of imagestream
-				logrus.Printf("retry count for imagestream event for %s exceeded; ignoring this change", is.Name)
-				return nil
-			}
-			h.imagestreamRetryCount[is.Name] = retryCount
-			return fmt.Errorf("retry imagestream %s because in progress is not yet true and retryCount is not exceeded", is.Name)
+		// if somebody edited our sample but left the version annotation correct, instead of this
+		// operator initiating a change, we could get in a lengthy retry loop if we always return errors here.
+		// Conversely, if the first event after an update provides an imagestream whose spec and status generations match,
+		// we do not want to ignore it and wait for the relist to clear out the entry in the in progress condition reason field
+		// So we are employing a flag in this operator that is set while the upserting is in progress.
+		// If the operator is restarted, since ImageChangesInProgress has not yet been set to True during
+		// our upsert cycle, it will go through the upsert cycle on its restart anyway, so new imagestream
+		// events are coming again, and losing this state has no consequence
+		if h.creationInProgress && processing.Status != corev1.ConditionTrue {
+			return fmt.Errorf("retry imagestream %s because operator samples creation in progress", is.Name)
 		}
-
-		h.imagestreamRetryCount[is.Name] = 0
+		importError := srcfg.Condition(v1alpha1.ImportImageErrorsExist)
 
 		// so reaching this point means we have a prior upsert in progress, and we just want to track the status
 
@@ -285,11 +266,14 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 					break
 				}
 			}
+		} else {
+			pending = true
 		}
 
 		logrus.Debugf("pending is %v for %s", pending, is.Name)
 
-		if !pending {
+		// we check for processing == true here as well to avoid churn on relists
+		if !pending && processing.Status == corev1.ConditionTrue {
 			now := kapis.Now()
 			// remove this imagestream name, including the space separator
 			logrus.Debugf("current reason %s ", processing.Reason)
@@ -1271,6 +1255,8 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		}
 
 		if !srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
+			h.creationInProgress = true
+			defer func() { h.creationInProgress = false }()
 			err = h.createSamples(srcfg)
 			if err != nil {
 				h.processError(srcfg, v1alpha1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")

@@ -190,7 +190,7 @@ const (
 	// tag match.  The list of imagestreams that are still in progress will be stored
 	// in the Reason field of the condition.  The Reason field being empty corresponds
 	// with this condition being marked true.
-	ImageChangesInProgress SamplesResourceConditionType = "ChangesInProgress"
+	ImageChangesInProgress SamplesResourceConditionType = "ImageChangesInProgress"
 	// RemovedManagementStateOnHold represents whether the SamplesResource ManagementState
 	// has been set to Removed while a samples creation/update cycle is still in progress.  In other
 	// words, when ImageChangesInProgress is True.  We
@@ -338,16 +338,17 @@ func (s *SamplesResource) ClusterOperatorStatusAvailableCondition() (configv1.Co
 		return falseRC, falseMsg
 	}
 
-	// REMINDER: the intital config is always valid; only config changes after
+	// REMINDER: the intital config is always valid, as this operator generates it;
+	// only config changes after by a human cluster admin after
 	// the initial install result in ConfigurationValid == CondtitionFalse
 	// Next, if bad config is injected after installing at a certain level,
 	// the samples are still available at the old config setting; the
 	// config issues will be highlighted in the progressing/failing messages, per
 	// https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions
 
-	// However, rhel and lack of creds is possible on intitial install, and if the
-	// creds are deleted after the initial install, it can prevent imagestream
-	// scheduled imports for example to fail ... the imagesstream "state" could
+	// However, rhel and lack of creds is possible on intitial install, as well
+	// as deleted after the initial install; either circumstance can prevent imagestream
+	// scheduled imports for example to fail ... the imagestream "state" could
 	// be sufficiently compromised, so we'll flag false there
 	if needCreds {
 		return falseRC, falseMsg
@@ -395,7 +396,7 @@ func (s *SamplesResource) ClusterOperatorStatusFailingCondition() (configv1.Cond
 	// condition, either api server interaction or file system interaction;
 	// Conversely, those errors result in a ConditionUnknown setting on one
 	// of the conditions;
-	// but if for some reason that ever changes, we'll need to adjust this
+	// If for some reason that ever changes, we'll need to adjust this
 	if s.AnyConditionUnknown() {
 		return trueRC, "bad API object operation", s.ConditionsMessages()
 	}
