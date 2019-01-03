@@ -72,7 +72,6 @@ func NewHandler() sdk.Handler {
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
-	h.imagestreamRetryCount = make(map[string]int8)
 	return &h
 }
 
@@ -104,8 +103,8 @@ type Handler struct {
 	imagestreamFile map[string]string
 	templateFile    map[string]string
 
-	imagestreamRetryCount map[string]int8
-	secretRetryCount      int8
+	creationInProgress bool
+	secretRetryCount   int8
 }
 
 // prepWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
@@ -175,8 +174,10 @@ func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]strin
 	}
 
 	if annotations != nil {
+		gitVersion := v1alpha1.GitVersionString()
 		isv, ok := annotations[v1alpha1.SamplesVersionAnnotation]
-		if ok && isv == v1alpha1.CodeLevel {
+		logrus.Debugf("Comparing %s/%s version %s ok %v with git version %s", kind, name, isv, ok, gitVersion)
+		if ok && isv == gitVersion {
 			logrus.Debugf("Not upserting %s/%s cause operator version matches", kind, name)
 			// but return srcfg to potentially toggle pending condition
 			return srcfg, "", false, nil
@@ -198,35 +199,18 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			return nil
 		}
 		processing := srcfg.Condition(v1alpha1.ImageChangesInProgress)
-		if processing.Status != corev1.ConditionTrue {
-			// if somebody edited our sample but left the version annotation correct, instead of this
-			// operator initiating a change, we could get in a lengthy retry loop if we always return errors here.
-			// Conversely, if the first event after an update provides an imagestream whose spec and status generations match,
-			// we do not want to ignore it and wait for the relist to clear out the entry in the in progress condition reason field
-			// So we are going
-			// to maintain a retry count in this operator and give up when it is exceeded.  If the operator
-			// is restarted and we loose this state, the only implication is a couple of extra retries;
-			// if the operator is continually restarting, we have bigger issues; in the advent that this
-			// operator has made the update, in progress should be set to true soon enough
-			//TODO how to best distinguish from relists when the imagestream is not changing though.....?
-			//TODO would short term transient "operator upserting content" state in this operator be tolerable?
-			//TODO adding yet another condition to mark only when upserting ...... meh
-			retryCount, ok := h.imagestreamRetryCount[is.Name]
-			if !ok {
-				retryCount = 0
-			}
-			retryCount++
-			if retryCount > 3 {
-				h.imagestreamRetryCount[is.Name] = 0
-				// ignore this change of imagestream
-				logrus.Printf("retry count for imagestream event for %s exceeded; ignoring this change", is.Name)
-				return nil
-			}
-			h.imagestreamRetryCount[is.Name] = retryCount
-			return fmt.Errorf("retry imagestream %s because in progress is not yet true and retryCount is not exceeded", is.Name)
+		// if somebody edited our sample but left the version annotation correct, instead of this
+		// operator initiating a change, we could get in a lengthy retry loop if we always return errors here.
+		// Conversely, if the first event after an update provides an imagestream whose spec and status generations match,
+		// we do not want to ignore it and wait for the relist to clear out the entry in the in progress condition reason field
+		// So we are employing a flag in this operator that is set while the upserting is in progress.
+		// If the operator is restarted, since ImageChangesInProgress has not yet been set to True during
+		// our upsert cycle, it will go through the upsert cycle on its restart anyway, so new imagestream
+		// events are coming again, and losing this state has no consequence
+		if h.creationInProgress && processing.Status != corev1.ConditionTrue {
+			return fmt.Errorf("retry imagestream %s because operator samples creation in progress", is.Name)
 		}
-
-		h.imagestreamRetryCount[is.Name] = 0
+		importError := srcfg.Condition(v1alpha1.ImportImageErrorsExist)
 
 		// so reaching this point means we have a prior upsert in progress, and we just want to track the status
 
@@ -247,20 +231,25 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 								*specTag.Generation <= event.Generation {
 								logrus.Debugf("got match")
 								matched = true
+								// remove this imagestream from the error reason field in case it exists there;
+								// this call is a no-op if it is not there
+								importError.Reason = strings.Replace(importError.Reason, is.Name+" ", "", -1)
 								break
 							}
 						}
 						if !matched {
 							// if an error occurred, let's give up as we are no longer "in progress"
-							// in that case as well
-							//TODO do we need yet another condition to report these errors separately from the
-							// in progress condition?
+							// in that case as well, but mark the import failure
 							for _, condition := range statusTag.Conditions {
 								if condition.Status == corev1.ConditionFalse &&
 									len(condition.Message) > 0 &&
 									len(condition.Reason) > 0 {
 									logrus.Warningf("Image import for imagestream %s failed with reason %s and detailed message %s", is.Name, condition.Reason, condition.Message)
 									matched = true
+									// add this imagestream to the Reason field
+									if !strings.Contains(importError.Reason, is.Name+" ") {
+										importError.Reason = importError.Reason + is.Name + " "
+									}
 									break
 								}
 							}
@@ -277,25 +266,47 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 					break
 				}
 			}
+		} else {
+			pending = true
 		}
 
 		logrus.Debugf("pending is %v for %s", pending, is.Name)
 
-		if !pending {
+		// we check for processing == true here as well to avoid churn on relists
+		if !pending && processing.Status == corev1.ConditionTrue {
 			now := kapis.Now()
 			// remove this imagestream name, including the space separator
 			logrus.Debugf("current reason %s ", processing.Reason)
 			processing.Reason = strings.Replace(processing.Reason, is.Name+" ", "", -1)
-			logrus.Debugf("reason now %s", processing.Reason)
+			logrus.Debugf("processing reason now %s", processing.Reason)
 			if len(strings.TrimSpace(processing.Reason)) == 0 {
 				logrus.Debugf("reason empty setting to false")
 				processing.Status = corev1.ConditionFalse
 				processing.Reason = ""
+				// also turn off as needed migration flag if no in progress left
+				migration := srcfg.Condition(v1alpha1.MigrationInProgress)
+				if migration.Status == corev1.ConditionTrue {
+					migration.LastTransitionTime = now
+					migration.LastUpdateTime = now
+					migration.Status = corev1.ConditionFalse
+					srcfg.ConditionUpdate(migration)
+				}
 			}
 			processing.LastTransitionTime = now
 			processing.LastUpdateTime = now
 			srcfg.ConditionUpdate(processing)
-			logrus.Debugf("SDKUPDATE no pending imgstr update")
+			// update the import error as needed
+			logrus.Debugf("import error reason now %s", importError.Reason)
+			if len(strings.TrimSpace(importError.Reason)) == 0 {
+				importError.Status = corev1.ConditionFalse
+				importError.Reason = ""
+			} else {
+				importError.Status = corev1.ConditionTrue
+			}
+			importError.LastTransitionTime = now
+			importError.LastUpdateTime = now
+			srcfg.ConditionUpdate(importError)
+			logrus.Debugf("SDKUPDATE no migration / no pending imgstr update")
 			return h.sdkwrapper.Update(srcfg)
 		}
 
@@ -343,6 +354,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		progressing.Reason = progressing.Reason + imagestream.Name + " "
 	}
 	srcfg.ConditionUpdate(progressing)
+	srcfg.Spec.Version = v1alpha1.GitVersionString()
 	logrus.Debugf("SDKUPDATE progressing true update for imagestream %s", imagestream.Name)
 	return h.sdkwrapper.Update(srcfg)
 
@@ -377,8 +389,14 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing template %s", template.Name)
 		logrus.Debugf("SDKUPDATE event temp update err bad api obj update")
 		h.sdkwrapper.Update(srcfg)
+		return err
 	}
-	return err
+	if srcfg.Spec.Version != v1alpha1.GitVersionString() {
+		logrus.Debugf("SDKUPDATE update spec version on template event")
+		srcfg.Spec.Version = v1alpha1.GitVersionString()
+		return h.sdkwrapper.Update(srcfg)
+	}
+	return nil
 
 }
 
@@ -636,6 +654,16 @@ func (h *Handler) CreateDefaultResourceIfNeeded(srcfg *v1alpha1.SamplesResource)
 		onHold.LastUpdateTime = now
 		onHold.LastTransitionTime = now
 		srcfg.ConditionUpdate(onHold)
+		migration := srcfg.Condition(v1alpha1.MigrationInProgress)
+		migration.Status = corev1.ConditionFalse
+		migration.LastUpdateTime = now
+		migration.LastTransitionTime = now
+		srcfg.ConditionUpdate(migration)
+		importErrors := srcfg.Condition(v1alpha1.ImportImageErrorsExist)
+		importErrors.Status = corev1.ConditionFalse
+		importErrors.LastUpdateTime = now
+		importErrors.LastTransitionTime = now
+		srcfg.ConditionUpdate(importErrors)
 		h.AddFinalizer(srcfg)
 		logrus.Println("creating default SamplesResource")
 		err = h.sdkwrapper.Create(srcfg)
@@ -717,7 +745,7 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, samplesResource *v1alpha1.
 		secretToCreate.ResourceVersion = ""
 		secretToCreate.UID = ""
 		secretToCreate.Annotations = make(map[string]string)
-		secretToCreate.Annotations[v1alpha1.SamplesVersionAnnotation] = v1alpha1.CodeLevel
+		secretToCreate.Annotations[v1alpha1.SamplesVersionAnnotation] = v1alpha1.GitVersionString()
 
 		s, err := h.secretclientwrapper.Get("openshift", secret.Name)
 		if err != nil && !kerrors.IsNotFound(err) {
@@ -874,6 +902,7 @@ func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool,
 			cred.Status = corev1.ConditionFalse
 			srcfg.ConditionUpdate(cred)
 			srcfg.Status.ManagementState = operatorsv1api.Removed
+			srcfg.Status.Version = ""
 			return false, true, nil
 		}
 		return false, false, nil
@@ -1029,14 +1058,6 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return nil
 		}
 
-		// Every time we see a change to the SamplesResource object, update the ClusterOperator status
-		// based on the current conditions of the SamplesResource.
-		err := h.cvowrapper.UpdateOperatorStatus(srcfg)
-		if err != nil {
-			logrus.Errorf("error updating cluster operator status: %v", err)
-			return err
-		}
-
 		// pattern is 1) come in with delete timestamp, event delete flag false
 		// 2) then after we remove finalizer, comes in with delete timestamp
 		// and event delete flag true
@@ -1092,6 +1113,14 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return nil
 		}
 
+		// Every time we see a change to the SamplesResource object, update the ClusterOperator status
+		// based on the current conditions of the SamplesResource.
+		err := h.cvowrapper.UpdateOperatorStatus(srcfg)
+		if err != nil {
+			logrus.Errorf("error updating cluster operator status: %v", err)
+			return err
+		}
+
 		doit, srcfgUpdate, err := h.ProcessManagementField(srcfg)
 		if !doit || err != nil {
 			if err != nil || srcfgUpdate {
@@ -1107,8 +1136,9 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		if err != nil {
 			// flush status update
 			logrus.Debugf("SDKUPDATE bad spec validation update")
-			h.sdkwrapper.Update(srcfg)
-			return err
+			// only retry on error updating the samplesresource; do not return
+			// the error from SpecValidation which denotes a bad config
+			return h.sdkwrapper.Update(srcfg)
 		}
 		// if a bad config was corrected, update and return
 		if existingValidStatus != srcfg.Condition(v1alpha1.ConfigurationValid).Status {
@@ -1116,27 +1146,35 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			return h.sdkwrapper.Update(srcfg)
 		}
 
+		configChanged := false
 		if srcfg.Spec.ManagementState == srcfg.Status.ManagementState {
-			changed, err := h.VariableConfigChanged(srcfg)
+			configChanged, err = h.VariableConfigChanged(srcfg)
 			if err != nil {
 				// flush status update
 				logrus.Debugf("SDKUPDATE var cfg chg err update")
 				h.sdkwrapper.Update(srcfg)
 				return err
 			}
+			logrus.Debugf("config changed %v exists %v progressing %v spec version %s status version %s",
+				configChanged,
+				srcfg.ConditionTrue(v1alpha1.SamplesExist),
+				srcfg.ConditionFalse(v1alpha1.ImageChangesInProgress),
+				srcfg.Spec.Version,
+				srcfg.Status.Version)
 			// so ignore if config does not change and the samples exist and
-			// we are not in progress
-			if !changed &&
+			// we are not in progress and at the right level
+			if !configChanged &&
 				srcfg.ConditionTrue(v1alpha1.SamplesExist) &&
-				srcfg.ConditionFalse(v1alpha1.ImageChangesInProgress) {
-				logrus.Debugf("Handle ignoring because config the same and exists is true and in progress false")
+				srcfg.ConditionFalse(v1alpha1.ImageChangesInProgress) &&
+				srcfg.Spec.Version == srcfg.Status.Version {
+				logrus.Debugf("Handle ignoring because config the same and exists is true, in progress false, and version correct")
 				return nil
 			}
 			// if config changed, but a prior config action is still in progress,
 			// reset in progress to false and return; the next event should drive the actual
 			// processing of the config change and replace whatever was previously
 			// in progress
-			if changed && srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
+			if configChanged && srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
 				h.GoodConditionUpdate(srcfg, corev1.ConditionFalse, v1alpha1.ImageChangesInProgress)
 				logrus.Debugf("SDKUPDATE change in progress from true to false for config change")
 				return sdk.Update(srcfg)
@@ -1160,6 +1198,25 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		if stillWaitingForSecret {
 			// means we previously udpated srcfg but nothing has changed wrt the secret's presence
 			return nil
+		}
+
+		if srcfg.ConditionFalse(v1alpha1.MigrationInProgress) &&
+			len(srcfg.Status.Version) > 0 &&
+			srcfg.Spec.Version != srcfg.Status.Version {
+			h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.MigrationInProgress)
+			logrus.Debugf("SDKUPDATE migration on")
+			return h.sdkwrapper.Update(srcfg)
+		}
+
+		if !configChanged &&
+			srcfg.ConditionTrue(v1alpha1.SamplesExist) &&
+			srcfg.ConditionFalse(v1alpha1.ImageChangesInProgress) &&
+			srcfg.ConditionFalse(v1alpha1.MigrationInProgress) &&
+			srcfg.Spec.Version != srcfg.Status.Version {
+			srcfg.Status.Version = srcfg.Spec.Version
+			logrus.Debugf("SDKUPDATE upd status version")
+			logrus.Printf("The samples are now at version %s", srcfg.Status.Version)
+			return h.sdkwrapper.Update(srcfg)
 		}
 
 		// lastly, if we are in samples exists and progressing both true, we can forgo cycling
@@ -1198,6 +1255,8 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		}
 
 		if !srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
+			h.creationInProgress = true
+			defer func() { h.creationInProgress = false }()
 			err = h.createSamples(srcfg)
 			if err != nil {
 				h.processError(srcfg, v1alpha1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
@@ -1221,6 +1280,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			}
 			logrus.Debugf("Handle Reason field set to %s", progressing.Reason)
 			srcfg.ConditionUpdate(progressing)
+			srcfg.Spec.Version = v1alpha1.GitVersionString()
 			logrus.Debugf("SDKUPDATE progressing true update")
 			err = h.sdkwrapper.Update(srcfg)
 			if err != nil {
@@ -1301,7 +1361,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 		imagestreamInOperatorImage.Annotations = make(map[string]string)
 	}
 	imagestreamInOperatorImage.Labels[v1alpha1.SamplesManagedLabel] = "true"
-	imagestreamInOperatorImage.Annotations[v1alpha1.SamplesVersionAnnotation] = v1alpha1.CodeLevel
+	imagestreamInOperatorImage.Annotations[v1alpha1.SamplesVersionAnnotation] = v1alpha1.GitVersionString()
 
 	if imagestreamInCluster == nil {
 		_, err := h.imageclientwrapper.Create("openshift", imagestreamInOperatorImage)
@@ -1342,7 +1402,7 @@ func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *tem
 		templateInOperatorImage.Annotations = map[string]string{}
 	}
 	templateInOperatorImage.Labels[v1alpha1.SamplesManagedLabel] = "true"
-	templateInOperatorImage.Annotations[v1alpha1.SamplesVersionAnnotation] = v1alpha1.CodeLevel
+	templateInOperatorImage.Annotations[v1alpha1.SamplesVersionAnnotation] = v1alpha1.GitVersionString()
 
 	if templateInCluster == nil {
 		_, err := h.templateclientwrapper.Create("openshift", templateInOperatorImage)
