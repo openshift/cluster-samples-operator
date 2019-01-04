@@ -128,6 +128,21 @@ func (in *SamplesResourceStatus) DeepCopyInto(out *SamplesResourceStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.Architectures != nil {
+		in, out := &in.Architectures, &out.Architectures
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.SkippedImagestreams != nil {
+		in, out := &in.SkippedImagestreams, &out.SkippedImagestreams
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.SkippedTemplates != nil {
+		in, out := &in.SkippedTemplates, &out.SkippedTemplates
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 

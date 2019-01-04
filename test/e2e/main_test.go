@@ -20,17 +20,32 @@ import (
 	"testing"
 	"time"
 
-	kappsapi "k8s.io/api/apps/v1"
+	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	kubeset "k8s.io/client-go/kubernetes"
+)
 
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
+var (
+	kubeClient *kubeset.Clientset
 )
 
 func TestMain(m *testing.M) {
+	kubeconfig, err := sampopclient.GetConfig()
+	if err != nil {
+		fmt.Printf("%#v", err)
+		os.Exit(1)
+	}
+
+	kubeClient, err = kubeset.NewForConfig(kubeconfig)
+	if err != nil {
+		fmt.Printf("%#v", err)
+		os.Exit(1)
+	}
+
 	// e2e test job does not guarantee our operator is up before
 	// launching the test, so we need to do so.
-	err := waitForOperator()
+	err = waitForOperator()
 	if err != nil {
 		fmt.Println("failed waiting for operator to start")
 		os.Exit(1)
@@ -39,18 +54,10 @@ func TestMain(m *testing.M) {
 }
 
 func waitForOperator() error {
-	d := &kappsapi.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: kappsapi.SchemeGroupVersion.String(),
-			Kind:       "Deployment",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "cluster-samples-operator",
-			Namespace: "openshift-cluster-samples-operator",
-		},
-	}
+	depClient := kubeClient.AppsV1().Deployments("openshift-cluster-samples-operator")
 	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		if err := sdk.Get(d); err != nil {
+		_, err := depClient.Get("cluster-samples-operator", metav1.GetOptions{})
+		if err != nil {
 			fmt.Printf("error waiting for operator deployment to exist: %v\n", err)
 			return false, nil
 		}

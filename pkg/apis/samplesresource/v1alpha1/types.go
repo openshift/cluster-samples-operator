@@ -7,6 +7,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/pkg/version"
 )
 
@@ -18,6 +19,8 @@ type SamplesResourceList struct {
 	Items           []SamplesResource `json:"items"`
 }
 
+// +genclient
+// +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type SamplesResource struct {
@@ -423,4 +426,9 @@ func (s *SamplesResource) ClusterOperatorStatusProgressingCondition(failingState
 		return configv1.ConditionFalse, fmt.Sprintf(installed, s.Status.Version)
 	}
 	return configv1.ConditionFalse, ""
+}
+
+type Event struct {
+	Object  runtime.Object
+	Deleted bool
 }

@@ -1,7 +1,6 @@
 package stub
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -9,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
 
 	corev1 "k8s.io/api/core/v1"
@@ -32,8 +30,10 @@ import (
 	templatev1client "github.com/openshift/client-go/template/clientset/versioned/typed/template/v1"
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
-	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
+	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesresource/v1alpha1"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
+
+	sampleclientv1alpha1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samplesresource/v1alpha1"
 )
 
 const (
@@ -46,24 +46,31 @@ const (
 	skippedtempskey        = "keyForSkippedTemplatesField"
 )
 
-func NewHandler() sdk.Handler {
-	h := Handler{}
+func NewSamplesOperatorHandler(kubeconfig *restclient.Config) (*Handler, error) {
+	h := &Handler{}
 
-	h.initter = &defaultInClusterInitter{h: &h}
-	h.initter.init()
+	h.initter = &defaultInClusterInitter{}
+	h.initter.init(h, kubeconfig)
 
-	h.sdkwrapper = &defaultSDKWrapper{h: &h}
+	crdWrapper := &generatedCRDWrapper{}
+	client, err := sampleclientv1alpha1.NewForConfig(kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+	crdWrapper.client = client.SamplesResources()
+
+	h.crdwrapper = crdWrapper
 
 	h.Fileimagegetter = &DefaultImageStreamFromFileGetter{}
 	h.Filetemplategetter = &DefaultTemplateFromFileGetter{}
 	h.Filefinder = &DefaultResourceFileLister{}
 
-	h.imageclientwrapper = &defaultImageStreamClientWrapper{h: &h}
-	h.templateclientwrapper = &defaultTemplateClientWrapper{h: &h}
-	h.secretclientwrapper = &defaultSecretClientWrapper{h: &h}
+	h.imageclientwrapper = &defaultImageStreamClientWrapper{h: h}
+	h.templateclientwrapper = &defaultTemplateClientWrapper{h: h}
+	h.secretclientwrapper = &defaultSecretClientWrapper{coreclient: h.coreclient}
 	h.cvowrapper = operatorstatus.NewClusterOperatorHandler(h.configclient)
 
-	h.namespace = getNamespace()
+	h.namespace = GetNamespace()
 
 	h.skippedImagestreams = make(map[string]bool)
 	h.skippedTemplates = make(map[string]bool)
@@ -72,13 +79,14 @@ func NewHandler() sdk.Handler {
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
-	return &h
+
+	return h, nil
 }
 
 type Handler struct {
 	initter InClusterInitter
 
-	sdkwrapper SDKWrapper
+	crdwrapper CRDWrapper
 	cvowrapper *operatorstatus.ClusterOperatorHandler
 
 	restconfig   *restclient.Config
@@ -114,7 +122,7 @@ type Handler struct {
 // - doUpsert: whether to do the upsert of not ... not doing the upsert optionally triggers the need for checking status of prior upsert
 // - err: if a problem occurred getting the samplesresource, we return the error to bubble up and initiate a retry
 func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]string, deleted bool) (*v1alpha1.SamplesResource, string, bool, error) {
-	srcfg, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
+	srcfg, err := h.crdwrapper.Get(v1alpha1.SamplesResourceName)
 	if srcfg == nil || err != nil {
 		logrus.Printf("Received watch event %s but not upserting since not have the SamplesResource yet: %#v %#v", kind+"/"+name, err, srcfg)
 		return nil, "", false, err
@@ -168,7 +176,7 @@ func (h *Handler) prepWatchEvent(kind, name string, annotations map[string]strin
 		return nil, "", false, nil
 	}
 
-	if deleted {
+	if deleted && !h.creationInProgress {
 		logrus.Printf("going to recreate deleted managed sample %s/%s", kind, name)
 		return srcfg, filePath, true, nil
 	}
@@ -307,7 +315,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			importError.LastUpdateTime = now
 			srcfg.ConditionUpdate(importError)
 			logrus.Debugf("SDKUPDATE no migration / no pending imgstr update")
-			return h.sdkwrapper.Update(srcfg)
+			return h.crdwrapper.Update(srcfg)
 		}
 
 		return nil
@@ -323,7 +331,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		// still attempt to report error in status
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
 		logrus.Debugf("SDKUPDATE event img update err bad fs read")
-		h.sdkwrapper.Update(srcfg)
+		h.crdwrapper.Update(srcfg)
 		// if we get this, don't bother retrying
 		return nil
 	}
@@ -333,13 +341,17 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 	}
 	err = h.upsertImageStream(imagestream, is, srcfg)
 	if err != nil {
+		if kerrors.IsAlreadyExists(err) {
+			// it the main loop created, we will let it set the image change reason field
+			return nil
+		}
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing imagestream %s", imagestream.Name)
 		logrus.Debugf("SDKUPDATE event img update err bad api obj update")
-		h.sdkwrapper.Update(srcfg)
+		h.crdwrapper.Update(srcfg)
 		return err
 	}
 	// refetch srcfg to narrow conflict window
-	s, err := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
+	s, err := h.crdwrapper.Get(v1alpha1.SamplesResourceName)
 	if err == nil {
 		srcfg = s
 	}
@@ -354,9 +366,12 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		progressing.Reason = progressing.Reason + imagestream.Name + " "
 	}
 	srcfg.ConditionUpdate(progressing)
-	srcfg.Spec.Version = v1alpha1.GitVersionString()
-	logrus.Debugf("SDKUPDATE progressing true update for imagestream %s", imagestream.Name)
-	return h.sdkwrapper.Update(srcfg)
+	if srcfg.Spec.Version != v1alpha1.GitVersionString() {
+		srcfg.Spec.Version = v1alpha1.GitVersionString()
+		logrus.Debugf("SDKUPDATE progressing true update for imagestream %s", imagestream.Name)
+		return h.crdwrapper.Update(srcfg)
+	}
+	return nil
 
 }
 
@@ -376,7 +391,7 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 		// still attempt to report error in status
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
 		logrus.Debugf("SDKUPDATE event temp udpate err")
-		h.sdkwrapper.Update(srcfg)
+		h.crdwrapper.Update(srcfg)
 		// if we get this, don't bother retrying
 		return nil
 	}
@@ -386,15 +401,18 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 	}
 	err = h.upsertTemplate(template, t, srcfg)
 	if err != nil {
+		if kerrors.IsAlreadyExists(err) {
+			return nil
+		}
 		h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing template %s", template.Name)
 		logrus.Debugf("SDKUPDATE event temp update err bad api obj update")
-		h.sdkwrapper.Update(srcfg)
+		h.crdwrapper.Update(srcfg)
 		return err
 	}
 	if srcfg.Spec.Version != v1alpha1.GitVersionString() {
 		logrus.Debugf("SDKUPDATE update spec version on template event")
 		srcfg.Spec.Version = v1alpha1.GitVersionString()
-		return h.sdkwrapper.Update(srcfg)
+		return h.crdwrapper.Update(srcfg)
 	}
 	return nil
 
@@ -561,7 +579,7 @@ func (h *Handler) GoodConditionUpdate(srcfg *v1alpha1.SamplesResource, newStatus
 }
 
 // copied from k8s.io/kubernetes/test/utils/
-func (h *Handler) IsRetryableAPIError(err error) bool {
+func IsRetryableAPIError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -592,7 +610,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded(srcfg *v1alpha1.SamplesResource)
 		srcfg.Kind = "SamplesResource"
 		srcfg.APIVersion = v1alpha1.GroupName + "/" + v1alpha1.Version
 		err = wait.PollImmediate(3*time.Second, 30*time.Second, func() (bool, error) {
-			s, e := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
+			s, e := h.crdwrapper.Get(v1alpha1.SamplesResourceName)
 			if kerrors.IsNotFound(e) {
 				return true, nil
 			}
@@ -666,7 +684,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded(srcfg *v1alpha1.SamplesResource)
 		srcfg.ConditionUpdate(importErrors)
 		h.AddFinalizer(srcfg)
 		logrus.Println("creating default SamplesResource")
-		err = h.sdkwrapper.Create(srcfg)
+		err = h.crdwrapper.Create(srcfg)
 		if err != nil {
 			if !kerrors.IsAlreadyExists(err) {
 				return nil, err
@@ -945,7 +963,7 @@ func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool,
 	}
 }
 
-func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
+func (h *Handler) Handle(event v1alpha1.Event) error {
 	switch event.Object.(type) {
 	case *imagev1.ImageStream:
 		is, _ := event.Object.(*imagev1.ImageStream)
@@ -972,7 +990,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 		//TODO what do we do about possible missed delete events since we
 		// cannot add a finalizer in our namespace secret
 
-		srcfg, _ := h.sdkwrapper.Get(v1alpha1.SamplesResourceName)
+		srcfg, _ := h.crdwrapper.Get(v1alpha1.SamplesResourceName)
 		if srcfg != nil {
 			switch srcfg.Spec.ManagementState {
 			case operatorsv1api.Removed:
@@ -1046,7 +1064,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			}
 			// flush the status changes generated by the processing
 			logrus.Debugf("SDKUPDATE event secret update")
-			return h.sdkwrapper.Update(srcfg)
+			return h.crdwrapper.Update(srcfg)
 		} else {
 			return fmt.Errorf("Received secret %s but do not have the SamplesResource yet, requeuing", dockercfgSecret.Name)
 		}
@@ -1092,7 +1110,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 				}
 				h.GoodConditionUpdate(srcfg, corev1.ConditionFalse, v1alpha1.SamplesExist)
 				logrus.Debugf("SDKUPDATE exist false update")
-				err = h.sdkwrapper.Update(srcfg)
+				err = h.crdwrapper.Update(srcfg)
 				if err != nil {
 					logrus.Printf("error on samplesresource update after setting exists condition to false (returning error to retry): %v", err)
 					return err
@@ -1101,7 +1119,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 				logrus.Println("Initiating finalizer processing for a SampleResource delete attempt")
 				h.RemoveFinalizer(srcfg)
 				logrus.Debugf("SDKUPDATE remove finalizer update")
-				err := h.sdkwrapper.Update(srcfg)
+				err := h.crdwrapper.Update(srcfg)
 				if err != nil {
 					logrus.Printf("error removing samplesresource finalizer during delete (hopefully retry on return of error works): %v", err)
 					return err
@@ -1126,7 +1144,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			if err != nil || srcfgUpdate {
 				// flush status update
 				logrus.Debugf("SDKUPDATE process mgmt update")
-				h.sdkwrapper.Update(srcfg)
+				h.crdwrapper.Update(srcfg)
 			}
 			return err
 		}
@@ -1138,12 +1156,12 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			logrus.Debugf("SDKUPDATE bad spec validation update")
 			// only retry on error updating the samplesresource; do not return
 			// the error from SpecValidation which denotes a bad config
-			return h.sdkwrapper.Update(srcfg)
+			return h.crdwrapper.Update(srcfg)
 		}
 		// if a bad config was corrected, update and return
 		if existingValidStatus != srcfg.Condition(v1alpha1.ConfigurationValid).Status {
 			logrus.Debugf("SDKUPDATE spec corrected")
-			return h.sdkwrapper.Update(srcfg)
+			return h.crdwrapper.Update(srcfg)
 		}
 
 		configChanged := false
@@ -1152,7 +1170,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			if err != nil {
 				// flush status update
 				logrus.Debugf("SDKUPDATE var cfg chg err update")
-				h.sdkwrapper.Update(srcfg)
+				h.crdwrapper.Update(srcfg)
 				return err
 			}
 			logrus.Debugf("config changed %v exists %v progressing %v spec version %s status version %s",
@@ -1177,7 +1195,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			if configChanged && srcfg.ConditionTrue(v1alpha1.ImageChangesInProgress) {
 				h.GoodConditionUpdate(srcfg, corev1.ConditionFalse, v1alpha1.ImageChangesInProgress)
 				logrus.Debugf("SDKUPDATE change in progress from true to false for config change")
-				return sdk.Update(srcfg)
+				return h.crdwrapper.Update(srcfg)
 			}
 		}
 
@@ -1193,7 +1211,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			logrus.Println("samplesresource update ignored since need the RHEL credential")
 			// if update to set import cred condition to false fails, return that error
 			// to requeue
-			return h.sdkwrapper.Update(srcfg)
+			return h.crdwrapper.Update(srcfg)
 		}
 		if stillWaitingForSecret {
 			// means we previously udpated srcfg but nothing has changed wrt the secret's presence
@@ -1205,7 +1223,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			srcfg.Spec.Version != srcfg.Status.Version {
 			h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.MigrationInProgress)
 			logrus.Debugf("SDKUPDATE migration on")
-			return h.sdkwrapper.Update(srcfg)
+			return h.crdwrapper.Update(srcfg)
 		}
 
 		if !configChanged &&
@@ -1216,7 +1234,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			srcfg.Status.Version = srcfg.Spec.Version
 			logrus.Debugf("SDKUPDATE upd status version")
 			logrus.Printf("The samples are now at version %s", srcfg.Status.Version)
-			return h.sdkwrapper.Update(srcfg)
+			return h.crdwrapper.Update(srcfg)
 		}
 
 		// lastly, if we are in samples exists and progressing both true, we can forgo cycling
@@ -1241,14 +1259,14 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 				if err != nil {
 					err = h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
 					logrus.Debugf("SDKUPDATE file list err update")
-					h.sdkwrapper.Update(srcfg)
+					h.crdwrapper.Update(srcfg)
 					return err
 				}
 				err = h.processFiles(dir, files, srcfg)
 				if err != nil {
 					err = h.processError(srcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "error processing content : %v")
 					logrus.Debugf("SDKUPDATE proc file err update")
-					h.sdkwrapper.Update(srcfg)
+					h.crdwrapper.Update(srcfg)
 					return err
 				}
 			}
@@ -1260,7 +1278,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			err = h.createSamples(srcfg)
 			if err != nil {
 				h.processError(srcfg, v1alpha1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
-				e := h.sdkwrapper.Update(srcfg)
+				e := h.crdwrapper.Update(srcfg)
 				if e != nil {
 					return e
 				}
@@ -1282,7 +1300,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			srcfg.ConditionUpdate(progressing)
 			srcfg.Spec.Version = v1alpha1.GitVersionString()
 			logrus.Debugf("SDKUPDATE progressing true update")
-			err = h.sdkwrapper.Update(srcfg)
+			err = h.crdwrapper.Update(srcfg)
 			if err != nil {
 				return err
 			}
@@ -1293,7 +1311,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 			h.GoodConditionUpdate(srcfg, corev1.ConditionTrue, v1alpha1.SamplesExist)
 			// flush updates from processing
 			logrus.Debugf("SDKUPDATE good cond update")
-			return h.sdkwrapper.Update(srcfg)
+			return h.crdwrapper.Update(srcfg)
 		}
 
 	}
@@ -1366,6 +1384,11 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 	if imagestreamInCluster == nil {
 		_, err := h.imageclientwrapper.Create("openshift", imagestreamInOperatorImage)
 		if err != nil {
+			if kerrors.IsAlreadyExists(err) {
+				logrus.Printf("imagestream %s recreated since delete event", imagestreamInOperatorImage.Name)
+				// return the error so the caller can decide what to do
+				return err
+			}
 			return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "imagestream create error: %v")
 		}
 		logrus.Printf("created imagestream %s", imagestreamInOperatorImage.Name)
@@ -1407,6 +1430,11 @@ func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *tem
 	if templateInCluster == nil {
 		_, err := h.templateclientwrapper.Create("openshift", templateInOperatorImage)
 		if err != nil {
+			if kerrors.IsAlreadyExists(err) {
+				logrus.Printf("template %s recreated since delete event", templateInOperatorImage.Name)
+				// return the error so the caller can decide what to do
+				return err
+			}
 			return h.processError(opcfg, v1alpha1.SamplesExist, corev1.ConditionUnknown, err, "template create error: %v")
 		}
 		logrus.Printf("created template %s", templateInOperatorImage.Name)
@@ -1592,13 +1620,7 @@ func getImageClient(restconfig *restclient.Config) (*imagev1client.ImageV1Client
 	return imagev1client.NewForConfig(restconfig)
 }
 
-func getRestConfig() (*restclient.Config, error) {
-	// Build a rest.Config from configuration injected into the Pod by
-	// Kubernetes.  Clients will use the Pod's ServiceAccount principal.
-	return restclient.InClusterConfig()
-}
-
-func getNamespace() string {
+func GetNamespace() string {
 	b, _ := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/" + corev1.ServiceAccountNamespaceKey)
 	return string(b)
 }
@@ -1687,23 +1709,23 @@ type SecretClientWrapper interface {
 }
 
 type defaultSecretClientWrapper struct {
-	h *Handler
+	coreclient *corev1client.CoreV1Client
 }
 
 func (g *defaultSecretClientWrapper) Get(namespace, name string) (*corev1.Secret, error) {
-	return g.h.coreclient.Secrets(namespace).Get(name, metav1.GetOptions{})
+	return g.coreclient.Secrets(namespace).Get(name, metav1.GetOptions{})
 }
 
 func (g *defaultSecretClientWrapper) Create(namespace string, s *corev1.Secret) (*corev1.Secret, error) {
-	return g.h.coreclient.Secrets(namespace).Create(s)
+	return g.coreclient.Secrets(namespace).Create(s)
 }
 
 func (g *defaultSecretClientWrapper) Update(namespace string, s *corev1.Secret) (*corev1.Secret, error) {
-	return g.h.coreclient.Secrets(namespace).Update(s)
+	return g.coreclient.Secrets(namespace).Update(s)
 }
 
 func (g *defaultSecretClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
-	return g.h.coreclient.Secrets(namespace).Delete(name, opts)
+	return g.coreclient.Secrets(namespace).Delete(name, opts)
 }
 
 type ImageStreamFromFileGetter interface {
@@ -1763,95 +1785,88 @@ func (g *DefaultResourceFileLister) List(dir string) (files []os.FileInfo, err e
 }
 
 type InClusterInitter interface {
-	init()
+	init(h *Handler, restconfig *restclient.Config)
 }
 
 type defaultInClusterInitter struct {
-	h *Handler
 }
 
-func (g *defaultInClusterInitter) init() {
-	restconfig, err := getRestConfig()
-	if err != nil {
-		logrus.Errorf("failed to get rest config : %v", err)
-		panic(err)
-	}
-	g.h.restconfig = restconfig
+func (g *defaultInClusterInitter) init(h *Handler, restconfig *restclient.Config) {
+	h.restconfig = restconfig
 	tempclient, err := getTemplateClient(restconfig)
 	if err != nil {
 		logrus.Errorf("failed to get template client : %v", err)
 		panic(err)
 	}
-	g.h.tempclient = tempclient
+	h.tempclient = tempclient
 	logrus.Printf("template client %#v", tempclient)
 	imageclient, err := getImageClient(restconfig)
 	if err != nil {
 		logrus.Errorf("failed to get image client : %v", err)
 		panic(err)
 	}
-	g.h.imageclient = imageclient
+	h.imageclient = imageclient
 	logrus.Printf("image client %#v", imageclient)
 	coreclient, err := corev1client.NewForConfig(restconfig)
 	if err != nil {
 		logrus.Errorf("failed to get core client : %v", err)
 		panic(err)
 	}
-	g.h.coreclient = coreclient
+	h.coreclient = coreclient
 	configclient, err := configv1client.NewForConfig(restconfig)
 	if err != nil {
 		logrus.Errorf("failed to get config client : %v", err)
 		panic(err)
 	}
-	g.h.configclient = configclient
+	h.configclient = configclient
 }
 
-type SDKWrapper interface {
+type CRDWrapper interface {
 	Update(samplesResource *v1alpha1.SamplesResource) (err error)
 	Create(samplesResource *v1alpha1.SamplesResource) (err error)
 	Get(name string) (*v1alpha1.SamplesResource, error)
 }
 
-type defaultSDKWrapper struct {
-	h *Handler
+type generatedCRDWrapper struct {
+	client sampleclientv1alpha1.SamplesResourceInterface
 }
 
-func (g *defaultSDKWrapper) Update(samplesResource *v1alpha1.SamplesResource) error {
+func (g *generatedCRDWrapper) Update(sr *v1alpha1.SamplesResource) error {
 	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
-		err := sdk.Update(samplesResource)
+		_, err := g.client.Update(sr)
 		if err == nil {
 			return true, nil
 		}
-		if !g.h.IsRetryableAPIError(err) {
+		if !IsRetryableAPIError(err) {
+			return false, err
+		}
+		return false, nil
+	})
+
+}
+
+func (g *generatedCRDWrapper) Create(sr *v1alpha1.SamplesResource) error {
+	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
+		_, err := g.client.Create(sr)
+		if err == nil {
+			return true, nil
+		}
+		if !IsRetryableAPIError(err) {
 			return false, err
 		}
 		return false, nil
 	})
 }
 
-func (g *defaultSDKWrapper) Create(samplesResource *v1alpha1.SamplesResource) error {
-	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
-		err := sdk.Create(samplesResource)
+func (g *generatedCRDWrapper) Get(name string) (*v1alpha1.SamplesResource, error) {
+	sr := &v1alpha1.SamplesResource{}
+	var err error
+	err = wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
+		sr, err = g.client.Get(name, metav1.GetOptions{})
 		if err == nil {
 			return true, nil
 		}
-		if !g.h.IsRetryableAPIError(err) {
-			return false, err
-		}
-		return false, nil
-	})
-}
-
-func (g *defaultSDKWrapper) Get(name string) (*v1alpha1.SamplesResource, error) {
-	sr := v1alpha1.SamplesResource{}
-	sr.Kind = "SamplesResource"
-	sr.APIVersion = "samplesoperator.config.openshift.io/v1alpha1"
-	sr.Name = name
-	err := wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
-		err := sdk.Get(&sr, sdk.WithGetOptions(&metav1.GetOptions{}))
-		if err == nil {
-			return true, nil
-		}
-		if !g.h.IsRetryableAPIError(err) {
+		if !IsRetryableAPIError(err) {
 			return false, err
 		}
 		return false, nil
@@ -1859,5 +1874,6 @@ func (g *defaultSDKWrapper) Get(name string) (*v1alpha1.SamplesResource, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &sr, nil
+	return sr, nil
+
 }
