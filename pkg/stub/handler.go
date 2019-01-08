@@ -225,47 +225,58 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		logrus.Debugf("checking tag spec/status for %s spec len %d status len %d", is.Name, len(is.Spec.Tags), len(is.Status.Tags))
 		// won't be updating imagestream this go around, which sets pending==true, so see if we should turn off pending
 		pending := false
+		anyErrors := false
 		if len(is.Spec.Tags) == len(is.Status.Tags) {
 			for _, specTag := range is.Spec.Tags {
 				matched := false
 				for _, statusTag := range is.Status.Tags {
 					logrus.Debugf("checking spec tag %s against status tag %s with num items %d", specTag.Name, statusTag.Tag, len(statusTag.Items))
 					if specTag.Name == statusTag.Tag {
-						for _, event := range statusTag.Items {
-							if specTag.Generation != nil {
-								logrus.Debugf("checking status tag %d against spec tag %d", event.Generation, *specTag.Generation)
-							}
-							if specTag.Generation != nil &&
-								*specTag.Generation <= event.Generation {
-								logrus.Debugf("got match")
-								matched = true
-								// remove this imagestream from the error reason field in case it exists there;
-								// this call is a no-op if it is not there
-								importError.Reason = strings.Replace(importError.Reason, is.Name+" ", "", -1)
-								break
-							}
-						}
-						if !matched {
-							// if an error occurred, let's give up as we are no longer "in progress"
-							// in that case as well, but mark the import failure
+						// if an error occurred with the latest generation, let's give up as we are no longer "in progress"
+						// in that case as well, but mark the import failure
+						if statusTag.Conditions != nil && len(statusTag.Conditions) > 0 {
+							var latestGeneration int64
+							var mostRecentErrorGeneration int64
+							reason := ""
+							message := ""
 							for _, condition := range statusTag.Conditions {
+								if condition.Generation > latestGeneration {
+									latestGeneration = condition.Generation
+								}
 								if condition.Status == corev1.ConditionFalse &&
 									len(condition.Message) > 0 &&
 									len(condition.Reason) > 0 {
-									logrus.Warningf("Image import for imagestream %s failed with reason %s and detailed message %s", is.Name, condition.Reason, condition.Message)
-									matched = true
-									// add this imagestream to the Reason field
-									if !strings.Contains(importError.Reason, is.Name+" ") {
-										importError.Reason = importError.Reason + is.Name + " "
+									if condition.Generation > mostRecentErrorGeneration {
+										mostRecentErrorGeneration = condition.Generation
+										reason = condition.Reason
+										message = condition.Message
 									}
+								}
+							}
+							if mostRecentErrorGeneration >= latestGeneration {
+								logrus.Warningf("Image import for imagestream %s tag %s generation %v failed with reason %s and detailed message %s", is.Name, statusTag.Tag, mostRecentErrorGeneration, reason, message)
+								matched = true
+								anyErrors = true
+								// add this imagestream to the Reason field
+								if !strings.Contains(importError.Reason, is.Name+" ") {
+									importError.Reason = importError.Reason + is.Name + " "
+								}
+								break
+							}
+						}
+						// if the latest gens have no errors, see if we got gen match
+						if statusTag.Items != nil {
+							for _, event := range statusTag.Items {
+								if specTag.Generation != nil {
+									logrus.Debugf("checking status tag %d against spec tag %d", event.Generation, *specTag.Generation)
+								}
+								if specTag.Generation != nil &&
+									*specTag.Generation <= event.Generation {
+									logrus.Debugf("got match")
+									matched = true
 									break
 								}
 							}
-
-						}
-
-						if matched {
-							break
 						}
 					}
 				}
@@ -278,10 +289,15 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			pending = true
 		}
 
-		logrus.Debugf("pending is %v for %s", pending, is.Name)
+		logrus.Debugf("pending is %v any errors %v for %s", pending, anyErrors, is.Name)
 
 		// we check for processing == true here as well to avoid churn on relists
 		if !pending && processing.Status == corev1.ConditionTrue {
+			if !anyErrors {
+				// remove this imagestream from the error reason field in case it exists there;
+				// this call is a no-op if it is not there
+				importError.Reason = strings.Replace(importError.Reason, is.Name+" ", "", -1)
+			}
 			now := kapis.Now()
 			// remove this imagestream name, including the space separator
 			logrus.Debugf("current reason %s ", processing.Reason)
@@ -314,7 +330,25 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			importError.LastTransitionTime = now
 			importError.LastUpdateTime = now
 			srcfg.ConditionUpdate(importError)
-			logrus.Debugf("SDKUPDATE no migration / no pending imgstr update")
+			logrus.Debugf("SDKUPDATE no migration / no pending / no error imgstr update")
+			return h.crdwrapper.Update(srcfg)
+		}
+
+		// clear out error for this stream if there were errors previously but no longer are
+		// think a scheduled import failing then recovering
+		if strings.Contains(importError.Reason, is.Name) && !anyErrors {
+			now := kapis.Now()
+			importError.Reason = strings.Replace(importError.Reason, is.Name+" ", "", -1)
+			if len(strings.TrimSpace(importError.Reason)) == 0 {
+				importError.Status = corev1.ConditionFalse
+				importError.Reason = ""
+			} else {
+				importError.Status = corev1.ConditionTrue
+			}
+			importError.LastTransitionTime = now
+			importError.LastUpdateTime = now
+			srcfg.ConditionUpdate(importError)
+			logrus.Debugf("SDKUPDATE no error imgstr update")
 			return h.crdwrapper.Update(srcfg)
 		}
 
