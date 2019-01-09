@@ -6,7 +6,7 @@ import (
 	imagelisters "github.com/openshift/client-go/image/listers/image/v1"
 	templatelisters "github.com/openshift/client-go/template/listers/template/v1"
 
-	sampoplisters "github.com/openshift/cluster-samples-operator/pkg/generated/listers/samplesresource/v1alpha1"
+	sampoplisters "github.com/openshift/cluster-samples-operator/pkg/generated/listers/samples/v1"
 )
 
 type Listers struct {
@@ -14,5 +14,5 @@ type Listers struct {
 	OperatorNamespaceSecrets  corelisters.SecretNamespaceLister
 	ImageStreams              imagelisters.ImageStreamNamespaceLister
 	Templates                 templatelisters.TemplateNamespaceLister
-	SamplesResource           sampoplisters.SamplesResourceLister
+	Config                    sampoplisters.ConfigLister
 }

@@ -1,4 +1,4 @@
-package v1alpha1
+package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	Version   = "v1alpha1"
-	GroupName = "samplesresource.operator.openshift.io"
+	Version   = "v1"
+	GroupName = "samples.operator.openshift.io"
 )
 
 var (
@@ -26,8 +26,8 @@ func init() {
 // addKnownTypes adds the set of types defined in this package to the supplied scheme.
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
-		&SamplesResource{},
-		&SamplesResourceList{},
+		&Config{},
+		&ConfigList{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil

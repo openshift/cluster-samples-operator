@@ -8,7 +8,7 @@ import (
 )
 
 func (c *Controller) Bootstrap() error {
-	crList, err := c.listers.SamplesResource.List(labels.Everything())
+	crList, err := c.listers.Config.List(labels.Everything())
 	if err != nil && !kerrors.IsNotFound(err) {
 		return fmt.Errorf("failed to list samples custom resources: %v", err)
 	}

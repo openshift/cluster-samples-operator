@@ -23,9 +23,9 @@ import (
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	imageset "github.com/openshift/client-go/image/clientset/versioned"
 	templateset "github.com/openshift/client-go/template/clientset/versioned"
-	samplesapi "github.com/openshift/cluster-samples-operator/pkg/apis/samplesresource/v1alpha1"
+	samplesapi "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
-	sampleclientv1alpha1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
+	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/stub"
 	kubeset "k8s.io/client-go/kubernetes"
@@ -37,7 +37,7 @@ var (
 	kubeClient     *kubeset.Clientset
 	imageClient    *imageset.Clientset
 	templateClient *templateset.Clientset
-	crClient       *sampleclientv1alpha1.Clientset
+	crClient       *sampleclientv1.Clientset
 )
 
 const (
@@ -78,7 +78,7 @@ func setupClients(t *testing.T) {
 		}
 	}
 	if crClient == nil {
-		crClient, err = sampleclientv1alpha1.NewForConfig(kubeConfig)
+		crClient, err = sampleclientv1.NewForConfig(kubeConfig)
 		if err != nil {
 			t.Fatalf("%#v", err)
 		}
@@ -108,12 +108,12 @@ func dumpPod(t *testing.T) {
 	}
 }
 
-func verifyOperatorUp(t *testing.T) *samplesapi.SamplesResource {
+func verifyOperatorUp(t *testing.T) *samplesapi.Config {
 	setupClients(t)
-	var sr *samplesapi.SamplesResource
+	var cfg *samplesapi.Config
 	var err error
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		sr, err = crClient.Samplesresource().SamplesResources().Get(samplesapi.SamplesResourceName, metav1.GetOptions{})
+		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			return false, nil
 		}
@@ -122,17 +122,17 @@ func verifyOperatorUp(t *testing.T) *samplesapi.SamplesResource {
 	if err != nil {
 		t.Fatalf("error waiting for samples resource to appear: %v", err)
 	}
-	return sr
+	return cfg
 }
 
 func verifyConditionsCompleteSamplesAdded() error {
 	return wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		sr, err := crClient.Samplesresource().SamplesResources().Get(samplesapi.SamplesResourceName, metav1.GetOptions{})
+		cfg, err := crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
-		if sr.Condition(samplesapi.SamplesExist).Status == corev1.ConditionTrue &&
-			sr.Condition(samplesapi.ImageChangesInProgress).Status == corev1.ConditionFalse {
+		if cfg.Condition(samplesapi.SamplesExist).Status == corev1.ConditionTrue &&
+			cfg.Condition(samplesapi.ImageChangesInProgress).Status == corev1.ConditionFalse {
 			return true, nil
 		}
 
@@ -141,14 +141,14 @@ func verifyConditionsCompleteSamplesAdded() error {
 
 }
 
-func verifyConditionsCompleteSamplesRemoved() error {
+func verifyConditionsCompleteSamplecfgemoved() error {
 	return wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		sr, err := crClient.Samplesresource().SamplesResources().Get(samplesapi.SamplesResourceName, metav1.GetOptions{})
+		cfg, err := crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			return false, nil
 		}
-		if sr.Condition(samplesapi.SamplesExist).Status == corev1.ConditionFalse &&
-			sr.Condition(samplesapi.ImageChangesInProgress).Status == corev1.ConditionFalse {
+		if cfg.Condition(samplesapi.SamplesExist).Status == corev1.ConditionFalse &&
+			cfg.Condition(samplesapi.ImageChangesInProgress).Status == corev1.ConditionFalse {
 			return true, nil
 		}
 
@@ -190,8 +190,8 @@ func verifyClusterOperatorConditionsComplete(t *testing.T) {
 	})
 	if err != nil {
 		dumpPod(t)
-		sr := verifyOperatorUp(t)
-		t.Fatalf("cluster operator conditions never stabilized, cluster op %#v samples resource %#v", state, sr)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("cluster operator conditions never stabilized, cluster op %#v samples resource %#v", state, cfg)
 	}
 }
 
@@ -318,21 +318,21 @@ func verifyImageStreamsPresent(t *testing.T, content map[string]bool, timeToComp
 		})
 		if err != nil {
 			dumpPod(t)
-			sr := verifyOperatorUp(t)
-			t.Fatalf("error waiting for example imagestream %s to appear: %v samples resource %#v", key, err, sr)
+			cfg := verifyOperatorUp(t)
+			t.Fatalf("error waiting for example imagestream %s to appear: %v samples resource %#v", key, err, cfg)
 		}
 	}
 }
 
 func verifyImageChangesInProgress(t *testing.T) {
-	var sr *samplesapi.SamplesResource
+	var cfg *samplesapi.Config
 	var err error
 	err = wait.PollImmediate(1*time.Second, 2*time.Minute, func() (bool, error) {
-		sr, err = crClient.Samplesresource().SamplesResources().Get(samplesapi.SamplesResourceName, metav1.GetOptions{})
+		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
-		if sr.ConditionTrue(samplesapi.ImageChangesInProgress) {
+		if cfg.ConditionTrue(samplesapi.ImageChangesInProgress) {
 			return true, nil
 		}
 		return false, nil
@@ -347,8 +347,8 @@ func verifyImageStreamsGone(t *testing.T) {
 		_, err := imageClient.ImageV1().ImageStreams("openshift").Get(key, metav1.GetOptions{})
 		if err == nil {
 			dumpPod(t)
-			sr := verifyOperatorUp(t)
-			t.Fatalf("still have imagestream %s in the openshift namespace when we expect it to be gone, sr: %#v", key, sr)
+			cfg := verifyOperatorUp(t)
+			t.Fatalf("still have imagestream %s in the openshift namespace when we expect it to be gone, cfg: %#v", key, cfg)
 		}
 	}
 }
@@ -373,8 +373,8 @@ func verifyTemplatesPresent(t *testing.T, content map[string]bool, timeToCompare
 		})
 		if err != nil {
 			dumpPod(t)
-			sr := verifyOperatorUp(t)
-			t.Fatalf("error waiting for example template %s to appear: %v samples resource %#v", key, err, sr)
+			cfg := verifyOperatorUp(t)
+			t.Fatalf("error waiting for example template %s to appear: %v samples resource %#v", key, err, cfg)
 		}
 	}
 }
@@ -387,8 +387,8 @@ func verifyTemplatesGone(t *testing.T) {
 		_, err := templateClient.TemplateV1().Templates("openshift").Get(key, metav1.GetOptions{})
 		if err == nil {
 			dumpPod(t)
-			sr := verifyOperatorUp(t)
-			t.Fatalf("still have template %s in the openshift namespace when we expect it to be gone, sr: %#v", key, sr)
+			cfg := verifyOperatorUp(t)
+			t.Fatalf("still have template %s in the openshift namespace when we expect it to be gone, cfg: %#v", key, cfg)
 		}
 	}
 }
@@ -402,22 +402,22 @@ func validateContent(t *testing.T, timeToCompare *kapis.Time) {
 	verifyTemplatesPresent(t, templates, timeToCompare)
 }
 
-func verifyConfigurationValid(t *testing.T, sr *samplesapi.SamplesResource, status corev1.ConditionStatus) {
+func verifyConfigurationValid(t *testing.T, cfg *samplesapi.Config, status corev1.ConditionStatus) {
 	var err error
 	err = wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
-		sr, err = crClient.Samplesresource().SamplesResources().Get(sr.Name, metav1.GetOptions{})
+		cfg, err = crClient.Samples().Configs().Get(cfg.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
-		if sr.Condition(samplesapi.ConfigurationValid).Status == status {
+		if cfg.Condition(samplesapi.ConfigurationValid).Status == status {
 			return true, nil
 		}
 		return false, nil
 	})
 	if err != nil {
 		dumpPod(t)
-		sr := verifyOperatorUp(t)
-		t.Fatalf("error waiting for samples resource to update config valid %v samplesresource %#v", err, sr)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("error waiting for samples resource to update config valid %v Config %#v", err, cfg)
 	}
 }
 
@@ -425,8 +425,8 @@ func verifyDeletedImageStreamRecreated(t *testing.T) {
 	err := imageClient.ImageV1().ImageStreams("openshift").Delete("jenkins", &metav1.DeleteOptions{})
 	if err != nil {
 		dumpPod(t)
-		sr := verifyOperatorUp(t)
-		t.Fatalf("error deleting jenkins imagestream %v samplesresource %#v", err, sr)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("error deleting jenkins imagestream %v Config %#v", err, cfg)
 	}
 	// first make sure image changes makes it to true
 	verifyImageChangesInProgress(t)
@@ -444,8 +444,8 @@ func verifyDeletedImageStreamRecreated(t *testing.T) {
 	})
 	if err != nil {
 		dumpPod(t)
-		sr := verifyOperatorUp(t)
-		t.Fatalf("imagestream not recreated: %v, crd: %#v", err, sr)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("imagestream not recreated: %v, crd: %#v", err, cfg)
 	}
 }
 
@@ -453,8 +453,8 @@ func verifyDeletedImageStreamNotRecreated(t *testing.T) {
 	err := imageClient.ImageV1().ImageStreams("openshift").Delete("jenkins", &metav1.DeleteOptions{})
 	if err != nil {
 		dumpPod(t)
-		sr := verifyOperatorUp(t)
-		t.Fatalf("error deleting jenkins imagestream %v samplesresource %#v", err, sr)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("error deleting jenkins imagestream %v Config %#v", err, cfg)
 	}
 	// make sure jenkins imagestream does not appear while unmanaged
 	// first, wait sufficiently to make sure delete has gone though
@@ -467,15 +467,15 @@ func verifyDeletedImageStreamNotRecreated(t *testing.T) {
 	})
 	if err != nil {
 		dumpPod(t)
-		sr := verifyOperatorUp(t)
-		t.Fatalf("delete did not occur %v samples resource %#v", err, sr)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("delete did not occur %v samples resource %#v", err, cfg)
 	}
 	// now make sure it has not been recreated
 	time.Sleep(30 * time.Second)
 	_, err = imageClient.ImageV1().ImageStreams("openshift").Get("jenkins", metav1.GetOptions{})
 	if err == nil {
 		dumpPod(t)
-		t.Fatalf("imagestream recreated, sr: %#v", verifyOperatorUp(t))
+		t.Fatalf("imagestream recreated, cfg: %#v", verifyOperatorUp(t))
 	}
 
 }
@@ -485,8 +485,8 @@ func verifyDeletedTemplatesRecreated(t *testing.T) {
 	verifyConditionsCompleteSamplesAdded()
 	if err != nil {
 		dumpPod(t)
-		sr := verifyOperatorUp(t)
-		t.Fatalf("error deleting jenkins imagestream %v samples resource %#v", err, sr)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("error deleting jenkins imagestream %v samples resource %#v", err, cfg)
 	}
 	err = wait.PollImmediate(1*time.Second, 30*time.Second, func() (bool, error) {
 		_, err := templateClient.TemplateV1().Templates("openshift").Get("jenkins-ephemeral", metav1.GetOptions{})
@@ -500,8 +500,8 @@ func verifyDeletedTemplatesRecreated(t *testing.T) {
 	})
 	if err != nil {
 		dumpPod(t)
-		sr := verifyOperatorUp(t)
-		t.Fatalf("template not recreated: %v, sr: %#v", err, sr)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("template not recreated: %v, cfg: %#v", err, cfg)
 	}
 }
 
@@ -509,8 +509,8 @@ func verifyDeletedTemplatesNotRecreated(t *testing.T) {
 	err := templateClient.TemplateV1().Templates("openshift").Delete("jenkins-ephemeral", &metav1.DeleteOptions{})
 	if err != nil {
 		dumpPod(t)
-		sr := verifyOperatorUp(t)
-		t.Fatalf("error deleting jenkins imagestream %v samples resource %#v", err, sr)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("error deleting jenkins imagestream %v samples resource %#v", err, cfg)
 	}
 	// make sure jenkins-ephemeral template does not appear while unmanaged
 	// first, wait sufficiently to make sure delete has gone though
@@ -523,16 +523,16 @@ func verifyDeletedTemplatesNotRecreated(t *testing.T) {
 	})
 	if err != nil {
 		dumpPod(t)
-		sr := verifyOperatorUp(t)
-		t.Fatalf("delete did not occur %v samples resource %#v", err, sr)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("delete did not occur %v samples resource %#v", err, cfg)
 	}
 	// now make sure it has not been recreated
 	time.Sleep(30 * time.Second)
 	_, err = templateClient.TemplateV1().Templates("openshift").Get("jenkins-ephemeral", metav1.GetOptions{})
 	if err == nil {
 		dumpPod(t)
-		sr := verifyOperatorUp(t)
-		t.Fatalf("template recreated samples resource %#v", sr)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("template recreated samples resource %#v", cfg)
 	}
 
 }
@@ -543,38 +543,38 @@ func TestImageStreamInOpenshiftNamespace(t *testing.T) {
 	verifyClusterOperatorConditionsComplete(t)
 }
 
-func TestRecreateSamplesResourceAfterDelete(t *testing.T) {
-	sr := verifyOperatorUp(t)
+func TestRecreateConfigAfterDelete(t *testing.T) {
+	cfg := verifyOperatorUp(t)
 
-	oldTime := sr.CreationTimestamp
+	oldTime := cfg.CreationTimestamp
 	now := kapis.Now()
 
-	err := crClient.Samplesresource().SamplesResources().Delete(samplesapi.SamplesResourceName, &metav1.DeleteOptions{})
+	err := crClient.Samples().Configs().Delete(samplesapi.ConfigName, &metav1.DeleteOptions{})
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error deleting samplesresource %v", err)
+		t.Fatalf("error deleting Config %v", err)
 	}
 
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		sr, err = crClient.Samplesresource().SamplesResources().Get(samplesapi.SamplesResourceName, metav1.GetOptions{})
+		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			return false, nil
 		}
-		if sr.CreationTimestamp == oldTime {
+		if cfg.CreationTimestamp == oldTime {
 			return false, nil
 		}
 		return true, nil
 	})
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("creation times the same after delete: %v, %v, %#v", oldTime, sr.CreationTimestamp, sr)
+		t.Fatalf("creation times the same after delete: %v, %v, %#v", oldTime, cfg.CreationTimestamp, cfg)
 	}
 
 	err = verifyConditionsCompleteSamplesAdded()
 	if err != nil {
 		dumpPod(t)
-		sr = verifyOperatorUp(t)
-		t.Fatalf("samples not re-established after delete %#v", sr)
+		cfg = verifyOperatorUp(t)
+		t.Fatalf("samples not re-established after delete %#v", cfg)
 	}
 
 	validateContent(t, &now)
@@ -582,107 +582,107 @@ func TestRecreateSamplesResourceAfterDelete(t *testing.T) {
 }
 
 func TestSpecManagementStateField(t *testing.T) {
-	sr := verifyOperatorUp(t)
+	cfg := verifyOperatorUp(t)
 
-	oldTime := sr.CreationTimestamp
+	oldTime := cfg.CreationTimestamp
 	now := kapis.Now()
-	sr.Spec.ManagementState = operatorsv1api.Removed
-	sr, err := crClient.Samplesresource().SamplesResources().Update(sr)
+	cfg.Spec.ManagementState = operatorsv1api.Removed
+	cfg, err := crClient.Samples().Configs().Update(cfg)
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 
-	err = verifyConditionsCompleteSamplesRemoved()
+	err = verifyConditionsCompleteSamplecfgemoved()
 	if err != nil {
 		dumpPod(t)
-		sr = verifyOperatorUp(t)
-		t.Fatalf("samples not removed in time %#v", sr)
+		cfg = verifyOperatorUp(t)
+		t.Fatalf("samples not removed in time %#v", cfg)
 	}
 
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		sr, err = crClient.Samplesresource().SamplesResources().Get(samplesapi.SamplesResourceName, metav1.GetOptions{})
+		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			return false, nil
 		}
-		if sr.CreationTimestamp != oldTime {
-			return false, fmt.Errorf("SamplesResource was recreated when it should not have been: old create time %v new create time %v", oldTime, sr.CreationTimestamp)
+		if cfg.CreationTimestamp != oldTime {
+			return false, fmt.Errorf("Config was recreated when it should not have been: old create time %v new create time %v", oldTime, cfg.CreationTimestamp)
 		}
 		return true, nil
 	})
 	if err != nil {
 		dumpPod(t)
-		sr = verifyOperatorUp(t)
-		t.Fatalf("%v and %#v", err, sr)
+		cfg = verifyOperatorUp(t)
+		t.Fatalf("%v and %#v", err, cfg)
 	}
 
 	verifyImageStreamsGone(t)
 	verifyTemplatesGone(t)
 
-	sr = verifyOperatorUp(t)
-	sr.Spec.ManagementState = operatorsv1api.Managed
-	sr, err = crClient.Samplesresource().SamplesResources().Update(sr)
+	cfg = verifyOperatorUp(t)
+	cfg.Spec.ManagementState = operatorsv1api.Managed
+	cfg, err = crClient.Samples().Configs().Update(cfg)
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 
 	err = verifyConditionsCompleteSamplesAdded()
 	if err != nil {
 		dumpPod(t)
-		sr = verifyOperatorUp(t)
-		t.Fatalf("samples not re-established when set to managed %#v", sr)
+		cfg = verifyOperatorUp(t)
+		t.Fatalf("samples not re-established when set to managed %#v", cfg)
 	}
 
 	validateContent(t, &now)
 
-	sr = verifyOperatorUp(t)
-	sr.Spec.ManagementState = operatorsv1api.Unmanaged
-	sr, err = crClient.Samplesresource().SamplesResources().Update(sr)
+	cfg = verifyOperatorUp(t)
+	cfg.Spec.ManagementState = operatorsv1api.Unmanaged
+	cfg, err = crClient.Samples().Configs().Update(cfg)
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error updating samplesresource %v", err)
+		t.Fatalf("error updating Config %v", err)
 	}
 
 	verifyDeletedImageStreamNotRecreated(t)
 	verifyDeletedTemplatesNotRecreated(t)
 	// now switch back to default managed for any subsequent tests
 	// and confirm all the default samples content exists
-	sr = verifyOperatorUp(t)
+	cfg = verifyOperatorUp(t)
 	// get timestamp to check against in progress condition
 	now = kapis.Now()
-	sr.Spec.ManagementState = operatorsv1api.Managed
-	sr, err = crClient.Samplesresource().SamplesResources().Update(sr)
+	cfg.Spec.ManagementState = operatorsv1api.Managed
+	cfg, err = crClient.Samples().Configs().Update(cfg)
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 
 	// wait for it to get into pending
 	err = wait.PollImmediate(1*time.Second, 30*time.Second, func() (bool, error) {
-		sr, err = crClient.Samplesresource().SamplesResources().Get(samplesapi.SamplesResourceName, metav1.GetOptions{})
+		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
-		if sr.ConditionTrue(samplesapi.ImageChangesInProgress) {
+		if cfg.ConditionTrue(samplesapi.ImageChangesInProgress) {
 			return true, nil
 		}
-		if sr.Condition(samplesapi.ImageChangesInProgress).LastUpdateTime.After(now.Time) {
+		if cfg.Condition(samplesapi.ImageChangesInProgress).LastUpdateTime.After(now.Time) {
 			return true, nil
 		}
 		return false, nil
 	})
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error waiting for samplesresource to get into pending: %v samples resource %#v", err, sr)
+		t.Fatalf("error waiting for Config to get into pending: %v samples resource %#v", err, cfg)
 	}
 
 	// now wait for it to get out of pending
 	err = verifyConditionsCompleteSamplesAdded()
 	if err != nil {
 		dumpPod(t)
-		sr = verifyOperatorUp(t)
-		t.Fatalf("samples not re-established when set to managed %#v", sr)
+		cfg = verifyOperatorUp(t)
+		t.Fatalf("samples not re-established when set to managed %#v", cfg)
 	}
 
 	validateContent(t, nil)
@@ -690,83 +690,83 @@ func TestSpecManagementStateField(t *testing.T) {
 }
 
 func TestInstallTypeConfigChangeValidation(t *testing.T) {
-	sr := verifyOperatorUp(t)
+	cfg := verifyOperatorUp(t)
 
-	sr.Spec.InstallType = samplesapi.RHELSamplesDistribution
-	sr, err := crClient.Samplesresource().SamplesResources().Update(sr)
+	cfg.Spec.InstallType = samplesapi.RHELSamplesDistribution
+	cfg, err := crClient.Samples().Configs().Update(cfg)
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 
-	verifyConfigurationValid(t, sr, corev1.ConditionFalse)
+	verifyConfigurationValid(t, cfg, corev1.ConditionFalse)
 
 	//reset install type back
-	sr = verifyOperatorUp(t)
-	sr.Spec.InstallType = samplesapi.CentosSamplesDistribution
-	sr, err = crClient.Samplesresource().SamplesResources().Update(sr)
+	cfg = verifyOperatorUp(t)
+	cfg.Spec.InstallType = samplesapi.CentosSamplesDistribution
+	cfg, err = crClient.Samples().Configs().Update(cfg)
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 
-	verifyConfigurationValid(t, sr, corev1.ConditionTrue)
+	verifyConfigurationValid(t, cfg, corev1.ConditionTrue)
 }
 
 func TestArchitectureConfigChangeValidation(t *testing.T) {
-	sr := verifyOperatorUp(t)
+	cfg := verifyOperatorUp(t)
 
-	sr.Spec.Architectures[0] = samplesapi.PPCArchitecture
-	sr, err := crClient.Samplesresource().SamplesResources().Update(sr)
+	cfg.Spec.Architectures[0] = samplesapi.PPCArchitecture
+	cfg, err := crClient.Samples().Configs().Update(cfg)
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 
-	verifyConfigurationValid(t, sr, corev1.ConditionFalse)
+	verifyConfigurationValid(t, cfg, corev1.ConditionFalse)
 
 	//reset install type back
-	sr = verifyOperatorUp(t)
-	sr.Spec.Architectures[0] = samplesapi.X86Architecture
-	sr, err = crClient.Samplesresource().SamplesResources().Update(sr)
+	cfg = verifyOperatorUp(t)
+	cfg.Spec.Architectures[0] = samplesapi.X86Architecture
+	cfg, err = crClient.Samples().Configs().Update(cfg)
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 
-	verifyConfigurationValid(t, sr, corev1.ConditionTrue)
+	verifyConfigurationValid(t, cfg, corev1.ConditionTrue)
 }
 
 func TestSkippedProcessing(t *testing.T) {
-	sr := verifyOperatorUp(t)
+	cfg := verifyOperatorUp(t)
 
-	sr.Spec.SkippedImagestreams = append(sr.Spec.SkippedImagestreams, "jenkins")
-	sr.Spec.SkippedTemplates = append(sr.Spec.SkippedTemplates, "jenkins-ephemeral")
-	sr, err := crClient.Samplesresource().SamplesResources().Update(sr)
+	cfg.Spec.SkippedImagestreams = append(cfg.Spec.SkippedImagestreams, "jenkins")
+	cfg.Spec.SkippedTemplates = append(cfg.Spec.SkippedTemplates, "jenkins-ephemeral")
+	cfg, err := crClient.Samples().Configs().Update(cfg)
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error updating samples resource %v and %#v", err, sr)
+		t.Fatalf("error updating samples resource %v and %#v", err, cfg)
 	}
 
 	verifyDeletedImageStreamNotRecreated(t)
 	verifyDeletedTemplatesNotRecreated(t)
 
 	// reset skipped list back
-	sr = verifyOperatorUp(t)
-	sr.Spec.SkippedImagestreams = []string{}
-	sr.Spec.SkippedTemplates = []string{}
-	sr, err = crClient.Samplesresource().SamplesResources().Update(sr)
+	cfg = verifyOperatorUp(t)
+	cfg.Spec.SkippedImagestreams = []string{}
+	cfg.Spec.SkippedTemplates = []string{}
+	cfg, err = crClient.Samples().Configs().Update(cfg)
 	if err != nil {
 		dumpPod(t)
-		t.Fatalf("error updating samplesresource %v and %#v", err, sr)
+		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 	// verify status skipped has been reset
 	err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
-		sr, err = crClient.Samplesresource().SamplesResources().Get(samplesapi.SamplesResourceName, metav1.GetOptions{})
+		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
-		if len(sr.Status.SkippedImagestreams) == 0 && len(sr.Status.SkippedTemplates) == 0 {
+		if len(cfg.Status.SkippedImagestreams) == 0 && len(cfg.Status.SkippedTemplates) == 0 {
 			return true, nil
 		}
 		return false, nil

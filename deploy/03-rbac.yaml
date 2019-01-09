@@ -34,9 +34,9 @@ metadata:
   name: cluster-samples-operator
 rules:
 - apiGroups:
-  - samplesresource.operator.openshift.io
+  - samples.operator.openshift.io
   resources:
-  - "samplesresources"
+  - "configs"
   verbs:
   - "*"
 - apiGroups:
