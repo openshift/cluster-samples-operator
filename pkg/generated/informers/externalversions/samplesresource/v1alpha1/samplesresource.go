@@ -5,7 +5,7 @@ package v1alpha1
 import (
 	time "time"
 
-	samplesresourcev1alpha1 "github.com/openshift/cluster-samples-operator/pkg/apis/samplesresource/v1alpha1"
+	samplesresource_v1alpha1 "github.com/openshift/cluster-samples-operator/pkg/apis/samplesresource/v1alpha1"
 	versioned "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
 	internalinterfaces "github.com/openshift/cluster-samples-operator/pkg/generated/informers/externalversions/internalinterfaces"
 	v1alpha1 "github.com/openshift/cluster-samples-operator/pkg/generated/listers/samplesresource/v1alpha1"
@@ -53,7 +53,7 @@ func NewFilteredSamplesResourceInformer(client versioned.Interface, resyncPeriod
 				return client.SamplesresourceV1alpha1().SamplesResources().Watch(options)
 			},
 		},
-		&samplesresourcev1alpha1.SamplesResource{},
+		&samplesresource_v1alpha1.SamplesResource{},
 		resyncPeriod,
 		indexers,
 	)
@@ -64,7 +64,7 @@ func (f *samplesResourceInformer) defaultInformer(client versioned.Interface, re
 }
 
 func (f *samplesResourceInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&samplesresourcev1alpha1.SamplesResource{}, f.defaultInformer)
+	return f.factory.InformerFor(&samplesresource_v1alpha1.SamplesResource{}, f.defaultInformer)
 }
 
 func (f *samplesResourceInformer) Lister() v1alpha1.SamplesResourceLister {
