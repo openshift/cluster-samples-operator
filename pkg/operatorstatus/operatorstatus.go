@@ -13,7 +13,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
-	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesoperator/v1alpha1"
+	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesresource/v1alpha1"
 )
 
 const (

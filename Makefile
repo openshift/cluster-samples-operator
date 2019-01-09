@@ -2,7 +2,7 @@ REPO=openshift
 
 all: generate build build-image
 generate:
-	operator-sdk generate k8s
+	./hack/codegen/update-generated.sh
 build:
 	go build -ldflags '-X github.com/openshift/cluster-samples-operator/vendor/k8s.io/client-go/pkg/version.gitVersion=$(shell git describe) -X github.com/openshift/cluster-samples-operator/vendor/k8s.io/client-go/pkg/version.gitCommit=$(shell git rev-parse HEAD)' ./cmd/cluster-samples-operator
 build-image:
