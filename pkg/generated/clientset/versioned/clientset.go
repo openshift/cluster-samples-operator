@@ -3,7 +3,7 @@
 package versioned
 
 import (
-	samplesresourcev1alpha1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samplesresource/v1alpha1"
+	samplesv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samples/v1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -11,27 +11,27 @@ import (
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
-	SamplesresourceV1alpha1() samplesresourcev1alpha1.SamplesresourceV1alpha1Interface
+	SamplesV1() samplesv1.SamplesV1Interface
 	// Deprecated: please explicitly pick a version if possible.
-	Samplesresource() samplesresourcev1alpha1.SamplesresourceV1alpha1Interface
+	Samples() samplesv1.SamplesV1Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
 // version included in a Clientset.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	samplesresourceV1alpha1 *samplesresourcev1alpha1.SamplesresourceV1alpha1Client
+	samplesV1 *samplesv1.SamplesV1Client
 }
 
-// SamplesresourceV1alpha1 retrieves the SamplesresourceV1alpha1Client
-func (c *Clientset) SamplesresourceV1alpha1() samplesresourcev1alpha1.SamplesresourceV1alpha1Interface {
-	return c.samplesresourceV1alpha1
+// SamplesV1 retrieves the SamplesV1Client
+func (c *Clientset) SamplesV1() samplesv1.SamplesV1Interface {
+	return c.samplesV1
 }
 
-// Deprecated: Samplesresource retrieves the default version of SamplesresourceClient.
+// Deprecated: Samples retrieves the default version of SamplesClient.
 // Please explicitly pick a version.
-func (c *Clientset) Samplesresource() samplesresourcev1alpha1.SamplesresourceV1alpha1Interface {
-	return c.samplesresourceV1alpha1
+func (c *Clientset) Samples() samplesv1.SamplesV1Interface {
+	return c.samplesV1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -50,7 +50,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 	}
 	var cs Clientset
 	var err error
-	cs.samplesresourceV1alpha1, err = samplesresourcev1alpha1.NewForConfig(&configShallowCopy)
+	cs.samplesV1, err = samplesv1.NewForConfig(&configShallowCopy)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 // panics if there is an error in the config.
 func NewForConfigOrDie(c *rest.Config) *Clientset {
 	var cs Clientset
-	cs.samplesresourceV1alpha1 = samplesresourcev1alpha1.NewForConfigOrDie(c)
+	cs.samplesV1 = samplesv1.NewForConfigOrDie(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClientForConfigOrDie(c)
 	return &cs
@@ -75,7 +75,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
-	cs.samplesresourceV1alpha1 = samplesresourcev1alpha1.New(c)
+	cs.samplesV1 = samplesv1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

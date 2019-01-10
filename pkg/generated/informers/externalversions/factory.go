@@ -9,7 +9,7 @@ import (
 
 	versioned "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
 	internalinterfaces "github.com/openshift/cluster-samples-operator/pkg/generated/informers/externalversions/internalinterfaces"
-	samplesresource "github.com/openshift/cluster-samples-operator/pkg/generated/informers/externalversions/samplesresource"
+	samples "github.com/openshift/cluster-samples-operator/pkg/generated/informers/externalversions/samples"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -156,9 +156,9 @@ type SharedInformerFactory interface {
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
-	Samplesresource() samplesresource.Interface
+	Samples() samples.Interface
 }
 
-func (f *sharedInformerFactory) Samplesresource() samplesresource.Interface {
-	return samplesresource.New(f, f.namespace, f.tweakListOptions)
+func (f *sharedInformerFactory) Samples() samples.Interface {
+	return samples.New(f, f.namespace, f.tweakListOptions)
 }

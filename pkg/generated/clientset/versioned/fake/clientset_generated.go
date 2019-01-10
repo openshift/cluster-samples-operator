@@ -4,8 +4,8 @@ package fake
 
 import (
 	clientset "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
-	samplesresourcev1alpha1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samplesresource/v1alpha1"
-	fakesamplesresourcev1alpha1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samplesresource/v1alpha1/fake"
+	samplesv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samples/v1"
+	fakesamplesv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samples/v1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -55,12 +55,12 @@ func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 
 var _ clientset.Interface = &Clientset{}
 
-// SamplesresourceV1alpha1 retrieves the SamplesresourceV1alpha1Client
-func (c *Clientset) SamplesresourceV1alpha1() samplesresourcev1alpha1.SamplesresourceV1alpha1Interface {
-	return &fakesamplesresourcev1alpha1.FakeSamplesresourceV1alpha1{Fake: &c.Fake}
+// SamplesV1 retrieves the SamplesV1Client
+func (c *Clientset) SamplesV1() samplesv1.SamplesV1Interface {
+	return &fakesamplesv1.FakeSamplesV1{Fake: &c.Fake}
 }
 
-// Samplesresource retrieves the SamplesresourceV1alpha1Client
-func (c *Clientset) Samplesresource() samplesresourcev1alpha1.SamplesresourceV1alpha1Interface {
-	return &fakesamplesresourcev1alpha1.FakeSamplesresourceV1alpha1{Fake: &c.Fake}
+// Samples retrieves the SamplesV1Client
+func (c *Clientset) Samples() samplesv1.SamplesV1Interface {
+	return &fakesamplesv1.FakeSamplesV1{Fake: &c.Fake}
 }

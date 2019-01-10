@@ -13,7 +13,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
-	"github.com/openshift/cluster-samples-operator/pkg/apis/samplesresource/v1alpha1"
+	"github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 )
 
 const (
@@ -57,32 +57,32 @@ type ClusterOperatorWrapper interface {
 	Create(state *configv1.ClusterOperator) (err error)
 }
 
-func (o *ClusterOperatorHandler) UpdateOperatorStatus(sampleResource *v1alpha1.SamplesResource) error {
+func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
 
 	var err error
-	failing, stateForPending, msgForFailing := sampleResource.ClusterOperatorStatusFailingCondition()
+	failing, stateForPending, msgForFailing := cfg.ClusterOperatorStatusFailingCondition()
 	err = o.setOperatorStatus(configv1.OperatorFailing,
 		failing,
 		msgForFailing,
-		sampleResource.Spec.Version)
+		cfg.Spec.Version)
 	if err != nil {
 		return err
 	}
 
-	available, msgForAvailable := sampleResource.ClusterOperatorStatusAvailableCondition()
+	available, msgForAvailable := cfg.ClusterOperatorStatusAvailableCondition()
 	err = o.setOperatorStatus(configv1.OperatorAvailable,
 		available,
 		msgForAvailable,
-		sampleResource.Status.Version)
+		cfg.Status.Version)
 	if err != nil {
 		return err
 	}
 
-	progressing, msgForProgressing := sampleResource.ClusterOperatorStatusProgressingCondition(stateForPending, available)
+	progressing, msgForProgressing := cfg.ClusterOperatorStatusProgressingCondition(stateForPending, available)
 	err = o.setOperatorStatus(configv1.OperatorProgressing,
 		progressing,
 		msgForProgressing,
-		sampleResource.Status.Version)
+		cfg.Status.Version)
 	if err != nil {
 		return nil
 	}

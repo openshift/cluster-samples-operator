@@ -25,9 +25,9 @@ import (
 	templateset "github.com/openshift/client-go/template/clientset/versioned"
 	templateinformers "github.com/openshift/client-go/template/informers/externalversions"
 
-	sampopapi "github.com/openshift/cluster-samples-operator/pkg/apis/samplesresource/v1alpha1"
+	sampopapi "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
-	sampleclientv1alpha1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
+	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
 	sampopinformers "github.com/openshift/cluster-samples-operator/pkg/generated/informers/externalversions"
 
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
@@ -98,7 +98,7 @@ func NewController() (*Controller, error) {
 	}
 
 	// Initial event to bootstrap CR if it doesn't exist.
-	c.crWorkqueue.AddRateLimited(sampopapi.SamplesResourceName)
+	c.crWorkqueue.AddRateLimited(sampopapi.ConfigName)
 
 	kubeClient, err := kubeset.NewForConfig(c.restconfig)
 	if err != nil {
@@ -115,7 +115,7 @@ func NewController() (*Controller, error) {
 		return nil, err
 	}
 
-	sampopClient, err := sampleclientv1alpha1.NewForConfig(c.restconfig)
+	sampopClient, err := sampleclientv1.NewForConfig(c.restconfig)
 	if err != nil {
 		return nil, err
 	}
@@ -145,9 +145,9 @@ func NewController() (*Controller, error) {
 	c.tInformer.AddEventHandler(c.templateInformerEventHandler())
 	c.listers.Templates = c.templateInformerFactory.Template().V1().Templates().Lister().Templates("openshift")
 
-	c.crInformer = c.sampopInformerFactory.Samplesresource().V1alpha1().SamplesResources().Informer()
+	c.crInformer = c.sampopInformerFactory.Samples().V1().Configs().Informer()
 	c.crInformer.AddEventHandler(c.crInformerEventHandler())
-	c.listers.SamplesResource = c.sampopInformerFactory.Samplesresource().V1alpha1().SamplesResources().Lister()
+	c.listers.Config = c.sampopInformerFactory.Samples().V1().Configs().Lister()
 
 	return c, nil
 }
@@ -218,7 +218,7 @@ type runtimeObjectGetter interface {
 type crGetter struct{}
 
 func (g *crGetter) Get(c *Controller, key string) (runtime.Object, error) {
-	return c.listers.SamplesResource.Get(sampopapi.SamplesResourceName)
+	return c.listers.Config.Get(sampopapi.ConfigName)
 }
 
 type osSecretGetter struct{}
@@ -263,7 +263,7 @@ func (c *Controller) handleWork(getter runtimeObjectGetter, o interface{}) error
 		obj, err := getter.Get(c, key)
 		if err != nil {
 			// see if this is a operator bootstrap scenario
-			if kerrors.IsNotFound(err) && key == sampopapi.SamplesResourceName {
+			if kerrors.IsNotFound(err) && key == sampopapi.ConfigName {
 				return c.Bootstrap()
 			}
 			return fmt.Errorf("handleWork failed to get %q resource: %s", key, err)
@@ -286,7 +286,7 @@ type queueKeyGen interface {
 type crQueueKeyGen struct{}
 
 func (c *crQueueKeyGen) Key(o interface{}) string {
-	cr := o.(*sampopapi.SamplesResource)
+	cr := o.(*sampopapi.Config)
 	return cr.Name
 }
 
