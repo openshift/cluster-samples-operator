@@ -992,6 +992,12 @@ func (h *Handler) ProcessManagementField(srcfg *v1alpha1.SamplesResource) (bool,
 	default:
 		// force it to Managed if they passed in something funky, including the empty string
 		logrus.Warningf("Unknown management state %s specified; switch to Managed", srcfg.Spec.ManagementState)
+		cfgvalid := srcfg.Condition(v1alpha1.ConfigurationValid)
+		cfgvalid.Message = fmt.Sprintf("Unexpected management state %v received, switching to %v", srcfg.Spec.ManagementState, operatorsv1api.Managed)
+		now := kapis.Now()
+		cfgvalid.LastTransitionTime = now
+		cfgvalid.LastUpdateTime = now
+		srcfg.ConditionUpdate(cfgvalid)
 		srcfg.Spec.ManagementState = operatorsv1api.Managed
 		return true, false, nil
 	}
