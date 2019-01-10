@@ -260,6 +260,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 								// add this imagestream to the Reason field
 								if !strings.Contains(importError.Reason, is.Name+" ") {
 									importError.Reason = importError.Reason + is.Name + " "
+									importError.Message = importError.Message + reason + ": " + message + "; "
 								}
 								break
 							}
@@ -342,6 +343,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			if len(strings.TrimSpace(importError.Reason)) == 0 {
 				importError.Status = corev1.ConditionFalse
 				importError.Reason = ""
+				importError.Message = ""
 			} else {
 				importError.Status = corev1.ConditionTrue
 			}

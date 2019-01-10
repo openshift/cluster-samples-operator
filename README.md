@@ -77,14 +77,17 @@ The samples resource maintains the following conditions in its status:
 
 # CVO Cluster Operator Status
 
-- Available - maps to samples exists condition
-- Failing - maps to config valid condition
-- Progressing - maps to image in progress condition currently but will be updated in the future to account for import failures
+- Available
+- Failing
+- Progressing
+
+See https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions for how these
+Cluster Operator status conditions are managed.
 
 
 # Troubleshooting
 
-Samples Resource:  `oc get samplesresource -o yaml -n openshift-cluster-samples-operator`
+CRD instance for the samples operator config:  `oc get configs.samples.operator.openshift.io instance -o yaml`
 
 Check the status of the conditions. (See above for details on those conditions)
 
@@ -94,7 +97,7 @@ Secrets: `oc get secrets` in both openshift and operator’s namespace
 
 Samples: `oc get is -n openshift`, `oc get templates -n openshift`  … use of -o yaml on any given imagestream should show the status, and import errors will be noted there as well
 
-Deletion of the samples resource will reset the samples operator to the default configuration, but leave the current revision of the samples operator pod running.
+Deletion of the CRD instance will reset the samples operator to the default configuration, but leave the current revision of the samples operator pod running.
 
 If there is a bug in the samples operator deletion logic, to reset the samples operator configuration by stopping the current pod and starting a new one:
 - Run `oc edit clusterversion version` and add an entry for the Deployment of the samples operator so it is unmanaged
