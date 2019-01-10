@@ -1,5 +1,5 @@
-hash: 5cd87adb420aad0c9c5d03ed3aaac0c232bef0d90f107854693d37f91bee3603
-updated: 2019-01-08T10:17:53.566469319-05:00
+hash: 9f91ff71d7319806fc708264988b3938ce8f71cec3c926aea619618bc592058f
+updated: 2019-01-09T09:23:48.185002899-05:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -54,7 +54,7 @@ imports:
 - name: github.com/modern-go/reflect2
   version: 05fbef0ca5da472bbf96c9322b84a53edc03c9fd
 - name: github.com/openshift/api
-  version: c40f8e9e4ec4a19cf5376a18056d6e7bdf90ed73
+  version: 84404551741398f2300f84b16fb97ef351749982
   subpackages:
   - config/v1
   - image/docker10
@@ -64,7 +64,7 @@ imports:
   - pkg/serialization
   - template/v1
 - name: github.com/openshift/client-go
-  version: 960f72aa32a8e9b4dd769b90ff1cb5bd4c898eec
+  version: 2f38d042c79762d5bf2ba3c795d4ad72101289e9
   subpackages:
   - config/clientset/versioned/scheme
   - config/clientset/versioned/typed/config/v1
@@ -126,6 +126,14 @@ imports:
   version: f51c12702a4d776e4c1fa9b0fabab841babae631
   subpackages:
   - rate
+- name: golang.org/x/tools
+  version: 2382e3994d48b1d22acc2c86bcad0a2aff028e32
+  subpackages:
+  - benchmark/parse
+  - container/intsets
+  - go/ast/astutil
+  - go/vcs
+  - imports
 - name: google.golang.org/appengine
   version: e9657d882bb81064595ca3b56cbe2546bbabf7b1
   subpackages:
@@ -359,6 +367,8 @@ imports:
 - name: k8s.io/code-generator
   version: f8b4a111163516cf26185a0530df90263c59bcc1
   repo: https://github.com/openshift/kubernetes-code-generator.git
+- name: k8s.io/gengo
+  version: 01a732e01d00cb9a81bb0ca050d3e6d2b947927b
 - name: k8s.io/kube-openapi
   version: 91cfa479c814065e420cee7ed227db0f63a5854e
   subpackages:

@@ -43,7 +43,7 @@ func (c *FakeSamplesResources) List(opts v1.ListOptions) (result *v1alpha1.Sampl
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &v1alpha1.SamplesResourceList{}
+	list := &v1alpha1.SamplesResourceList{ListMeta: obj.(*v1alpha1.SamplesResourceList).ListMeta}
 	for _, item := range obj.(*v1alpha1.SamplesResourceList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
