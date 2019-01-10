@@ -690,6 +690,186 @@ func TestImageGetError(t *testing.T) {
 
 }
 
+func TestImageStreamImportError(t *testing.T) {
+	two := int64(2)
+	one := int64(1)
+	streams := []*imagev1.ImageStream{
+		&imagev1.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "foo",
+				Annotations: map[string]string{
+					v1alpha1.SamplesVersionAnnotation: v1alpha1.GitVersionString(),
+				},
+			},
+			Spec: imagev1.ImageStreamSpec{
+				Tags: []imagev1.TagReference{
+					imagev1.TagReference{
+						Name:       "1",
+						Generation: &two,
+					},
+					imagev1.TagReference{
+						Name:       "2",
+						Generation: &one,
+					},
+				},
+			},
+			Status: imagev1.ImageStreamStatus{
+				Tags: []imagev1.NamedTagEventList{
+					imagev1.NamedTagEventList{
+						Tag: "1",
+						Items: []imagev1.TagEvent{
+							imagev1.TagEvent{
+								Generation: two,
+							},
+						},
+					},
+					imagev1.NamedTagEventList{
+						Tag: "2",
+						Conditions: []imagev1.TagEventCondition{
+							imagev1.TagEventCondition{
+								Generation: two,
+								Status:     corev1.ConditionFalse,
+								Message:    "Internal error occurred: unknown: Not Found",
+								Reason:     "InternalError",
+								Type:       imagev1.ImportSuccess,
+							},
+						},
+					},
+				},
+			},
+		},
+		&imagev1.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "foo",
+				Annotations: map[string]string{
+					v1alpha1.SamplesVersionAnnotation: v1alpha1.GitVersionString(),
+				},
+			},
+			Spec: imagev1.ImageStreamSpec{
+				Tags: []imagev1.TagReference{
+					imagev1.TagReference{
+						Name:       "1",
+						Generation: &two,
+					},
+					imagev1.TagReference{
+						Name:       "2",
+						Generation: &one,
+					},
+				},
+			},
+			Status: imagev1.ImageStreamStatus{
+				Tags: []imagev1.NamedTagEventList{
+					imagev1.NamedTagEventList{
+						Tag: "1",
+						Conditions: []imagev1.TagEventCondition{
+							imagev1.TagEventCondition{
+								Generation: two,
+								Status:     corev1.ConditionFalse,
+								Message:    "Internal error occurred: unknown: Not Found",
+								Reason:     "InternalError",
+								Type:       imagev1.ImportSuccess,
+							},
+						},
+					},
+					imagev1.NamedTagEventList{
+						Tag: "2",
+						Conditions: []imagev1.TagEventCondition{
+							imagev1.TagEventCondition{
+								Generation: two,
+								Status:     corev1.ConditionFalse,
+								Message:    "Internal error occurred: unknown: Not Found",
+								Reason:     "InternalError",
+								Type:       imagev1.ImportSuccess,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, is := range streams {
+		h, sr, _ := setup()
+		mimic(&h, v1alpha1.CentosSamplesDistribution, x86OKDContentRootDir)
+		progressing := sr.Condition(v1alpha1.ImageChangesInProgress)
+		progressing.Status = corev1.ConditionTrue
+		sr.ConditionUpdate(progressing)
+		err := h.processImageStreamWatchEvent(is, false)
+		if err != nil {
+			t.Fatalf("processImageStreamWatchEvent error %#v for stream %#v", err, is)
+		}
+		if sr.ConditionFalse(v1alpha1.ImportImageErrorsExist) {
+			t.Fatalf("processImageStreamWatchEvent did not set import error to true %#v for stream %#v", sr, is)
+		}
+
+		importErr := sr.Condition(v1alpha1.ImportImageErrorsExist)
+		if len(importErr.Reason) == 0 || !strings.Contains(importErr.Reason, is.Name) {
+			t.Fatalf("processImageStreamWatchEvent did not set import error reason field %#v for stream %#v", sr, is)
+		}
+	}
+}
+
+func TestImageStreamImportErrorRecovery(t *testing.T) {
+	two := int64(2)
+	one := int64(1)
+	stream := &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+			Annotations: map[string]string{
+				v1alpha1.SamplesVersionAnnotation: v1alpha1.GitVersionString(),
+			},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			Tags: []imagev1.TagReference{
+				imagev1.TagReference{
+					Name:       "1",
+					Generation: &two,
+				},
+				imagev1.TagReference{
+					Name:       "2",
+					Generation: &one,
+				},
+			},
+		},
+		Status: imagev1.ImageStreamStatus{
+			Tags: []imagev1.NamedTagEventList{
+				imagev1.NamedTagEventList{
+					Tag: "1",
+					Items: []imagev1.TagEvent{
+						imagev1.TagEvent{
+							Generation: two,
+						},
+					},
+				},
+				imagev1.NamedTagEventList{
+					Tag: "2",
+					Items: []imagev1.TagEvent{
+						imagev1.TagEvent{
+							Generation: two,
+						},
+					},
+				},
+			},
+		},
+	}
+	h, sr, _ := setup()
+	mimic(&h, v1alpha1.CentosSamplesDistribution, x86OKDContentRootDir)
+	importError := sr.Condition(v1alpha1.ImportImageErrorsExist)
+	importError.Status = corev1.ConditionTrue
+	importError.Reason = "foo "
+	sr.ConditionUpdate(importError)
+	err := h.processImageStreamWatchEvent(stream, false)
+	if err != nil {
+		t.Fatalf("processImageStreamWatchEvent error %#v", err)
+	}
+	if sr.ConditionTrue(v1alpha1.ImportImageErrorsExist) {
+		t.Fatalf("processImageStreamWatchEvent did not set import error to false %#v", sr)
+	}
+	importErr := sr.Condition(v1alpha1.ImportImageErrorsExist)
+	if len(importErr.Reason) > 0 && strings.Contains(importErr.Reason, stream.Name) {
+		t.Fatalf("processImageStreamWatchEvent did not set import error reason field %#v", sr)
+	}
+}
+
 func TestTemplateGetEreror(t *testing.T) {
 	errors := []error{
 		fmt.Errorf("gettemplateerror"),
