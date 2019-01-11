@@ -793,6 +793,58 @@ func TestImageStreamImportError(t *testing.T) {
 				},
 			},
 		},
+		&imagev1.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "foo",
+				Annotations: map[string]string{
+					v1.SamplesVersionAnnotation: v1.GitVersionString(),
+				},
+			},
+			Spec: imagev1.ImageStreamSpec{
+				Tags: []imagev1.TagReference{
+					imagev1.TagReference{
+						Name:       "1",
+						Generation: &two,
+					},
+					imagev1.TagReference{
+						Name:       "2",
+						Generation: &one,
+					},
+					imagev1.TagReference{
+						Name:       "3",
+						Generation: &one,
+					},
+				},
+			},
+			Status: imagev1.ImageStreamStatus{
+				Tags: []imagev1.NamedTagEventList{
+					imagev1.NamedTagEventList{
+						Tag: "1",
+						Conditions: []imagev1.TagEventCondition{
+							imagev1.TagEventCondition{
+								Generation: two,
+								Status:     corev1.ConditionFalse,
+								Message:    "Internal error occurred: unknown: Not Found",
+								Reason:     "InternalError",
+								Type:       imagev1.ImportSuccess,
+							},
+						},
+					},
+					imagev1.NamedTagEventList{
+						Tag: "2",
+						Conditions: []imagev1.TagEventCondition{
+							imagev1.TagEventCondition{
+								Generation: two,
+								Status:     corev1.ConditionFalse,
+								Message:    "Internal error occurred: unknown: Not Found",
+								Reason:     "InternalError",
+								Type:       imagev1.ImportSuccess,
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	for _, is := range streams {
 		h, cfg, _ := setup()
