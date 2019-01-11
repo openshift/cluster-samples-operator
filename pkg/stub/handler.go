@@ -331,8 +331,8 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			importError.LastTransitionTime = now
 			importError.LastUpdateTime = now
 			cfg.ConditionUpdate(importError)
-			logrus.Debugf("SDKUPDATE no migration / no pending / no error imgstr update")
-			return h.crdwrapper.Update(cfg)
+			logrus.Debugf("CRDUPDATE no migration / no pending / no error imgstr update")
+			return h.crdwrapper.UpdateStatus(cfg)
 		}
 
 		// clear out error for this stream if there were errors previously but no longer are
@@ -350,7 +350,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			importError.LastTransitionTime = now
 			importError.LastUpdateTime = now
 			cfg.ConditionUpdate(importError)
-			logrus.Debugf("SDKUPDATE no error imgstr update")
+			logrus.Debugf("CRDUPDATE no error imgstr update")
 		}
 
 		return nil
@@ -365,8 +365,8 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 	if err != nil {
 		// still attempt to report error in status
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
-		logrus.Debugf("SDKUPDATE event img update err bad fs read")
-		h.crdwrapper.Update(cfg)
+		logrus.Debugf("CRDUPDATE event img update err bad fs read")
+		h.crdwrapper.UpdateStatus(cfg)
 		// if we get this, don't bother retrying
 		return nil
 	}
@@ -381,8 +381,8 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			return nil
 		}
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing imagestream %s", imagestream.Name)
-		logrus.Debugf("SDKUPDATE event img update err bad api obj update")
-		h.crdwrapper.Update(cfg)
+		logrus.Debugf("CRDUPDATE event img update err bad api obj update")
+		h.crdwrapper.UpdateStatus(cfg)
 		return err
 	}
 	// refetch cfg to narrow conflict window
@@ -401,12 +401,8 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		progressing.Reason = progressing.Reason + imagestream.Name + " "
 	}
 	cfg.ConditionUpdate(progressing)
-	if cfg.Spec.Version != v1.GitVersionString() {
-		cfg.Spec.Version = v1.GitVersionString()
-		logrus.Debugf("SDKUPDATE progressing true update for imagestream %s", imagestream.Name)
-		return h.crdwrapper.Update(cfg)
-	}
-	return nil
+	logrus.Debugf("CRDUPDATE progressing true update for imagestream %s", imagestream.Name)
+	return h.crdwrapper.UpdateStatus(cfg)
 
 }
 
@@ -425,8 +421,8 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 	if err != nil {
 		// still attempt to report error in status
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
-		logrus.Debugf("SDKUPDATE event temp udpate err")
-		h.crdwrapper.Update(cfg)
+		logrus.Debugf("CRDUPDATE event temp udpate err")
+		h.crdwrapper.UpdateStatus(cfg)
 		// if we get this, don't bother retrying
 		return nil
 	}
@@ -440,14 +436,9 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 			return nil
 		}
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing template %s", template.Name)
-		logrus.Debugf("SDKUPDATE event temp update err bad api obj update")
-		h.crdwrapper.Update(cfg)
+		logrus.Debugf("CRDUPDATE event temp update err bad api obj update")
+		h.crdwrapper.UpdateStatus(cfg)
 		return err
-	}
-	if cfg.Spec.Version != v1.GitVersionString() {
-		logrus.Debugf("SDKUPDATE update spec version on template event")
-		cfg.Spec.Version = v1.GitVersionString()
-		return h.crdwrapper.Update(cfg)
 	}
 	return nil
 
@@ -681,42 +672,6 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.X86Architecture)
 		cfg.Spec.InstallType = v1.CentosSamplesDistribution
 		cfg.Spec.ManagementState = operatorsv1api.Managed
-		now := kapis.Now()
-		exist := cfg.Condition(v1.SamplesExist)
-		exist.Status = corev1.ConditionFalse
-		exist.LastUpdateTime = now
-		exist.LastTransitionTime = now
-		cfg.ConditionUpdate(exist)
-		cred := cfg.Condition(v1.ImportCredentialsExist)
-		cred.Status = corev1.ConditionFalse
-		cred.LastUpdateTime = now
-		cred.LastTransitionTime = now
-		cfg.ConditionUpdate(cred)
-		valid := cfg.Condition(v1.ConfigurationValid)
-		valid.Status = corev1.ConditionTrue
-		valid.LastUpdateTime = now
-		valid.LastTransitionTime = now
-		cfg.ConditionUpdate(valid)
-		inProgress := cfg.Condition(v1.ImageChangesInProgress)
-		inProgress.Status = corev1.ConditionFalse
-		inProgress.LastUpdateTime = now
-		inProgress.LastTransitionTime = now
-		cfg.ConditionUpdate(inProgress)
-		onHold := cfg.Condition(v1.RemovedManagementStateOnHold)
-		onHold.Status = corev1.ConditionFalse
-		onHold.LastUpdateTime = now
-		onHold.LastTransitionTime = now
-		cfg.ConditionUpdate(onHold)
-		migration := cfg.Condition(v1.MigrationInProgress)
-		migration.Status = corev1.ConditionFalse
-		migration.LastUpdateTime = now
-		migration.LastTransitionTime = now
-		cfg.ConditionUpdate(migration)
-		importErrors := cfg.Condition(v1.ImportImageErrorsExist)
-		importErrors.Status = corev1.ConditionFalse
-		importErrors.LastUpdateTime = now
-		importErrors.LastTransitionTime = now
-		cfg.ConditionUpdate(importErrors)
 		h.AddFinalizer(cfg)
 		logrus.Println("creating default Config")
 		err = h.crdwrapper.Create(cfg)
@@ -733,6 +688,27 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 	}
 
 	return cfg, nil
+}
+
+func (h *Handler) initConditions(cfg *v1.Config) *v1.Config {
+	now := kapis.Now()
+	cfg.Condition(v1.SamplesExist)
+	cfg.Condition(v1.ImportCredentialsExist)
+	valid := cfg.Condition(v1.ConfigurationValid)
+	// our default config is valid; since Condition sets new conditions to false
+	// if we get false here this is the first pass through; invalid configs
+	// are caught above
+	if valid.Status != corev1.ConditionTrue {
+		valid.Status = corev1.ConditionTrue
+		valid.LastUpdateTime = now
+		valid.LastTransitionTime = now
+		cfg.ConditionUpdate(valid)
+	}
+	cfg.Condition(v1.ImageChangesInProgress)
+	cfg.Condition(v1.RemovedManagementStateOnHold)
+	cfg.Condition(v1.MigrationInProgress)
+	cfg.Condition(v1.ImportImageErrorsExist)
+	return cfg
 }
 
 // WaitingForCredential determines whether we should proceed with processing the sample resource event,
@@ -1103,8 +1079,8 @@ func (h *Handler) Handle(event v1.Event) error {
 				return err
 			}
 			// flush the status changes generated by the processing
-			logrus.Debugf("SDKUPDATE event secret update")
-			return h.crdwrapper.Update(cfg)
+			logrus.Debugf("CRDUPDATE event secret update")
+			return h.crdwrapper.UpdateStatus(cfg)
 		} else {
 			return fmt.Errorf("Received secret %s but do not have the Config yet, requeuing", dockercfgSecret.Name)
 		}
@@ -1149,8 +1125,8 @@ func (h *Handler) Handle(event v1.Event) error {
 					return err
 				}
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.SamplesExist)
-				logrus.Debugf("SDKUPDATE exist false update")
-				err = h.crdwrapper.Update(cfg)
+				logrus.Debugf("CRDUPDATE exist false update")
+				err = h.crdwrapper.UpdateStatus(cfg)
 				if err != nil {
 					logrus.Printf("error on Config update after setting exists condition to false (returning error to retry): %v", err)
 					return err
@@ -1158,7 +1134,8 @@ func (h *Handler) Handle(event v1.Event) error {
 			} else {
 				logrus.Println("Initiating finalizer processing for a SampleResource delete attempt")
 				h.RemoveFinalizer(cfg)
-				logrus.Debugf("SDKUPDATE remove finalizer update")
+				logrus.Debugf("CRDUPDATE remove finalizer update")
+				// not updating the status, but the metadata annotation
 				err := h.crdwrapper.Update(cfg)
 				if err != nil {
 					logrus.Printf("error removing Config finalizer during delete (hopefully retry on return of error works): %v", err)
@@ -1183,8 +1160,8 @@ func (h *Handler) Handle(event v1.Event) error {
 		if !doit || err != nil {
 			if err != nil || cfgUpdate {
 				// flush status update
-				logrus.Debugf("SDKUPDATE process mgmt update")
-				h.crdwrapper.Update(cfg)
+				logrus.Debugf("CRDUPDATE process mgmt update")
+				h.crdwrapper.UpdateStatus(cfg)
 			}
 			return err
 		}
@@ -1193,15 +1170,15 @@ func (h *Handler) Handle(event v1.Event) error {
 		err = h.SpecValidation(cfg)
 		if err != nil {
 			// flush status update
-			logrus.Debugf("SDKUPDATE bad spec validation update")
+			logrus.Debugf("CRDUPDATE bad spec validation update")
 			// only retry on error updating the Config; do not return
 			// the error from SpecValidation which denotes a bad config
-			return h.crdwrapper.Update(cfg)
+			return h.crdwrapper.UpdateStatus(cfg)
 		}
 		// if a bad config was corrected, update and return
 		if existingValidStatus != cfg.Condition(v1.ConfigurationValid).Status {
-			logrus.Debugf("SDKUPDATE spec corrected")
-			return h.crdwrapper.Update(cfg)
+			logrus.Debugf("CRDUPDATE spec corrected")
+			return h.crdwrapper.UpdateStatus(cfg)
 		}
 
 		configChanged := false
@@ -1209,22 +1186,22 @@ func (h *Handler) Handle(event v1.Event) error {
 			configChanged, err = h.VariableConfigChanged(cfg)
 			if err != nil {
 				// flush status update
-				logrus.Debugf("SDKUPDATE var cfg chg err update")
-				h.crdwrapper.Update(cfg)
+				logrus.Debugf("CRDUPDATE var cfg chg err update")
+				h.crdwrapper.UpdateStatus(cfg)
 				return err
 			}
-			logrus.Debugf("config changed %v exists %v progressing %v spec version %s status version %s",
+			logrus.Debugf("config changed %v exists %v progressing %v op version %s status version %s",
 				configChanged,
 				cfg.ConditionTrue(v1.SamplesExist),
 				cfg.ConditionFalse(v1.ImageChangesInProgress),
-				cfg.Spec.Version,
+				v1.GitVersionString(),
 				cfg.Status.Version)
 			// so ignore if config does not change and the samples exist and
 			// we are not in progress and at the right level
 			if !configChanged &&
 				cfg.ConditionTrue(v1.SamplesExist) &&
 				cfg.ConditionFalse(v1.ImageChangesInProgress) &&
-				cfg.Spec.Version == cfg.Status.Version {
+				v1.GitVersionString() == cfg.Status.Version {
 				logrus.Debugf("Handle ignoring because config the same and exists is true, in progress false, and version correct")
 				return nil
 			}
@@ -1234,8 +1211,8 @@ func (h *Handler) Handle(event v1.Event) error {
 			// in progress
 			if configChanged && cfg.ConditionTrue(v1.ImageChangesInProgress) {
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
-				logrus.Debugf("SDKUPDATE change in progress from true to false for config change")
-				return h.crdwrapper.Update(cfg)
+				logrus.Printf("CRDUPDATE change in progress from true to false for config change")
+				return h.crdwrapper.UpdateStatus(cfg)
 			}
 		}
 
@@ -1251,7 +1228,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			logrus.Println("Config update ignored since need the RHEL credential")
 			// if update to set import cred condition to false fails, return that error
 			// to requeue
-			return h.crdwrapper.Update(cfg)
+			return h.crdwrapper.UpdateStatus(cfg)
 		}
 		if stillWaitingForSecret {
 			// means we previously udpated cfg but nothing has changed wrt the secret's presence
@@ -1260,21 +1237,21 @@ func (h *Handler) Handle(event v1.Event) error {
 
 		if cfg.ConditionFalse(v1.MigrationInProgress) &&
 			len(cfg.Status.Version) > 0 &&
-			cfg.Spec.Version != cfg.Status.Version {
+			v1.GitVersionString() != cfg.Status.Version {
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.MigrationInProgress)
-			logrus.Debugf("SDKUPDATE migration on")
-			return h.crdwrapper.Update(cfg)
+			logrus.Debugf("CRDUPDATE migration on %#v", cfg.Condition(v1.MigrationInProgress))
+			return h.crdwrapper.UpdateStatus(cfg)
 		}
 
 		if !configChanged &&
 			cfg.ConditionTrue(v1.SamplesExist) &&
 			cfg.ConditionFalse(v1.ImageChangesInProgress) &&
 			cfg.ConditionFalse(v1.MigrationInProgress) &&
-			cfg.Spec.Version != cfg.Status.Version {
-			cfg.Status.Version = cfg.Spec.Version
-			logrus.Debugf("SDKUPDATE upd status version")
+			v1.GitVersionString() != cfg.Status.Version {
+			cfg.Status.Version = v1.GitVersionString()
+			logrus.Debugf("CRDUPDATE upd status version")
 			logrus.Printf("The samples are now at version %s", cfg.Status.Version)
-			return h.crdwrapper.Update(cfg)
+			return h.crdwrapper.UpdateStatus(cfg)
 		}
 
 		// lastly, if we are in samples exists and progressing both true, we can forgo cycling
@@ -1298,15 +1275,15 @@ func (h *Handler) Handle(event v1.Event) error {
 				files, err := h.Filefinder.List(dir)
 				if err != nil {
 					err = h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
-					logrus.Debugf("SDKUPDATE file list err update")
-					h.crdwrapper.Update(cfg)
+					logrus.Debugf("CRDUPDATE file list err update")
+					h.crdwrapper.UpdateStatus(cfg)
 					return err
 				}
 				err = h.processFiles(dir, files, cfg)
 				if err != nil {
 					err = h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error processing content : %v")
-					logrus.Debugf("SDKUPDATE proc file err update")
-					h.crdwrapper.Update(cfg)
+					logrus.Debugf("CRDUPDATE proc file err update")
+					h.crdwrapper.UpdateStatus(cfg)
 					return err
 				}
 			}
@@ -1318,7 +1295,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			err = h.createSamples(cfg)
 			if err != nil {
 				h.processError(cfg, v1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
-				e := h.crdwrapper.Update(cfg)
+				e := h.crdwrapper.UpdateStatus(cfg)
 				if e != nil {
 					return e
 				}
@@ -1338,9 +1315,14 @@ func (h *Handler) Handle(event v1.Event) error {
 			}
 			logrus.Debugf("Handle Reason field set to %s", progressing.Reason)
 			cfg.ConditionUpdate(progressing)
-			cfg.Spec.Version = v1.GitVersionString()
-			logrus.Debugf("SDKUPDATE progressing true update")
-			err = h.crdwrapper.Update(cfg)
+
+			// now that we employ status subresources, we can't populate
+			// the conditions on create; so we do initialize here, which is our "step 1"
+			// of the "make a change" flow in our state machine
+			cfg = h.initConditions(cfg)
+
+			logrus.Debugf("CRDUPDATE progressing true update")
+			err = h.crdwrapper.UpdateStatus(cfg)
 			if err != nil {
 				return err
 			}
@@ -1350,8 +1332,8 @@ func (h *Handler) Handle(event v1.Event) error {
 		if !cfg.ConditionTrue(v1.SamplesExist) {
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
 			// flush updates from processing
-			logrus.Debugf("SDKUPDATE good cond update")
-			return h.crdwrapper.Update(cfg)
+			logrus.Debugf("CRDUPDATE good cond update")
+			return h.crdwrapper.UpdateStatus(cfg)
 		}
 
 	}
@@ -1862,13 +1844,28 @@ func (g *defaultInClusterInitter) init(h *Handler, restconfig *restclient.Config
 }
 
 type CRDWrapper interface {
-	Update(Config *v1.Config) (err error)
+	Update(*v1.Config) (err error)
+	UpdateStatus(Config *v1.Config) (err error)
 	Create(Config *v1.Config) (err error)
 	Get(name string) (*v1.Config, error)
 }
 
 type generatedCRDWrapper struct {
 	client sampleclientv1.ConfigInterface
+}
+
+func (g *generatedCRDWrapper) UpdateStatus(sr *v1.Config) error {
+	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
+		_, err := g.client.UpdateStatus(sr)
+		if err == nil {
+			return true, nil
+		}
+		if !IsRetryableAPIError(err) {
+			return false, err
+		}
+		return false, nil
+	})
+
 }
 
 func (g *generatedCRDWrapper) Update(sr *v1.Config) error {

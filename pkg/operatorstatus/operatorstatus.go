@@ -64,7 +64,7 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
 	err = o.setOperatorStatus(configv1.OperatorFailing,
 		failing,
 		msgForFailing,
-		cfg.Spec.Version)
+		v1.GitVersionString())
 	if err != nil {
 		return err
 	}

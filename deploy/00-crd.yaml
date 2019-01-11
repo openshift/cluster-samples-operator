@@ -11,3 +11,5 @@ spec:
     singular: config
   scope: Cluster
   version: v1
+  subresources:
+    status: {}

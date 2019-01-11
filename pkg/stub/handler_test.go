@@ -25,7 +25,13 @@ import (
 )
 
 var (
-	conditions = []v1.ConfigConditionType{v1.SamplesExist, v1.ImportCredentialsExist, v1.ConfigurationValid, v1.ImageChangesInProgress, v1.RemovedManagementStateOnHold, v1.MigrationInProgress, v1.ImportImageErrorsExist}
+	conditions = []v1.ConfigConditionType{v1.SamplesExist,
+		v1.ImportCredentialsExist,
+		v1.ConfigurationValid,
+		v1.ImageChangesInProgress,
+		v1.RemovedManagementStateOnHold,
+		v1.MigrationInProgress,
+		v1.ImportImageErrorsExist}
 )
 
 func TestWrongSampleResourceName(t *testing.T) {
@@ -620,6 +626,7 @@ func TestCreateDeleteSecretAfterCR(t *testing.T) {
 func setup() (Handler, *v1.Config, v1.Event) {
 	h := NewTestHandler()
 	cfg, _ := h.CreateDefaultResourceIfNeeded(nil)
+	cfg = h.initConditions(cfg)
 	h.crdwrapper.(*fakeCRDWrapper).cfg = cfg
 	return h, cfg, v1.Event{Object: cfg}
 }
@@ -1417,6 +1424,8 @@ type fakeCRDWrapper struct {
 	geterr    error
 	cfg       *v1.Config
 }
+
+func (f *fakeCRDWrapper) UpdateStatus(opcfg *v1.Config) error { return f.updateerr }
 
 func (f *fakeCRDWrapper) Update(opcfg *v1.Config) error { return f.updateerr }
 

@@ -123,11 +123,6 @@ type ConfigSpec struct {
 	// content but the operator will not recreate(or update) anything
 	// listed here.
 	SkippedTemplates []string `json:"skippedTemplates,omitempty" protobuf:"bytes,6,opt,name=skippedTemplates"`
-
-	// Version is the value of the operator's git based version indicator when the Config is being processed.
-	// The operator will use it to determine whether it has
-	// been upgraded, and by extension, whether the samples should be updated.
-	Version string `json:"version,omitempty" protobuf:"bytes,7,opt,name=version"`
 }
 type ConfigStatus struct {
 	// operatorv1.ManagementState reflects the current operational status of the on/off switch for
@@ -307,8 +302,12 @@ func (s *Config) Condition(c ConfigConditionType) *ConfigCondition {
 			}
 		}
 	}
+	now := metav1.Now()
 	newCondition := ConfigCondition{
-		Type: c,
+		Type:               c,
+		Status:             corev1.ConditionFalse,
+		LastTransitionTime: now,
+		LastUpdateTime:     now,
 	}
 	s.Status.Conditions = append(s.Status.Conditions, newCondition)
 	return &newCondition
@@ -358,17 +357,17 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 	if s.ConditionFalse(ConfigurationValid) {
 		return trueRC,
 			"invalid configuration",
-			fmt.Sprintf(noInstallDetailed, s.Spec.Version, s.Condition(ConfigurationValid).Message)
+			fmt.Sprintf(noInstallDetailed, GitVersionString(), s.Condition(ConfigurationValid).Message)
 	}
 	if s.Spec.InstallType == RHELSamplesDistribution && s.ConditionFalse(ImportCredentialsExist) {
 		return trueRC,
 			"image pull credentials needed",
-			fmt.Sprintf(noInstallDetailed, s.Spec.Version, s.Condition(ImportCredentialsExist).Message)
+			fmt.Sprintf(noInstallDetailed, GitVersionString(), s.Condition(ImportCredentialsExist).Message)
 	}
 	if s.ConditionTrue(ImportImageErrorsExist) {
 		return trueRC,
 			"image import problem",
-			fmt.Sprintf(noInstallDetailed, s.Spec.Version, s.Condition(ImportImageErrorsExist).Message)
+			fmt.Sprintf(noInstallDetailed, GitVersionString(), s.Condition(ImportImageErrorsExist).Message)
 	}
 	// right now, any condition being unknown is indicative of a failure
 	// condition, either api server interaction or file system interaction;
@@ -393,12 +392,12 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, available configv1.ConditionStatus) (configv1.ConditionStatus, string) {
 	if len(failingState) > 0 {
 		if s.ConditionTrue(ImageChangesInProgress) || s.ConditionTrue(ImportImageErrorsExist) {
-			return configv1.ConditionTrue, fmt.Sprintf(noInstallDetailed, s.Spec.Version, failingState)
+			return configv1.ConditionTrue, fmt.Sprintf(noInstallDetailed, GitVersionString(), failingState)
 		}
-		return configv1.ConditionFalse, fmt.Sprintf(noInstallDetailed, s.Spec.Version, failingState)
+		return configv1.ConditionFalse, fmt.Sprintf(noInstallDetailed, GitVersionString(), failingState)
 	}
 	if s.ConditionTrue(ImageChangesInProgress) {
-		return configv1.ConditionTrue, fmt.Sprintf(moving, s.Spec.Version)
+		return configv1.ConditionTrue, fmt.Sprintf(moving, GitVersionString())
 	}
 	if available == configv1.ConditionTrue {
 		return configv1.ConditionFalse, fmt.Sprintf(installed, s.Status.Version)

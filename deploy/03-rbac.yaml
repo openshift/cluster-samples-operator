@@ -36,7 +36,8 @@ rules:
 - apiGroups:
   - samples.operator.openshift.io
   resources:
-  - "configs"
+  - configs
+  - configs/status
   verbs:
   - "*"
 - apiGroups:
