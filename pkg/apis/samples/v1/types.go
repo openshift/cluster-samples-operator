@@ -315,7 +315,6 @@ func (s *Config) Condition(c ConfigConditionType) *ConfigCondition {
 }
 
 const (
-	noInstall         = "Samples installation in error at %s"
 	noInstallDetailed = "Samples installation in error at %s: %s"
 	installed         = "Samples installation successful at %s"
 	moving            = "Samples moving to %s"
@@ -325,46 +324,17 @@ const (
 // 1) the value to set on the ClusterOperator Available condition
 // 2) string is the message to set on the Available condition
 func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionStatus, string) {
-	apiError := s.AnyConditionUnknown()
-	needCreds := !s.ConditionTrue(ImportCredentialsExist) &&
-		s.Spec.InstallType == RHELSamplesDistribution
 	notAtAnyVersionYet := len(s.Status.Version) == 0
 
 	falseRC := configv1.ConditionFalse
-	falseMsg := fmt.Sprintf(noInstall, s.Spec.Version)
-
-	// bad interactions with the api server or file system mean the samples are in
-	// an indeterminate state; mark available per
-	// https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions
-	// mark as false
-	if apiError {
-		return falseRC, falseMsg
-	}
 
 	// REMINDER: the intital config is always valid, as this operator generates it;
 	// only config changes after by a human cluster admin after
 	// the initial install result in ConfigurationValid == CondtitionFalse
-	// Next, if bad config is injected after installing at a certain level,
+	// Next, if say bad config is injected after installing at a certain level,
 	// the samples are still available at the old config setting; the
 	// config issues will be highlighted in the progressing/failing messages, per
 	// https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions
-
-	// However, rhel and lack of creds is possible on intitial install, as well
-	// as deleted after the initial install; either circumstance can prevent imagestream
-	// scheduled imports for example to fail ... the imagestream "state" could
-	// be sufficiently compromised, so we'll flag false there
-	if needCreds {
-		return falseRC, falseMsg
-	}
-
-	// currently SampleExist==true in a vaccum level detail .. meaning api objs created,
-	// but images importing, is not considered here ... in our case, available means
-	// created plus images imported ... so we do not bother with it in this method.
-
-	// And with that in mind, the value of the status version is sufficient for our needs here.
-	// It is only set in the event handler for the Config when
-	// a) upserts completed and exists is true
-	// b) image in progress went from true to false as imagestream imports completed
 
 	if notAtAnyVersionYet {
 		// return false for the initial state; don't set any messages yet
@@ -395,6 +365,11 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 			"image pull credentials needed",
 			fmt.Sprintf(noInstallDetailed, s.Spec.Version, s.Condition(ImportCredentialsExist).Message)
 	}
+	if s.ConditionTrue(ImportImageErrorsExist) {
+		return trueRC,
+			"image import problem",
+			fmt.Sprintf(noInstallDetailed, s.Spec.Version, s.Condition(ImportImageErrorsExist).Message)
+	}
 	// right now, any condition being unknown is indicative of a failure
 	// condition, either api server interaction or file system interaction;
 	// Conversely, those errors result in a ConditionUnknown setting on one
@@ -417,6 +392,9 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 // 2) string is the message to set on the condition
 func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, available configv1.ConditionStatus) (configv1.ConditionStatus, string) {
 	if len(failingState) > 0 {
+		if s.ConditionTrue(ImageChangesInProgress) || s.ConditionTrue(ImportImageErrorsExist) {
+			return configv1.ConditionTrue, fmt.Sprintf(noInstallDetailed, s.Spec.Version, failingState)
+		}
 		return configv1.ConditionFalse, fmt.Sprintf(noInstallDetailed, s.Spec.Version, failingState)
 	}
 	if s.ConditionTrue(ImageChangesInProgress) {
