@@ -177,9 +177,9 @@ type ConfigConditionType string
 // the valid conditions of the Config
 
 const (
-	// ImportCredentialsExists represents the state of any credentials specified by
+	// ImportCredentialsExist represents the state of any credentials specified by
 	// the SamplesRegistry field in the Spec.
-	ImportCredentialsExist ConfigConditionType = "ImportCredentialsExists"
+	ImportCredentialsExist ConfigConditionType = "ImportCredentialsExist"
 	// SamplesExist represents whether an incoming Config has been successfully
 	// processed or not all, or whether the last Config to come in has been
 	// successfully processed.
@@ -203,7 +203,7 @@ const (
 	// update ImageChangesInProgress and the sampleresource watch simply returning an error an initiating
 	// a retry when ManagementState was set to Removed lead to a prolonged, sometimes seemingly unresolved,
 	// period of circular contention
-	RemovedManagementStateOnHold ConfigConditionType = "PendingRemove"
+	RemovedManagementStateOnHold ConfigConditionType = "RemovePending"
 	// MigrationInProgress represents the special case where the operator is running off of
 	// a new version of its image, and samples are deployed of a previous version.  This condition
 	// facilitates the maintenance of this operator's ClusterOperator object.
