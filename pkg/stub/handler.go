@@ -226,68 +226,70 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		// won't be updating imagestream this go around, which sets pending==true, so see if we should turn off pending
 		pending := false
 		anyErrors := false
-		if len(is.Spec.Tags) == len(is.Status.Tags) {
-			for _, specTag := range is.Spec.Tags {
-				matched := false
-				for _, statusTag := range is.Status.Tags {
-					logrus.Debugf("checking spec tag %s against status tag %s with num items %d", specTag.Name, statusTag.Tag, len(statusTag.Items))
-					if specTag.Name == statusTag.Tag {
-						// if an error occurred with the latest generation, let's give up as we are no longer "in progress"
-						// in that case as well, but mark the import failure
-						if statusTag.Conditions != nil && len(statusTag.Conditions) > 0 {
-							var latestGeneration int64
-							var mostRecentErrorGeneration int64
-							reason := ""
-							message := ""
-							for _, condition := range statusTag.Conditions {
-								if condition.Generation > latestGeneration {
-									latestGeneration = condition.Generation
-								}
-								if condition.Status == corev1.ConditionFalse &&
-									len(condition.Message) > 0 &&
-									len(condition.Reason) > 0 {
-									if condition.Generation > mostRecentErrorGeneration {
-										mostRecentErrorGeneration = condition.Generation
-										reason = condition.Reason
-										message = condition.Message
-									}
-								}
-							}
-							if mostRecentErrorGeneration >= latestGeneration {
-								logrus.Warningf("Image import for imagestream %s tag %s generation %v failed with reason %s and detailed message %s", is.Name, statusTag.Tag, mostRecentErrorGeneration, reason, message)
-								matched = true
-								anyErrors = true
-								// add this imagestream to the Reason field
-								if !strings.Contains(importError.Reason, is.Name+" ") {
-									importError.Reason = importError.Reason + is.Name + " "
-									importError.Message = importError.Message + reason + ": " + message + "; "
-								}
-								break
-							}
+		// need to check for error conditions outside of the spec/status comparison because in an error scenario
+		// you can end up with less status tags than spec tags (especially if one tag refs another)
+		for _, statusTag := range is.Status.Tags {
+			// if an error occurred with the latest generation, let's give up as we are no longer "in progress"
+			// in that case as well, but mark the import failure
+			if statusTag.Conditions != nil && len(statusTag.Conditions) > 0 {
+				var latestGeneration int64
+				var mostRecentErrorGeneration int64
+				message := ""
+				for _, condition := range statusTag.Conditions {
+					if condition.Generation > latestGeneration {
+						latestGeneration = condition.Generation
+					}
+					if condition.Status == corev1.ConditionFalse &&
+						len(condition.Message) > 0 {
+						if condition.Generation > mostRecentErrorGeneration {
+							mostRecentErrorGeneration = condition.Generation
+							message = condition.Message
 						}
-						// if the latest gens have no errors, see if we got gen match
-						if statusTag.Items != nil {
-							for _, event := range statusTag.Items {
-								if specTag.Generation != nil {
-									logrus.Debugf("checking status tag %d against spec tag %d", event.Generation, *specTag.Generation)
-								}
-								if specTag.Generation != nil &&
-									*specTag.Generation <= event.Generation {
-									logrus.Debugf("got match")
-									matched = true
-									break
+					}
+				}
+				if mostRecentErrorGeneration >= latestGeneration {
+					logrus.Warningf("Image import for imagestream %s tag %s generation %v failed with detailed message %s", is.Name, statusTag.Tag, mostRecentErrorGeneration, message)
+					anyErrors = true
+					// add this imagestream to the Reason field
+					if !strings.Contains(importError.Reason, is.Name+" ") {
+						importError.Reason = importError.Reason + is.Name + " "
+						importError.Message = importError.Message + "imagestream/" + is.Name + ": " + message + "; "
+					}
+					break
+				}
+			}
+		}
+		if !anyErrors {
+			if len(is.Spec.Tags) == len(is.Status.Tags) {
+				for _, specTag := range is.Spec.Tags {
+					matched := false
+					for _, statusTag := range is.Status.Tags {
+						logrus.Debugf("checking spec tag %s against status tag %s with num items %d", specTag.Name, statusTag.Tag, len(statusTag.Items))
+						if specTag.Name == statusTag.Tag {
+							// if the latest gens have no errors, see if we got gen match
+							if statusTag.Items != nil {
+								for _, event := range statusTag.Items {
+									if specTag.Generation != nil {
+										logrus.Debugf("checking status tag %d against spec tag %d", event.Generation, *specTag.Generation)
+									}
+									if specTag.Generation != nil &&
+										*specTag.Generation <= event.Generation {
+										logrus.Debugf("got match")
+										matched = true
+										break
+									}
 								}
 							}
 						}
 					}
+					if !matched {
+						pending = true
+						break
+					}
 				}
-				if !matched {
-					pending = true
-					break
-				}
+			} else {
+				pending = true
 			}
-		} else {
-			pending = true
 		}
 
 		logrus.Debugf("pending is %v any errors %v for %s", pending, anyErrors, is.Name)
@@ -479,7 +481,12 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, error) {
 	return false, nil
 }
 
-func (h *Handler) StoreCurrentValidConfig(cfg *v1.Config) { //error {
+func (h *Handler) ClearStatusConfigForRemoved(cfg *v1.Config) {
+	cfg.Status.InstallType = ""
+	cfg.Status.Architectures = []string{}
+}
+
+func (h *Handler) StoreCurrentValidConfig(cfg *v1.Config) {
 	cfg.Status.SamplesRegistry = cfg.Spec.SamplesRegistry
 	cfg.Status.InstallType = cfg.Spec.InstallType
 	cfg.Status.Architectures = cfg.Spec.Architectures
@@ -487,7 +494,7 @@ func (h *Handler) StoreCurrentValidConfig(cfg *v1.Config) { //error {
 	cfg.Status.SkippedTemplates = cfg.Spec.SkippedTemplates
 }
 
-func (h *Handler) SpecValidation(cfg *v1.Config) error { //(*corev1.ConfigMap, error) {
+func (h *Handler) SpecValidation(cfg *v1.Config) error {
 	// the first thing this should do is check that all the config values
 	// are "valid" (the architecture name is known, the distribution name is known, etc)
 	// if that fails, we should immediately error out and set ConfigValid to false.
@@ -932,6 +939,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			cfg.ConditionUpdate(cred)
 			cfg.Status.ManagementState = operatorsv1api.Removed
 			cfg.Status.Version = ""
+			h.ClearStatusConfigForRemoved(cfg)
 			return false, true, nil
 		}
 		return false, false, nil
@@ -1238,6 +1246,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		if cfg.ConditionFalse(v1.MigrationInProgress) &&
 			len(cfg.Status.Version) > 0 &&
 			v1.GitVersionString() != cfg.Status.Version {
+			logrus.Printf("Undergoing migration from %s to %s", cfg.Status.Version, v1.GitVersionString())
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.MigrationInProgress)
 			logrus.Debugf("CRDUPDATE migration on %#v", cfg.Condition(v1.MigrationInProgress))
 			return h.crdwrapper.UpdateStatus(cfg)
@@ -1248,10 +1257,14 @@ func (h *Handler) Handle(event v1.Event) error {
 			cfg.ConditionFalse(v1.ImageChangesInProgress) &&
 			cfg.ConditionFalse(v1.MigrationInProgress) &&
 			v1.GitVersionString() != cfg.Status.Version {
-			cfg.Status.Version = v1.GitVersionString()
-			logrus.Debugf("CRDUPDATE upd status version")
-			logrus.Printf("The samples are now at version %s", cfg.Status.Version)
-			return h.crdwrapper.UpdateStatus(cfg)
+			if cfg.ConditionFalse(v1.ImportImageErrorsExist) {
+				cfg.Status.Version = v1.GitVersionString()
+				logrus.Debugf("CRDUPDATE upd status version")
+				logrus.Printf("The samples are now at version %s", cfg.Status.Version)
+				return h.crdwrapper.UpdateStatus(cfg)
+			}
+			logrus.Printf("An image import error occurred applying the latest configuration on version %s, problem resolution needed", v1.GitVersionString())
+			return nil
 		}
 
 		// lastly, if we are in samples exists and progressing both true, we can forgo cycling
