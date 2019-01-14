@@ -1,0 +1,68 @@
+package stub
+
+import (
+	"os"
+	"strings"
+
+	"github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	"github.com/sirupsen/logrus"
+	corev1 "k8s.io/api/core/v1"
+)
+
+func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1.Config) error {
+
+	for _, file := range files {
+		if file.IsDir() {
+			logrus.Printf("processing subdir %s from dir %s", file.Name(), dir)
+			subfiles, err := h.Filefinder.List(dir + "/" + file.Name())
+			if err != nil {
+				return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content: %v")
+			}
+			err = h.processFiles(dir+"/"+file.Name(), subfiles, opcfg)
+			if err != nil {
+				return err
+			}
+
+			continue
+		}
+		logrus.Printf("processing file %s from dir %s", file.Name(), dir)
+
+		if strings.HasSuffix(dir, "imagestreams") {
+			imagestream, err := h.Fileimagegetter.Get(dir + "/" + file.Name())
+			if err != nil {
+				return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", dir+"/"+file.Name())
+			}
+			h.imagestreamFile[imagestream.Name] = dir + "/" + file.Name()
+			continue
+		}
+
+		if strings.HasSuffix(dir, "templates") {
+			template, err := h.Filetemplategetter.Get(dir + "/" + file.Name())
+			if err != nil {
+				return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", dir+"/"+file.Name())
+			}
+
+			h.templateFile[template.Name] = dir + "/" + file.Name()
+
+		}
+	}
+	return nil
+}
+
+func (h *Handler) GetBaseDir(arch string, opcfg *v1.Config) (dir string) {
+	// invalid settings have already been sorted out by SpecValidation
+	switch arch {
+	case v1.X86Architecture:
+		switch opcfg.Spec.InstallType {
+		case v1.RHELSamplesDistribution:
+			dir = x86OCPContentRootDir
+		case v1.CentosSamplesDistribution:
+			dir = x86OKDContentRootDir
+		default:
+		}
+	case v1.PPCArchitecture:
+		dir = ppc64OCPContentRootDir
+	default:
+	}
+	return dir
+}
