@@ -23,7 +23,7 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 	if err != nil {
 		// still attempt to report error in status
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
-		logrus.Debugf("CRDUPDATE event temp udpate err")
+		logrus.Printf("CRDUPDATE event temp udpate err")
 		h.crdwrapper.UpdateStatus(cfg)
 		// if we get this, don't bother retrying
 		return nil
@@ -38,7 +38,7 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 			return nil
 		}
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing template %s", template.Name)
-		logrus.Debugf("CRDUPDATE event temp update err bad api obj update")
+		logrus.Printf("CRDUPDATE event temp update err bad api obj update")
 		h.crdwrapper.UpdateStatus(cfg)
 		return err
 	}

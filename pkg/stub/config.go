@@ -80,39 +80,86 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 	return nil
 }
 
-func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, error) {
-	logrus.Debugf("cfg skipped streams %#v", cfg.Spec.SkippedImagestreams)
+// VariableConfigChanged return variable explanations
+// first boolean: did the config change at all
+// second boolean: does the config change require a samples upsert; for example, simply adding
+// to a skip list does not require a samples upsert
+// third boolean: even if an upsert is not needed, update the config instance to clear out image import errors
+func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool) {
 	if cfg.Spec.SamplesRegistry != cfg.Status.SamplesRegistry {
 		logrus.Printf("SamplesRegistry changed from %s to %s", cfg.Status.SamplesRegistry, cfg.Spec.SamplesRegistry)
-		return true, nil
+		return true, true, false
 	}
+
+	logrus.Debugf("cfg skipped streams %#v", cfg.Spec.SkippedImagestreams)
 
 	if len(cfg.Spec.SkippedImagestreams) != len(cfg.Status.SkippedImagestreams) {
-		logrus.Printf("SkippedImagestreams changed from %#v to %#v", cfg.Status.SkippedImagestreams, cfg.Spec.SkippedImagestreams)
-		return true, nil
+		logrus.Printf("SkippedImagestreams changed in size from %#v to %#v", cfg.Status.SkippedImagestreams, cfg.Spec.SkippedImagestreams)
+		if len(cfg.Spec.SkippedImagestreams) < len(cfg.Status.SkippedImagestreams) {
+			// skip list reduced, meaning we need to upsert some samples we were ignoring
+			return true, true, false
+		}
+		for _, stream := range cfg.Status.SkippedImagestreams {
+			// even if the skipped list has been increased, if a stream we were skipping
+			// has been removed, we need to upsert; assumes buildSkipFilters called beforehand
+			if _, ok := h.skippedImagestreams[stream]; !ok {
+				return true, true, true
+			}
+		}
+		// otherwise, we've only added to the skip list, so don't upsert,but also see if we
+		// need to  update the cfg from the main loop to clear out any prior image import
+		// errors for skipped streams
+		clearImageImportErrors := false
+		for _, stream := range cfg.Spec.SkippedImagestreams {
+			importErrors := h.clearStreamFromImportError(stream, cfg.Condition(v1.ImportImageErrorsExist), cfg)
+			if importErrors != nil {
+				clearImageImportErrors = true
+				// we do not break here cause we want to clear out all possible streams
+			}
+		}
+		return true, false, clearImageImportErrors
 	}
 
-	for i, skip := range cfg.Status.SkippedImagestreams {
-		if skip != cfg.Spec.SkippedImagestreams[i] {
-			logrus.Printf("SkippedImagestreams changed from %#v to %#v", cfg.Status.SkippedImagestreams, cfg.Spec.SkippedImagestreams)
-			return true, nil
+	clearImageImportErrors := false
+	changeInContent := false
+	for i, skip := range cfg.Spec.SkippedImagestreams {
+		if skip != cfg.Status.SkippedImagestreams[i] {
+			changeInContent = true
+			logrus.Printf("SkippedImagestreams changed in content from %s to %s", cfg.Status.SkippedImagestreams[i], skip)
+			importErrors := h.clearStreamFromImportError(skip, cfg.Condition(v1.ImportImageErrorsExist), cfg)
+			if importErrors != nil {
+				clearImageImportErrors = true
+			}
 		}
+	}
+	if changeInContent {
+		return changeInContent, changeInContent, clearImageImportErrors
 	}
 
 	if len(cfg.Spec.SkippedTemplates) != len(cfg.Status.SkippedTemplates) {
 		logrus.Printf("SkippedTemplates changed from %#v to %#v", cfg.Status.SkippedTemplates, cfg.Spec.SkippedTemplates)
-		return true, nil
+		if len(cfg.Spec.SkippedTemplates) < len(cfg.Status.SkippedTemplates) {
+			return true, true, false
+		}
+		for _, tpl := range cfg.Status.SkippedTemplates {
+			// even if the skipped list has been increased, if a tpl we were skipping
+			// has been removed, we need to upsert; assumes buildSkipFilters called beforehand
+			if _, ok := h.skippedTemplates[tpl]; !ok {
+				return true, true, false
+			}
+		}
+		return true, false, false
 	}
 
-	for i, skip := range cfg.Status.SkippedTemplates {
-		if skip != cfg.Spec.SkippedTemplates[i] {
-			logrus.Printf("SkippedTemplates changed from %#v to %#v", cfg.Status.SkippedTemplates, cfg.Spec.SkippedTemplates)
-			return true, nil
+	for i, skip := range cfg.Spec.SkippedTemplates {
+		if skip != cfg.Status.SkippedTemplates[i] {
+			logrus.Printf("SkippedTemplates changed in content from %s to %s", cfg.Status.SkippedTemplates[i], skip)
+			return true, true, false
 		}
 	}
 
 	logrus.Debugf("Incoming Config unchanged from last processed version")
-	return false, nil
+	return false, false, false
 }
 
 func (h *Handler) buildSkipFilters(opcfg *v1.Config) {

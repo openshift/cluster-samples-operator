@@ -352,6 +352,34 @@ func TestSkipped(t *testing.T) {
 		}
 	}
 
+	// also, even with an import error, on an imagestream event, the import error should be cleared out
+	importerror := cfg.Condition(v1.ImportImageErrorsExist)
+	importerror.Reason = "foo "
+	importerror.Message = "<imagestream/foo> import failed <imagestream/foo>"
+	importerror.Status = corev1.ConditionTrue
+	cfg.ConditionUpdate(importerror)
+	event.Object = &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foo",
+			Namespace: "openshift",
+			Labels:    map[string]string{},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			Tags: []imagev1.TagReference{
+				{
+					// no Name field set on purpose, cover more code paths
+					From: &corev1.ObjectReference{
+						Kind: "DockerImage",
+					},
+				},
+			},
+		},
+	}
+	h.Handle(event)
+	importerror = cfg.Condition(v1.ImportImageErrorsExist)
+	if len(importerror.Reason) > 0 || importerror.Status == corev1.ConditionTrue {
+		t.Fatalf("skipped imagestream still reporting error %#v", importerror)
+	}
 }
 
 func TestProcessed(t *testing.T) {
@@ -849,6 +877,9 @@ func TestImageStreamImportError(t *testing.T) {
 	for _, is := range streams {
 		h, cfg, _ := setup()
 		mimic(&h, v1.CentosSamplesDistribution, x86OKDContentRootDir)
+		dir := h.GetBaseDir(v1.X86Architecture, cfg)
+		files, _ := h.Filefinder.List(dir)
+		h.processFiles(dir, files, cfg)
 		progressing := cfg.Condition(v1.ImageChangesInProgress)
 		progressing.Status = corev1.ConditionTrue
 		cfg.ConditionUpdate(progressing)
@@ -912,9 +943,13 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 	}
 	h, cfg, _ := setup()
 	mimic(&h, v1.CentosSamplesDistribution, x86OKDContentRootDir)
+	dir := h.GetBaseDir(v1.X86Architecture, cfg)
+	files, _ := h.Filefinder.List(dir)
+	h.processFiles(dir, files, cfg)
 	importError := cfg.Condition(v1.ImportImageErrorsExist)
 	importError.Status = corev1.ConditionTrue
 	importError.Reason = "foo "
+	importError.Message = "<imagestream/foo> import failed <imagestream/foo>"
 	cfg.ConditionUpdate(importError)
 	err := h.processImageStreamWatchEvent(stream, false)
 	if err != nil {

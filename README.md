@@ -74,6 +74,11 @@ The samples resource maintains the following conditions in its status:
 -- True or false based on whether any of the restricted changes noted above have been submitted
 - RemovedManagementStateOnHold
 -- Indicator that we have a management state removed setting pending, but are waiting for in progress imagestreams to complete
+- ImportImageErrorsExist
+-- Indicator of which imagestreams had errors during the image import phase for one of their tags
+-- True when an error has occurred
+-- The list of imagestreams with an error will be in the reason field
+-- The details of each error reported will be in the message field
 
 # CVO Cluster Operator Status
 
@@ -90,6 +95,12 @@ Cluster Operator status conditions are managed.
 CRD instance for the samples operator config:  `oc get configs.samples.operator.openshift.io instance -o yaml`
 
 Check the status of the conditions. (See above for details on those conditions)
+
+In the case that a failure occurred during an image import, the Available cluster operator status will be *FALSE*.  A
+cluster admin can attempt to rectify the situation by
+
+- Retrying the import via `oc import-image <imagestream name> -n openshift --all`; if successful, the operator will detect the success and clear that imagestream from the failure list
+- Add the failing imagestream(s) to the `skippedImagestreams` list; the operator will also clear the imagestream(s) specified from the failure list
 
 Deployment, Events in operator’s namespace (openshift-cluster-samples-operator):  basic `oc get pods`, `oc get events`, `oc logs` of the operator pod 
 

@@ -38,139 +38,127 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		}
 		importError := cfg.Condition(v1.ImportImageErrorsExist)
 
-		// so reaching this point means we have a prior upsert in progress, and we just want to track the status
-
-		logrus.Debugf("checking tag spec/status for %s spec len %d status len %d", is.Name, len(is.Spec.Tags), len(is.Status.Tags))
 		// won't be updating imagestream this go around, which sets pending==true, so see if we should turn off pending
 		pending := false
 		anyErrors := false
 		// need to check for error conditions outside of the spec/status comparison because in an error scenario
-		// you can end up with less status tags than spec tags (especially if one tag refs another)
-		for _, statusTag := range is.Status.Tags {
-			// if an error occurred with the latest generation, let's give up as we are no longer "in progress"
-			// in that case as well, but mark the import failure
-			if statusTag.Conditions != nil && len(statusTag.Conditions) > 0 {
-				var latestGeneration int64
-				var mostRecentErrorGeneration int64
-				message := ""
-				for _, condition := range statusTag.Conditions {
-					if condition.Generation > latestGeneration {
-						latestGeneration = condition.Generation
-					}
-					if condition.Status == corev1.ConditionFalse &&
-						len(condition.Message) > 0 {
-						if condition.Generation > mostRecentErrorGeneration {
-							mostRecentErrorGeneration = condition.Generation
-							message = condition.Message
+		// you can end up with less status tags than spec tags (especially if one tag refs another), but don't cite
+		// errors if we are now in the skip list; it is possible and imagestream is not in the skip list, we get an
+		// import error, and then a cluster admin puts the imagestream in the skip list
+		_, skipped := h.skippedImagestreams[is.Name]
+		if !skipped {
+			// so reaching this point means we have a prior upsert in progress, and we just want to track the status
+			logrus.Debugf("checking tag spec/status for %s spec len %d status len %d", is.Name, len(is.Spec.Tags), len(is.Status.Tags))
+
+			for _, statusTag := range is.Status.Tags {
+				// if an error occurred with the latest generation, let's give up as we are no longer "in progress"
+				// in that case as well, but mark the import failure
+				if statusTag.Conditions != nil && len(statusTag.Conditions) > 0 {
+					var latestGeneration int64
+					var mostRecentErrorGeneration int64
+					message := ""
+					for _, condition := range statusTag.Conditions {
+						if condition.Generation > latestGeneration {
+							latestGeneration = condition.Generation
+						}
+						if condition.Status == corev1.ConditionFalse &&
+							len(condition.Message) > 0 {
+							if condition.Generation > mostRecentErrorGeneration {
+								mostRecentErrorGeneration = condition.Generation
+								message = condition.Message
+							}
 						}
 					}
-				}
-				if mostRecentErrorGeneration >= latestGeneration {
-					logrus.Warningf("Image import for imagestream %s tag %s generation %v failed with detailed message %s", is.Name, statusTag.Tag, mostRecentErrorGeneration, message)
-					anyErrors = true
-					// add this imagestream to the Reason field
-					if !strings.Contains(importError.Reason, is.Name+" ") {
-						importError.Reason = importError.Reason + is.Name + " "
-						importError.Message = importError.Message + "imagestream/" + is.Name + ": " + message + "; "
+					if mostRecentErrorGeneration >= latestGeneration {
+						logrus.Warningf("Image import for imagestream %s tag %s generation %v failed with detailed message %s", is.Name, statusTag.Tag, mostRecentErrorGeneration, message)
+						anyErrors = true
+						// add this imagestream to the Reason field
+						if !strings.Contains(importError.Reason, is.Name+" ") {
+							now := kapis.Now()
+							importError.Reason = importError.Reason + is.Name + " "
+							importError.Message = importError.Message + "<imagestream/" + is.Name + ">" + message + "<imagestream/" + is.Name + ">"
+							importError.Status = corev1.ConditionTrue
+							importError.LastTransitionTime = now
+							importError.LastUpdateTime = now
+							cfg.ConditionUpdate(importError)
+						}
+						break
 					}
-					break
 				}
 			}
-		}
-		if !anyErrors {
-			if len(is.Spec.Tags) == len(is.Status.Tags) {
-				for _, specTag := range is.Spec.Tags {
-					matched := false
-					for _, statusTag := range is.Status.Tags {
-						logrus.Debugf("checking spec tag %s against status tag %s with num items %d", specTag.Name, statusTag.Tag, len(statusTag.Items))
-						if specTag.Name == statusTag.Tag {
-							// if the latest gens have no errors, see if we got gen match
-							if statusTag.Items != nil {
-								for _, event := range statusTag.Items {
-									if specTag.Generation != nil {
-										logrus.Debugf("checking status tag %d against spec tag %d", event.Generation, *specTag.Generation)
-									}
-									if specTag.Generation != nil &&
-										*specTag.Generation <= event.Generation {
-										logrus.Debugf("got match")
-										matched = true
-										break
+
+			if !anyErrors {
+				if len(is.Spec.Tags) == len(is.Status.Tags) {
+					for _, specTag := range is.Spec.Tags {
+						matched := false
+						for _, statusTag := range is.Status.Tags {
+							logrus.Debugf("checking spec tag %s against status tag %s with num items %d", specTag.Name, statusTag.Tag, len(statusTag.Items))
+							if specTag.Name == statusTag.Tag {
+								// if the latest gens have no errors, see if we got gen match
+								if statusTag.Items != nil {
+									for _, event := range statusTag.Items {
+										if specTag.Generation != nil {
+											logrus.Debugf("checking status tag %d against spec tag %d", event.Generation, *specTag.Generation)
+										}
+										if specTag.Generation != nil &&
+											*specTag.Generation <= event.Generation {
+											logrus.Debugf("got match")
+											matched = true
+											break
+										}
 									}
 								}
 							}
 						}
+						if !matched {
+							pending = true
+							break
+						}
 					}
-					if !matched {
-						pending = true
-						break
-					}
+				} else {
+					pending = true
 				}
-			} else {
-				pending = true
 			}
+		} else {
+			logrus.Debugf("no error/progress checks cause stream %s is skipped", is.Name)
 		}
 
-		logrus.Debugf("pending is %v any errors %v for %s", pending, anyErrors, is.Name)
+		logrus.Debugf("pending is %v skipped is %v any errors %v for %s", pending, skipped, anyErrors, is.Name)
 
 		// we check for processing == true here as well to avoid churn on relists
 		if !pending && processing.Status == corev1.ConditionTrue {
 			if !anyErrors {
-				// remove this imagestream from the error reason field in case it exists there;
-				// this call is a no-op if it is not there
-				importError.Reason = strings.Replace(importError.Reason, is.Name+" ", "", -1)
+				h.clearStreamFromImportError(is.Name, importError, cfg)
 			}
 			now := kapis.Now()
 			// remove this imagestream name, including the space separator
 			logrus.Debugf("current reason %s ", processing.Reason)
-			processing.Reason = strings.Replace(processing.Reason, is.Name+" ", "", -1)
-			logrus.Debugf("processing reason now %s", processing.Reason)
-			if len(strings.TrimSpace(processing.Reason)) == 0 {
-				logrus.Debugf("reason empty setting to false")
-				processing.Status = corev1.ConditionFalse
-				processing.Reason = ""
-				// also turn off as needed migration flag if no in progress left
-				migration := cfg.Condition(v1.MigrationInProgress)
-				if migration.Status == corev1.ConditionTrue {
-					migration.LastTransitionTime = now
-					migration.LastUpdateTime = now
-					migration.Status = corev1.ConditionFalse
-					cfg.ConditionUpdate(migration)
+			replaceOccurs := strings.Contains(processing.Reason, is.Name)
+			if replaceOccurs {
+				processing.Reason = strings.Replace(processing.Reason, is.Name+" ", "", -1)
+				logrus.Debugf("processing reason now %s", processing.Reason)
+				if len(strings.TrimSpace(processing.Reason)) == 0 {
+					logrus.Println("The last in progress imagestream has completed")
+					processing.Status = corev1.ConditionFalse
+					processing.Reason = ""
 				}
+				processing.LastTransitionTime = now
+				processing.LastUpdateTime = now
+				cfg.ConditionUpdate(processing)
+				logrus.Printf("CRDUPDATE no pending / no error imgstr update %s", is.Name)
+				return h.crdwrapper.UpdateStatus(cfg)
+
 			}
-			processing.LastTransitionTime = now
-			processing.LastUpdateTime = now
-			cfg.ConditionUpdate(processing)
-			// update the import error as needed
-			logrus.Debugf("import error reason now %s", importError.Reason)
-			if len(strings.TrimSpace(importError.Reason)) == 0 {
-				importError.Status = corev1.ConditionFalse
-				importError.Reason = ""
-			} else {
-				importError.Status = corev1.ConditionTrue
-			}
-			importError.LastTransitionTime = now
-			importError.LastUpdateTime = now
-			cfg.ConditionUpdate(importError)
-			logrus.Debugf("CRDUPDATE no migration / no pending / no error imgstr update")
-			return h.crdwrapper.UpdateStatus(cfg)
 		}
 
 		// clear out error for this stream if there were errors previously but no longer are
 		// think a scheduled import failing then recovering
 		if strings.Contains(importError.Reason, is.Name) && !anyErrors {
-			now := kapis.Now()
-			importError.Reason = strings.Replace(importError.Reason, is.Name+" ", "", -1)
-			if len(strings.TrimSpace(importError.Reason)) == 0 {
-				importError.Status = corev1.ConditionFalse
-				importError.Reason = ""
-				importError.Message = ""
-			} else {
-				importError.Status = corev1.ConditionTrue
+			importError = h.clearStreamFromImportError(is.Name, importError, cfg)
+			if importError != nil {
+				logrus.Printf("CRDUPDATE no error imgstr update %s", is.Name)
+				return h.crdwrapper.UpdateStatus(cfg)
 			}
-			importError.LastTransitionTime = now
-			importError.LastUpdateTime = now
-			cfg.ConditionUpdate(importError)
-			logrus.Debugf("CRDUPDATE no error imgstr update")
 		}
 
 		return nil
@@ -181,11 +169,15 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		return fmt.Errorf("cannot upsert imagestream %s because could not obtain Config", is.Name)
 	}
 
+	if cfg.Spec.InstallType == v1.RHELSamplesDistribution && !cfg.ConditionTrue(v1.ImportCredentialsExist) {
+		return fmt.Errorf("cannot upsert imagestream %s because rhel credentials do not exist", is.Name)
+	}
+
 	imagestream, err := h.Fileimagegetter.Get(filePath)
 	if err != nil {
 		// still attempt to report error in status
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
-		logrus.Debugf("CRDUPDATE event img update err bad fs read")
+		logrus.Printf("CRDUPDATE event img update err bad fs read %s", filePath)
 		h.crdwrapper.UpdateStatus(cfg)
 		// if we get this, don't bother retrying
 		return nil
@@ -201,7 +193,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			return nil
 		}
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing imagestream %s", imagestream.Name)
-		logrus.Debugf("CRDUPDATE event img update err bad api obj update")
+		logrus.Printf("CRDUPDATE event img update err bad api obj update %s", imagestream.Name)
 		h.crdwrapper.UpdateStatus(cfg)
 		return err
 	}
@@ -221,12 +213,17 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		progressing.Reason = progressing.Reason + imagestream.Name + " "
 	}
 	cfg.ConditionUpdate(progressing)
-	logrus.Debugf("CRDUPDATE progressing true update for imagestream %s", imagestream.Name)
+	logrus.Printf("CRDUPDATE progressing true update for imagestream %s", imagestream.Name)
 	return h.crdwrapper.UpdateStatus(cfg)
 
 }
 
 func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInCluster *imagev1.ImageStream, opcfg *v1.Config) error {
+	// whether we are now skipping this imagestream, or are upserting it, remove any prior errors from the import error
+	// condition; in the skip case, we don't want errors to a now skipped stream blocking availability status; in the upsert
+	// case, any errors will cause the imagestream controller to attempt another image import
+	h.clearStreamFromImportError(imagestreamInOperatorImage.Name, opcfg.Condition(v1.ImportImageErrorsExist), opcfg)
+
 	if _, isok := h.skippedImagestreams[imagestreamInOperatorImage.Name]; isok {
 		if imagestreamInCluster != nil {
 			if imagestreamInCluster.Labels == nil {
@@ -331,4 +328,29 @@ func (h *Handler) coreUpdateDockerPullSpec(oldreg, newreg string, oldies []strin
 	}
 
 	return oldreg
+}
+
+func (h *Handler) clearStreamFromImportError(name string, importError *v1.ConfigCondition, cfg *v1.Config) *v1.ConfigCondition {
+	if strings.Contains(importError.Reason, name) {
+		logrus.Printf("clearing imagestream %s from the import image error condition", name)
+	}
+	start := strings.Index(importError.Message, "<imagestream/"+name+">")
+	end := strings.LastIndex(importError.Message, "<imagestream/"+name+">")
+	if start >= 0 && end > 0 {
+		now := kapis.Now()
+		importError.Reason = strings.Replace(importError.Reason, name+" ", "", -1)
+		entireMsg := importError.Message[start : end+len("<imagestream/"+name+">")]
+		importError.Message = strings.Replace(importError.Message, entireMsg, "", -1)
+		if len(strings.TrimSpace(importError.Reason)) == 0 {
+			importError.Status = corev1.ConditionFalse
+			importError.Reason = ""
+			importError.Message = ""
+		} else {
+			importError.Status = corev1.ConditionTrue
+		}
+		importError.LastTransitionTime = now
+		importError.LastUpdateTime = now
+		cfg.ConditionUpdate(importError)
+	}
+	return importError
 }
