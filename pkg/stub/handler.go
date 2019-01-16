@@ -281,7 +281,9 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg.Kind = "Config"
 		cfg.APIVersion = v1.GroupName + "/" + v1.Version
 		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.X86Architecture)
-		cfg.Spec.InstallType = v1.CentosSamplesDistribution
+		cfg.Spec.InstallType = v1.RHELSamplesDistribution
+		//TODO force use of registry.access.redhat.com until we sort out TBR/registry.redhat.io creds
+		cfg.Spec.SamplesRegistry = "registry.access.redhat.com"
 		cfg.Spec.ManagementState = operatorsv1api.Managed
 		h.AddFinalizer(cfg)
 		logrus.Println("creating default Config")

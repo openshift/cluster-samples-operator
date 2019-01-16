@@ -169,7 +169,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		return fmt.Errorf("cannot upsert imagestream %s because could not obtain Config", is.Name)
 	}
 
-	if cfg.Spec.InstallType == v1.RHELSamplesDistribution && !cfg.ConditionTrue(v1.ImportCredentialsExist) {
+	if cfg.ClusterNeedsCreds() {
 		return fmt.Errorf("cannot upsert imagestream %s because rhel credentials do not exist", is.Name)
 	}
 
@@ -272,6 +272,18 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 }
 
 func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.ImageStream, opcfg *v1.Config) {
+	//TODO remove when TBR creds sorted out and we do not explicitly set SamplesRegistry to registry.access.redhat.com
+	// by default we want to leave the jenkins images as using the payload set to the IMAGE* env's
+	// but if the customer overrides (after we switch to TBR and don't set SamplesRegistry by default), we'll let them
+	// change jenkins related images
+	switch imagestream.Name {
+	case "jenkins":
+		return
+	case "jenkins-agent-nodejs":
+		return
+	case "jenkins-agent-maven":
+		return
+	}
 	if len(opcfg.Spec.SamplesRegistry) > 0 {
 		logrus.Debugf("updateDockerPullSpec stream %s has repo %s", imagestream.Name, imagestream.Spec.DockerImageRepository)
 		// don't mess with deprecated field unless it is actually set with something

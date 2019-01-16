@@ -74,15 +74,10 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, Config *v1.Config, s *core
 // 2) the second boolean being true means we've updated the Config with cred exists == false and the caller should call
 // the sdk to update the object
 func (h *Handler) WaitingForCredential(cfg *v1.Config) (bool, bool) {
-	if cfg.ConditionTrue(v1.ImportCredentialsExist) {
-		return false, false
-	}
-
 	// if trying to do rhel to the default registry.redhat.io registry requires the secret
 	// be in place since registry.redhat.io requires auth to pull; since it is not ready
 	// log error state
-	if cfg.Spec.InstallType == v1.RHELSamplesDistribution &&
-		(cfg.Spec.SamplesRegistry == "" || cfg.Spec.SamplesRegistry == "registry.redhat.io") {
+	if cfg.ClusterNeedsCreds() {
 		cred := cfg.Condition(v1.ImportCredentialsExist)
 		// - if import cred is false, and the message is empty, that means we have NOT registered the error, and need to do so
 		// - if cred is false, and the message is there, we can just return nil to the sdk, which "true" for the boolean return value indicates;
@@ -95,6 +90,7 @@ func (h *Handler) WaitingForCredential(cfg *v1.Config) (bool, bool) {
 		h.processError(cfg, v1.ImportCredentialsExist, corev1.ConditionFalse, err, "%v")
 		return true, true
 	}
+
 	// this is either centos, or the cluster admin is using their own registry for rhel content, so we do not
 	// enforce the need for the credential
 	return false, false

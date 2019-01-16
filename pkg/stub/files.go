@@ -28,11 +28,12 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1.Config
 		logrus.Printf("processing file %s from dir %s", file.Name(), dir)
 
 		if strings.HasSuffix(dir, "imagestreams") {
-			imagestream, err := h.Fileimagegetter.Get(dir + "/" + file.Name())
+			path := dir + "/" + file.Name()
+			imagestream, err := h.Fileimagegetter.Get(path)
 			if err != nil {
-				return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", dir+"/"+file.Name())
+				return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", path)
 			}
-			h.imagestreamFile[imagestream.Name] = dir + "/" + file.Name()
+			h.imagestreamFile[imagestream.Name] = path
 			continue
 		}
 
