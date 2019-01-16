@@ -391,10 +391,7 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 // 2) string is the message to set on the condition
 func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, available configv1.ConditionStatus) (configv1.ConditionStatus, string) {
 	if len(failingState) > 0 {
-		if s.ConditionTrue(ImageChangesInProgress) || s.ConditionTrue(ImportImageErrorsExist) {
-			return configv1.ConditionTrue, fmt.Sprintf(noInstallDetailed, GitVersionString(), failingState)
-		}
-		return configv1.ConditionFalse, fmt.Sprintf(noInstallDetailed, GitVersionString(), failingState)
+		return configv1.ConditionTrue, fmt.Sprintf(noInstallDetailed, GitVersionString(), failingState)
 	}
 	if s.ConditionTrue(ImageChangesInProgress) {
 		return configv1.ConditionTrue, fmt.Sprintf(moving, GitVersionString())
