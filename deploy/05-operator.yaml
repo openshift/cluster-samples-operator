@@ -27,6 +27,9 @@ spec:
           command:
           - cluster-samples-operator
           imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: 10m
           env:
             - name: WATCH_NAMESPACE
               valueFrom:
