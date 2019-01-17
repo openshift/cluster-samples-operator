@@ -26,6 +26,9 @@ spec:
             name: metrics
           command:
           - cluster-samples-operator
+          resources:
+            requests:
+              cpu: 10m
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE
