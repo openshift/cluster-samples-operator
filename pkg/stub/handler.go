@@ -321,6 +321,7 @@ func (h *Handler) initConditions(cfg *v1.Config) *v1.Config {
 	cfg.Condition(v1.RemovedManagementStateOnHold)
 	cfg.Condition(v1.MigrationInProgress)
 	cfg.Condition(v1.ImportImageErrorsExist)
+	cfg.Condition(v1.ImageImportRetryInProgress)
 	return cfg
 }
 
