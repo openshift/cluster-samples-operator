@@ -111,8 +111,11 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool) {
 		// errors for skipped streams
 		clearImageImportErrors := false
 		for _, stream := range cfg.Spec.SkippedImagestreams {
-			importErrors := h.clearStreamFromImportError(stream, cfg.Condition(v1.ImportImageErrorsExist), cfg)
-			if importErrors != nil {
+			importErrors := cfg.Condition(v1.ImportImageErrorsExist)
+			beforeError := cfg.NameInReason(importErrors.Reason, stream)
+			importErrors = h.clearStreamFromImportError(stream, cfg.Condition(v1.ImportImageErrorsExist), cfg)
+			afterError := cfg.NameInReason(importErrors.Reason, stream)
+			if beforeError && !afterError {
 				clearImageImportErrors = true
 				// we do not break here cause we want to clear out all possible streams
 			}
@@ -125,9 +128,12 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool) {
 	for i, skip := range cfg.Spec.SkippedImagestreams {
 		if skip != cfg.Status.SkippedImagestreams[i] {
 			changeInContent = true
+			importErrors := cfg.Condition(v1.ImportImageErrorsExist)
+			beforeError := cfg.NameInReason(importErrors.Reason, skip)
 			logrus.Printf("SkippedImagestreams changed in content from %s to %s", cfg.Status.SkippedImagestreams[i], skip)
-			importErrors := h.clearStreamFromImportError(skip, cfg.Condition(v1.ImportImageErrorsExist), cfg)
-			if importErrors != nil {
+			importErrors = h.clearStreamFromImportError(skip, importErrors, cfg)
+			afterError := cfg.NameInReason(importErrors.Reason, skip)
+			if beforeError && !afterError {
 				clearImageImportErrors = true
 			}
 		}
@@ -163,6 +169,8 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool) {
 }
 
 func (h *Handler) buildSkipFilters(opcfg *v1.Config) {
+	h.mapsMutex.Lock()
+	defer h.mapsMutex.Unlock()
 	newStreamMap := make(map[string]bool)
 	newTempMap := make(map[string]bool)
 	for _, st := range opcfg.Spec.SkippedTemplates {
@@ -173,6 +181,32 @@ func (h *Handler) buildSkipFilters(opcfg *v1.Config) {
 	}
 	h.skippedImagestreams = newStreamMap
 	h.skippedTemplates = newTempMap
+
+}
+
+func (h *Handler) buildFileMaps(cfg *v1.Config) error {
+	h.mapsMutex.Lock()
+	defer h.mapsMutex.Unlock()
+	if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 {
+		for _, arch := range cfg.Spec.Architectures {
+			dir := h.GetBaseDir(arch, cfg)
+			files, err := h.Filefinder.List(dir)
+			if err != nil {
+				err = h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
+				logrus.Printf("CRDUPDATE file list err update")
+				h.crdwrapper.UpdateStatus(cfg)
+				return err
+			}
+			err = h.processFiles(dir, files, cfg)
+			if err != nil {
+				err = h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error processing content : %v")
+				logrus.Printf("CRDUPDATE proc file err update")
+				h.crdwrapper.UpdateStatus(cfg)
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (h *Handler) processError(opcfg *v1.Config, ctype v1.ConfigConditionType, cstatus corev1.ConditionStatus, err error, msg string, args ...interface{}) error {

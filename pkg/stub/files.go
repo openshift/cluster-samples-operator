@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// mutex for h.imagestreamFiles and h.templateFiles managed by caller h.buildFileMaps
 func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1.Config) error {
 
 	for _, file := range files {

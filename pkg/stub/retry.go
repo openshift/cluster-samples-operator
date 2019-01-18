@@ -38,10 +38,6 @@ func importTag(stream *imagev1.ImageStream, tag string) (*imagev1.ImageStreamImp
 		tag = finalTag
 	}
 
-	// reset the generation
-	zero := int64(0)
-	existing.Generation = &zero
-
 	// and create accompanying ImageStreamImport
 	return newImageStreamImportTags(stream, map[string]string{tag: existing.From.Name}), nil
 }
@@ -121,7 +117,7 @@ func newImageStreamImport(stream *imagev1.ImageStream) *imagev1.ImageStreamImpor
 	isi := &imagev1.ImageStreamImport{
 		ObjectMeta: kapis.ObjectMeta{
 			Name:            stream.Name,
-			Namespace:       "openshift",
+			Namespace:       stream.Namespace,
 			ResourceVersion: stream.ResourceVersion,
 		},
 		Spec: imagev1.ImageStreamImportSpec{Import: true},

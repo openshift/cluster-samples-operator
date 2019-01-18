@@ -206,11 +206,6 @@ const (
 	// change cycle as complete in both ClusterOperator and Config; retry on import will
 	// occur by the next relist interval if it was an intermittent issue;
 	ImportImageErrorsExist ConfigConditionType = "ImportImageErrorsExist"
-	// ImageImportRetryInProgress captures when the samples operator is retrying an image import
-	// and imagestream when it previously detected a problem occurred during the image import
-	// resulting from a prior create or update of the imagestream.  The list of imagestreams
-	// the samples operator is retrying imports for is in the Reason field of this condition.
-	ImageImportRetryInProgress ConfigConditionType = "ImageImportRetryInProgress"
 )
 
 // ConfigCondition captures various conditions of the Config

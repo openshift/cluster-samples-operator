@@ -26,6 +26,7 @@ import (
 	templateinformers "github.com/openshift/client-go/template/informers/externalversions"
 
 	sampopapi "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	sampcache "github.com/openshift/cluster-samples-operator/pkg/cache"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
 	sampopinformers "github.com/openshift/cluster-samples-operator/pkg/generated/informers/externalversions"
@@ -194,13 +195,17 @@ func (c *Controller) Run(stopCh <-chan struct{}) error {
 		workQueue: c.isWorkqueue,
 		getter:    &isGetter{},
 	}
-	go wait.Until(isQueueWorker.workqueueProcessor, time.Second, stopCh)
+	for i := 0; i < 5; i++ {
+		go wait.Until(isQueueWorker.workqueueProcessor, time.Second, stopCh)
+	}
 	tQueueWorker := queueWorker{
 		c:         c,
 		workQueue: c.tWorkqueue,
 		getter:    &tGetter{},
 	}
-	go wait.Until(tQueueWorker.workqueueProcessor, time.Second, stopCh)
+	for i := 0; i < 5; i++ {
+		go wait.Until(tQueueWorker.workqueueProcessor, time.Second, stopCh)
+	}
 
 	logrus.Println("started events processor")
 	<-stopCh
@@ -263,8 +268,13 @@ func (c *Controller) handleWork(getter runtimeObjectGetter, o interface{}) error
 		obj, err := getter.Get(c, key)
 		if err != nil {
 			// see if this is a operator bootstrap scenario
-			if kerrors.IsNotFound(err) && key == sampopapi.ConfigName {
-				return c.Bootstrap()
+			if kerrors.IsNotFound(err) {
+				_, opCR := getter.(*crGetter)
+				if opCR && key == sampopapi.ConfigName {
+					return c.Bootstrap()
+				}
+				logrus.Printf("handleWork resource %s has since been deleted, ignore update event", key)
+				return nil
 			}
 			return fmt.Errorf("handleWork failed to get %q resource: %s", key, err)
 		}
@@ -383,11 +393,22 @@ func (c *Controller) commonInformerEventHandler(keygen queueKeyGen, wq workqueue
 				}
 				logrus.Debugf("recovered deleted object %q from tombstone", object.GetName())
 			}
+			_, stream := keygen.(*imagestreamQueueKeyGen)
+			if stream && sampcache.ImageStreamDeletePartOfMassDelete(object.GetName()) {
+				logrus.Printf("one time ignoring of delete event for imagestream %s as part of group delete", object.GetName())
+				return
+			}
+			_, tpl := keygen.(*templateQueueKeyGen)
+			if tpl && sampcache.TemplateDeletePartOfMassDelete(object.GetName()) {
+				logrus.Printf("one time ignoring of delete event for template %s as part of a group delete", object.GetName())
+				return
+			}
 			key := keygen.Key(o)
 			logrus.Debugf("add event to workqueue due to %#v (delete) via %#v", key, keygen)
 			// but we pass in the actual object on delete so it can be leveraged by the
 			// event handling (objs without finalizers won't be accessible via get)
 			wq.Add(o)
+
 		},
 	}
 }

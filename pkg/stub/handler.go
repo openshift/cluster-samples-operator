@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -28,6 +29,7 @@ import (
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	"github.com/openshift/cluster-samples-operator/pkg/cache"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 
 	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samples/v1"
@@ -77,6 +79,8 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config) (*Handler, error) 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
 
+	h.mapsMutex = sync.Mutex{}
+
 	return h, nil
 }
 
@@ -108,8 +112,9 @@ type Handler struct {
 	imagestreamFile map[string]string
 	templateFile    map[string]string
 
-	creationInProgress bool
-	secretRetryCount   int8
+	mapsMutex sync.Mutex
+
+	secretRetryCount int8
 }
 
 // prepSamplesWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
@@ -143,17 +148,13 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 	}
 
 	filePath := ""
-	// if by some slim chance sample watch events come in before the first
-	// Config event return error for retry
-	if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 {
-		return nil, "", false, fmt.Errorf("samples file locations not built yet when event for %s/%s came in", kind, name)
-	}
+	// on pod restarts samples watch events come in before the first
+	// Config event, or we might not get an event at all if there were no changes,
+	// so build list here
+	h.buildFileMaps(cfg)
 
 	// make sure skip filter list is ready
-	if len(cfg.Spec.SkippedImagestreams) != len(h.skippedImagestreams) ||
-		len(cfg.Spec.SkippedTemplates) != len(h.skippedTemplates) {
-		h.buildSkipFilters(cfg)
-	}
+	h.buildSkipFilters(cfg)
 
 	inInventory := false
 	skipped := false
@@ -175,7 +176,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return cfg, "", false, nil
 	}
 
-	if deleted && !h.creationInProgress {
+	if deleted && (kind == "template" || cache.UpsertsAmount() == 0) {
 		logrus.Printf("going to recreate deleted managed sample %s/%s", kind, name)
 		return cfg, filePath, true, nil
 	}
@@ -189,10 +190,6 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 			// but return cfg to potentially toggle pending condition
 			return cfg, "", false, nil
 		}
-	}
-
-	if h.creationInProgress {
-		return cfg, "", false, fmt.Errorf("samples creation in progress when event %s/%s came in", kind, name)
 	}
 
 	return cfg, filePath, true, nil
@@ -321,15 +318,11 @@ func (h *Handler) initConditions(cfg *v1.Config) *v1.Config {
 	cfg.Condition(v1.RemovedManagementStateOnHold)
 	cfg.Condition(v1.MigrationInProgress)
 	cfg.Condition(v1.ImportImageErrorsExist)
-	cfg.Condition(v1.ImageImportRetryInProgress)
 	return cfg
 }
 
 func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 	h.buildSkipFilters(cfg)
-
-	h.imagestreamFile = map[string]string{}
-	h.templateFile = map[string]string{}
 
 	iopts := metav1.ListOptions{LabelSelector: v1.SamplesManagedLabel + "=true"}
 
@@ -351,9 +344,12 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 					logrus.Warnf("Problem deleting openshift imagestream %s on Config delete: %#v", stream.Name, err)
 					return err
 				}
+				cache.ImageStreamMassDeletesAdd(stream.Name)
 			}
 		}
 	}
+
+	cache.ClearUpsertsCache()
 
 	tempList, err := h.templateclientwrapper.List("openshift", iopts)
 	if err != nil && !kerrors.IsNotFound(err) {
@@ -373,6 +369,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 					logrus.Warnf("Problem deleting openshift template %s on Config delete: %#v", temp.Name, err)
 					return err
 				}
+				cache.TemplateMassDeletesAdd(temp.Name)
 			}
 		}
 	}
@@ -429,7 +426,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			// loop, which can lead to an extra cycle of creates as we'll return an error there and retry;
 			// so we check on local flag for creations in progress, and force a retry of the secret
 			// event; similar to what we do in the imagestream/template watches
-			if h.creationInProgress {
+			if cache.UpsertsAmount() > 0 {
 				return fmt.Errorf("retry secret event because in the middle of an sample upsert cycle")
 			}
 
@@ -626,8 +623,13 @@ func (h *Handler) Handle(event v1.Event) error {
 				cfg.ConditionTrue(v1.SamplesExist) &&
 				cfg.ConditionFalse(v1.ImageChangesInProgress) &&
 				v1.GitVersionString() == cfg.Status.Version {
-				logrus.Debugf("Handle ignoring because config the same and exists is true, in progress false, and version correct")
-				return nil
+				logrus.Debugf("At steady state: config the same and exists is true, in progress false, and version correct")
+
+				// in case this is a bring up after initial install, we take a pass
+				// and see if any samples were deleted while samples operator was down
+				h.buildFileMaps(cfg)
+				// passing in false means if the samples is present, we leave it alone
+				return h.createSamples(cfg, false)
 			}
 			// if config changed requiring an upsert, but a prior config action is still in progress,
 			// reset in progress to false and return; the next event should drive the actual
@@ -705,8 +707,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		// this boolean is driven by VariableConfigChanged based on comparing spec/status skip lists and
 		// cross referencing with any image import errors
 		if configChangeRequiresImportErrorUpdate && !configChangeRequiresUpsert {
-			importError := cfg.Condition(v1.ImportImageErrorsExist)
-			logrus.Printf("CRDUPDATE change import error status to %v with current list of error imagestreams %s", importError.Status, importError.Reason)
+			logrus.Printf("CRDUPDATE config change did not require upsert but did change import errors")
 			return h.crdwrapper.UpdateStatus(cfg)
 		}
 
@@ -716,29 +717,12 @@ func (h *Handler) Handle(event v1.Event) error {
 		}
 
 		if !cfg.ConditionTrue(v1.ImageChangesInProgress) {
-			h.creationInProgress = true
-			defer func() { h.creationInProgress = false }()
-			if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 {
-				for _, arch := range cfg.Spec.Architectures {
-					dir := h.GetBaseDir(arch, cfg)
-					files, err := h.Filefinder.List(dir)
-					if err != nil {
-						err = h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
-						logrus.Printf("CRDUPDATE file list err update")
-						h.crdwrapper.UpdateStatus(cfg)
-						return err
-					}
-					err = h.processFiles(dir, files, cfg)
-					if err != nil {
-						err = h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error processing content : %v")
-						logrus.Printf("CRDUPDATE proc file err update")
-						h.crdwrapper.UpdateStatus(cfg)
-						return err
-					}
-				}
+			err = h.buildFileMaps(cfg)
+			if err != nil {
+				return err
 			}
 
-			err = h.createSamples(cfg)
+			err = h.createSamples(cfg, true)
 			if err != nil {
 				h.processError(cfg, v1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
 				e := h.crdwrapper.UpdateStatus(cfg)
@@ -777,33 +761,81 @@ func (h *Handler) Handle(event v1.Event) error {
 
 		if !cfg.ConditionTrue(v1.SamplesExist) {
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
-			// flush updates from processing
 			logrus.Printf("CRDUPDATE exist true update")
 			return h.crdwrapper.UpdateStatus(cfg)
 		}
 
+		// it is possible that all the cached imagestream events show that
+		// the image imports are complete; hence we would not get any more
+		// events until the next relist to clear out in progress; so let's
+		// cycle through them here now
+		if cache.AllUpsertEventsArrived() {
+			keysToClear := []string{}
+			for key, is := range cache.GetUpsertImageStreams() {
+				if is == nil {
+					// never got update, refetch
+					var e error
+					is, e = h.imageclientwrapper.Get("openshift", key, metav1.GetOptions{})
+					if e != nil {
+						keysToClear = append(keysToClear, key)
+						continue
+					}
+				}
+				cfg = h.processImportStatus(is, cfg)
+			}
+			for _, key := range keysToClear {
+				cache.RemoveUpsert(key)
+			}
+		}
+		if cfg.ConditionFalse(v1.ImageChangesInProgress) {
+			logrus.Printf("CRDUPDATE setting in progress to false after examining cached imagestream events")
+			err = h.crdwrapper.UpdateStatus(cfg)
+			if err == nil {
+				// only clear out cache if we got the update through
+				cache.ClearUpsertsCache()
+			}
+			return err
+		}
 	}
 	return nil
 }
 
-func (h *Handler) createSamples(cfg *v1.Config) error {
+func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent bool) error {
+	// first, got through the list and prime our upsert cache
+	// prior to any actual upserts
+	imagestreams := []*imagev1.ImageStream{}
 	for _, fileName := range h.imagestreamFile {
 		imagestream, err := h.Fileimagegetter.Get(fileName)
 		if err != nil {
 			return err
 		}
+		if _, isok := h.skippedImagestreams[imagestream.Name]; !isok {
+			if updateIfPresent {
+				cache.AddUpsert(imagestream.Name)
+			}
+			imagestreams = append(imagestreams, imagestream)
+		}
+
+	}
+	for _, imagestream := range imagestreams {
 		is, err := h.imageclientwrapper.Get("openshift", imagestream.Name, metav1.GetOptions{})
 		if err != nil && !kerrors.IsNotFound(err) {
 			return err
 		}
 
-		if kerrors.IsNotFound(err) {
-			// testing showed that we get an empty is vs. nil in this case
+		if err == nil && !updateIfPresent {
+			continue
+		}
+
+		if kerrors.IsNotFound(err) { // testing showed that we get an empty is vs. nil in this case
 			is = nil
 		}
 
 		err = h.upsertImageStream(imagestream, is, cfg)
 		if err != nil {
+			if updateIfPresent {
+				cache.RemoveUpsert(imagestream.Name)
+			}
 			return err
 		}
 	}
@@ -818,8 +850,11 @@ func (h *Handler) createSamples(cfg *v1.Config) error {
 			return err
 		}
 
-		if kerrors.IsNotFound(err) {
-			// testing showed that we get an empty is vs. nil in this case
+		if err == nil && !updateIfPresent {
+			continue
+		}
+
+		if kerrors.IsNotFound(err) { // testing showed that we get an empty is vs. nil in this case
 			t = nil
 		}
 
