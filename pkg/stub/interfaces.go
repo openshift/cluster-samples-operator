@@ -141,6 +141,14 @@ func (g *DefaultImageStreamFromFileGetter) Get(fullFilePath string) (is *imagev1
 	if err != nil {
 		return nil, err
 	}
+	switch {
+	case imagestream.Name == "jenkins":
+		imagestream = tagInPayload("2", "IMAGE_JENKINS", imagestream)
+	case imagestream.Name == "jenkins-agent-maven":
+		imagestream = tagInPayload("v4.0", "IMAGE_AGENT_MAVEN", imagestream)
+	case imagestream.Name == "jenkins-agent-nodejs":
+		imagestream = tagInPayload("v4.0", "IMAGE_AGENT_NODEJS", imagestream)
+	}
 
 	return imagestream, nil
 }
