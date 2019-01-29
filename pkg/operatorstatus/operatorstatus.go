@@ -133,11 +133,18 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 			Message:            msg,
 			LastTransitionTime: metaapi.Now(),
 		})
-		if !modified && state.Status.Version == currentVersion {
+		if !modified && len(state.Status.Versions) > 0 && state.Status.Versions[0].Version == currentVersion {
 			return nil
 		}
 		// set a new current version when it is provided
-		state.Status.Version = currentVersion
+		if len(state.Status.Versions) == 0 {
+			state.Status.Versions = append(state.Status.Versions, configv1.OperandVersion{
+				Name:    "operator",
+				Version: currentVersion,
+			})
+		} else {
+			state.Status.Versions[0].Version = currentVersion
+		}
 		return o.ClusterOperatorWrapper.UpdateStatus(state)
 	})
 }
