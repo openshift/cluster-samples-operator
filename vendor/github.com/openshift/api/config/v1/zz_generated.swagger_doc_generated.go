@@ -60,13 +60,22 @@ func (ClientConnectionOverrides) SwaggerDoc() map[string]string {
 	return map_ClientConnectionOverrides
 }
 
-var map_ConfigMapReference = map[string]string{
-	"":    "ConfigMapReference references a configmap in the openshift-config namespace.",
+var map_ConfigMapFileReference = map[string]string{
+	"":    "ConfigMapFileReference references a config map in a specific namespace. The namespace must be specified at the point of use.",
 	"key": "Key allows pointing to a specific key/value inside of the configmap.  This is useful for logical file references.",
 }
 
-func (ConfigMapReference) SwaggerDoc() map[string]string {
-	return map_ConfigMapReference
+func (ConfigMapFileReference) SwaggerDoc() map[string]string {
+	return map_ConfigMapFileReference
+}
+
+var map_ConfigMapNameReference = map[string]string{
+	"":     "ConfigMapNameReference references a config map in a specific namespace. The namespace must be specified at the point of use.",
+	"name": "name is the metadata.name of the referenced config map",
+}
+
+func (ConfigMapNameReference) SwaggerDoc() map[string]string {
+	return map_ConfigMapNameReference
 }
 
 var map_DelegatedAuthentication = map[string]string{
@@ -162,16 +171,6 @@ func (LeaderElection) SwaggerDoc() map[string]string {
 	return map_LeaderElection
 }
 
-var map_LocalSecretReference = map[string]string{
-	"":     "LocalSecretReference references a secret within the local namespace",
-	"name": "Name of the secret in the local namespace",
-	"key":  "Key selects a specific key within the local secret. Must be a valid secret key.",
-}
-
-func (LocalSecretReference) SwaggerDoc() map[string]string {
-	return map_LocalSecretReference
-}
-
 var map_NamedCertificate = map[string]string{
 	"":      "NamedCertificate specifies a certificate/key, and the names it should be served for",
 	"names": "Names is a list of DNS names this certificate should be used to secure A name can be a normal DNS name, or can contain leading wildcard segments.",
@@ -189,6 +188,15 @@ var map_RemoteConnectionInfo = map[string]string{
 
 func (RemoteConnectionInfo) SwaggerDoc() map[string]string {
 	return map_RemoteConnectionInfo
+}
+
+var map_SecretNameReference = map[string]string{
+	"":     "SecretNameReference references a secret in a specific namespace. The namespace must be specified at the point of use.",
+	"name": "name is the metadata.name of the referenced secret",
+}
+
+func (SecretNameReference) SwaggerDoc() map[string]string {
+	return map_SecretNameReference
 }
 
 var map_ServingInfo = map[string]string{
@@ -225,6 +233,42 @@ func (StringSourceSpec) SwaggerDoc() map[string]string {
 	return map_StringSourceSpec
 }
 
+var map_APIServer = map[string]string{
+	"": "APIServer holds cluster-wide information about api-servers.  The canonical name is `cluster`",
+}
+
+func (APIServer) SwaggerDoc() map[string]string {
+	return map_APIServer
+}
+
+var map_APIServerNamedServingCert = map[string]string{
+	"":                   "APIServerNamedServingCert maps a server DNS name, as understood by a client, to a certificate.",
+	"names":              "names is a optional list of explicit DNS names (leading wildcards allowed) that should use this certificate to serve secure traffic. If no names are provided, the implicit names will be extracted from the certificates. Exact names trump over wildcard names. Explicit names defined here trump over extracted implicit names.",
+	"servingCertificate": "servingCertificate references a kubernetes.io/tls type secret containing the TLS cert info for serving secure traffic. The secret must exist in the openshift-config namespace and contain the following required fields: - Secret.Data[\"tls.key\"] - TLS private key. - Secret.Data[\"tls.crt\"] - TLS certificate.",
+}
+
+func (APIServerNamedServingCert) SwaggerDoc() map[string]string {
+	return map_APIServerNamedServingCert
+}
+
+var map_APIServerServingCerts = map[string]string{
+	"defaultServingCertificate": "defaultServingCertificate references a kubernetes.io/tls type secret containing the default TLS cert info for serving secure traffic. If no named certificates match the server name as understood by a client, this default certificate will be used. If defaultServingCertificate is not specified, then a operator managed certificate will be used. The secret must exist in the openshift-config namespace and contain the following required fields: - Secret.Data[\"tls.key\"] - TLS private key. - Secret.Data[\"tls.crt\"] - TLS certificate.",
+	"namedCertificates":         "namedCertificates references secrets containing the TLS cert info for serving secure traffic to specific hostnames. If no named certificates are provided, or no named certificates match the server name as understood by a client, the defaultServingCertificate will be used.",
+}
+
+func (APIServerServingCerts) SwaggerDoc() map[string]string {
+	return map_APIServerServingCerts
+}
+
+var map_APIServerSpec = map[string]string{
+	"servingCerts": "servingCert is the TLS cert info for serving secure traffic. If not specified, operator managed certificates will be used for serving secure traffic.",
+	"clientCA":     "clientCA references a ConfigMap containing a certificate bundle for the signers that will be recognized for incoming client certificates in addition to the operator managed signers. If this is empty, then only operator managed signers are valid. You usually only have to set this if you have your own PKI you wish to honor client certificates from. The ConfigMap must exist in the openshift-config namespace and contain the following required fields: - ConfigMap.Data[\"ca-bundle.crt\"] - CA bundle.",
+}
+
+func (APIServerSpec) SwaggerDoc() map[string]string {
+	return map_APIServerSpec
+}
+
 var map_Authentication = map[string]string{
 	"":         "Authentication holds cluster-wide information about Authentication.  The canonical name is `cluster`",
 	"metadata": "Standard object's metadata.",
@@ -245,8 +289,9 @@ func (AuthenticationList) SwaggerDoc() map[string]string {
 }
 
 var map_AuthenticationSpec = map[string]string{
-	"oauthMetadata":              "oauthMetadata contains the discovery endpoint data for OAuth 2.0 Authorization Server Metadata for an external OAuth server. This discovery document can be viewed from its served location: oc get --raw '/.well-known/oauth-authorization-server' For further details, see the IETF Draft: https://tools.ietf.org/html/draft-ietf-oauth-discovery-04#section-2 If oauthMetadata.name is non-empty, this value has precedence over the observed value stored in status.oauthMetadata",
-	"webhookTokenAuthenticators": "webhookTokenAuthenticators configures remote token reviewers. These remote authentication webhooks can be used to verify bearer tokens via the tokenreviews.authentication.k8s.io REST API.  This is required to honor bearer tokens that are provisioned by an external authentication service.",
+	"type":                       "type identifies the cluster managed, user facing authentication mode in use. Specifically, it manages the component that responds to login attempts. The default is IntegratedOAuth.",
+	"oauthMetadata":              "oauthMetadata contains the discovery endpoint data for OAuth 2.0 Authorization Server Metadata for an external OAuth server. This discovery document can be viewed from its served location: oc get --raw '/.well-known/oauth-authorization-server' For further details, see the IETF Draft: https://tools.ietf.org/html/draft-ietf-oauth-discovery-04#section-2 If oauthMetadata.name is non-empty, this value has precedence over any metadata reference stored in status. The key \"oauthMetadata\" is used to locate the data. If specified and the config map or expected key is not found, no metadata is served. If the specified metadata is not valid, no metadata is served. The namespace for this config map is openshift-config.",
+	"webhookTokenAuthenticators": "webhookTokenAuthenticators configures remote token reviewers. These remote authentication webhooks can be used to verify bearer tokens via the tokenreviews.authentication.k8s.io REST API.  This is required to honor bearer tokens that are provisioned by an external authentication service. The namespace for these secrets is openshift-config.",
 }
 
 func (AuthenticationSpec) SwaggerDoc() map[string]string {
@@ -254,7 +299,7 @@ func (AuthenticationSpec) SwaggerDoc() map[string]string {
 }
 
 var map_AuthenticationStatus = map[string]string{
-	"oauthMetadata": "oauthMetadata contains the discovery endpoint data for OAuth 2.0 Authorization Server Metadata for an external OAuth server. This discovery document can be viewed from its served location: oc get --raw '/.well-known/oauth-authorization-server' For further details, see the IETF Draft: https://tools.ietf.org/html/draft-ietf-oauth-discovery-04#section-2 This contains the observed value based on cluster state. An explicitly set value in spec.oauthMetadata has precedence over this field.",
+	"integratedOAuthMetadata": "integratedOAuthMetadata contains the discovery endpoint data for OAuth 2.0 Authorization Server Metadata for the in-cluster integrated OAuth server. This discovery document can be viewed from its served location: oc get --raw '/.well-known/oauth-authorization-server' For further details, see the IETF Draft: https://tools.ietf.org/html/draft-ietf-oauth-discovery-04#section-2 This contains the observed value based on cluster state. An explicitly set value in spec.oauthMetadata has precedence over this field. This field has no meaning if authentication spec.type is not set to IntegratedOAuth. The key \"oauthMetadata\" is used to locate the data. If the config map or expected key is not found, no metadata is served. If the specified metadata is not valid, no metadata is served. The namespace for this config map is openshift-config-managed.",
 }
 
 func (AuthenticationStatus) SwaggerDoc() map[string]string {
@@ -263,7 +308,7 @@ func (AuthenticationStatus) SwaggerDoc() map[string]string {
 
 var map_WebhookTokenAuthenticator = map[string]string{
 	"":           "webhookTokenAuthenticator holds the necessary configuration options for a remote token authenticator",
-	"kubeConfig": "kubeConfig contains kube config file data which describes how to access the remote webhook service. For further details, see: https://kubernetes.io/docs/reference/access-authn-authz/authentication/#webhook-token-authentication",
+	"kubeConfig": "kubeConfig contains kube config file data which describes how to access the remote webhook service. For further details, see: https://kubernetes.io/docs/reference/access-authn-authz/authentication/#webhook-token-authentication The key \"kubeConfig\" is used to locate the data. If the secret or expected key is not found, the webhook is not honored. If the specified kube config data is not valid, the webhook is not honored. The namespace for this secret is determined by the point of use.",
 }
 
 func (WebhookTokenAuthenticator) SwaggerDoc() map[string]string {
@@ -280,11 +325,12 @@ func (Build) SwaggerDoc() map[string]string {
 }
 
 var map_BuildDefaults = map[string]string{
-	"defaultProxy": "DefaultProxy contains the default proxy settings for all build operations, including image pull/push and source download.\n\nValues can be overrode by setting the `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` environment variables in the build config's strategy.",
-	"gitProxy":     "GitProxy contains the proxy settings for git operations only. If set, this will override any Proxy settings for all git commands, such as git clone.\n\nValues that are not set here will be inherited from DefaultProxy.",
-	"env":          "Env is a set of default environment variables that will be applied to the build if the specified variables do not exist on the build",
-	"imageLabels":  "ImageLabels is a list of docker labels that are applied to the resulting image. User can override a default label by providing a label with the same name in their Build/BuildConfig.",
-	"resources":    "Resources defines resource requirements to execute the build.",
+	"defaultProxy":     "DefaultProxy contains the default proxy settings for all build operations, including image pull/push and source download.\n\nValues can be overrode by setting the `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` environment variables in the build config's strategy.",
+	"gitProxy":         "GitProxy contains the proxy settings for git operations only. If set, this will override any Proxy settings for all git commands, such as git clone.\n\nValues that are not set here will be inherited from DefaultProxy.",
+	"env":              "Env is a set of default environment variables that will be applied to the build if the specified variables do not exist on the build",
+	"imageLabels":      "ImageLabels is a list of docker labels that are applied to the resulting image. User can override a default label by providing a label with the same name in their Build/BuildConfig.",
+	"resources":        "Resources defines resource requirements to execute the build.",
+	"registriesConfig": "RegistriesConfig controls the registries allowed for image pull and push.",
 }
 
 func (BuildDefaults) SwaggerDoc() map[string]string {
@@ -310,7 +356,7 @@ func (BuildOverrides) SwaggerDoc() map[string]string {
 }
 
 var map_BuildSpec = map[string]string{
-	"additionalTrustedCA": "AdditionalTrustedCA is a reference to a ConfigMap containing additional CAs that should be trusted for image pushes and pulls during builds.",
+	"additionalTrustedCA": "AdditionalTrustedCA is a reference to a ConfigMap containing additional CAs that should be trusted for image pushes and pulls during builds. The namespace for this config map is openshift-config.",
 	"buildDefaults":       "BuildDefaults controls the default information for Builds",
 	"buildOverrides":      "BuildOverrides controls override settings for builds",
 }
@@ -326,6 +372,17 @@ var map_ImageLabel = map[string]string{
 
 func (ImageLabel) SwaggerDoc() map[string]string {
 	return map_ImageLabel
+}
+
+var map_RegistriesConfig = map[string]string{
+	"searchRegistries":   "SearchRegistries lists the registries to search for images if an image repository is not specified in an image pull spec.\n\nIf this is not set, builds will search Docker Hub (docker.io) when a repository is not specified. Setting this to an empty list will require all builds to fully qualify their image pull specs.",
+	"insecureRegistries": "InsecureRegistries are registries which do not have a valid SSL certificate or only support HTTP connections.",
+	"blockedRegistries":  "BlockedRegistries are blacklisted from image pull/push. All other registries are allowed.\n\nOnly one of BlockedRegistries or AllowedRegistries may be set.",
+	"allowedRegistries":  "AllowedRegistries are whitelisted for image pull/push. All other registries are blocked.\n\nOnly one of BlockedRegistries or AllowedRegistries may be set.",
+}
+
+func (RegistriesConfig) SwaggerDoc() map[string]string {
+	return map_RegistriesConfig
 }
 
 var map_ClusterOperator = map[string]string{
@@ -355,10 +412,11 @@ func (ClusterOperatorSpec) SwaggerDoc() map[string]string {
 }
 
 var map_ClusterOperatorStatus = map[string]string{
-	"":           "ClusterOperatorStatus provides information about the status of the operator.",
-	"conditions": "conditions describes the state of the operator's reconciliation functionality.",
-	"version":    "version indicates which version of the operator updated the current status object.",
-	"extension":  "extension contains any additional status information specific to the operator which owns this status object.",
+	"":               "ClusterOperatorStatus provides information about the status of the operator.",
+	"conditions":     "conditions describes the state of the operator's reconciliation functionality.",
+	"versions":       "versions is a slice of operand version tuples.  Operators which manage multiple operands will have multiple entries in the array.  If an operator is Available, it must have at least one entry.  You must report the version of the operator itself with the name \"operator\".",
+	"relatedObjects": "relatedObjects is a list of objects that are \"interesting\" or related to this operator.  Common uses are: 1. the detailed resource driving the operator 2. operator namespaces 3. operand namespaces",
+	"extension":      "extension contains any additional status information specific to the operator which owns this status object.",
 }
 
 func (ClusterOperatorStatus) SwaggerDoc() map[string]string {
@@ -376,6 +434,27 @@ var map_ClusterOperatorStatusCondition = map[string]string{
 
 func (ClusterOperatorStatusCondition) SwaggerDoc() map[string]string {
 	return map_ClusterOperatorStatusCondition
+}
+
+var map_ObjectReference = map[string]string{
+	"":          "ObjectReference contains enough information to let you inspect or modify the referred object.",
+	"group":     "group of the referent.",
+	"resource":  "resource of the referent.",
+	"namespace": "namespace of the referent.",
+	"name":      "name of the referent.",
+}
+
+func (ObjectReference) SwaggerDoc() map[string]string {
+	return map_ObjectReference
+}
+
+var map_OperandVersion = map[string]string{
+	"name":    "name is the name of the particular operand this version is for.  It usually matches container images, not operators.",
+	"version": "version indicates which version of a particular operand is currently being manage.  It must always match the Available condition.  If 1.0.0 is Available, then this must indicate 1.0.0 even if the operator is trying to rollout 1.1.0",
+}
+
+func (OperandVersion) SwaggerDoc() map[string]string {
+	return map_OperandVersion
 }
 
 var map_ClusterVersion = map[string]string{
@@ -399,7 +478,7 @@ func (ClusterVersionList) SwaggerDoc() map[string]string {
 var map_ClusterVersionSpec = map[string]string{
 	"":              "ClusterVersionSpec is the desired version state of the cluster. It includes the version the cluster should be at, how the cluster is identified, and where the cluster should look for version updates.",
 	"clusterID":     "clusterID uniquely identifies this cluster. This is expected to be an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in hexadecimal values). This is a required field.",
-	"desiredUpdate": "desiredUpdate is an optional field that indicates the desired value of the cluster version. Setting this value will trigger an upgrade (if the current version does not match the desired version). The set of recommended update values is listed as part of available updates in status, and setting values outside that range may cause the upgrade to fail.\n\nIf an upgrade fails the operator will halt and report status about the failing component. Setting the desired update value back to the previous version will cause a rollback to be attempted. Not all rollbacks will succeed.",
+	"desiredUpdate": "desiredUpdate is an optional field that indicates the desired value of the cluster version. Setting this value will trigger an upgrade (if the current version does not match the desired version). The set of recommended update values is listed as part of available updates in status, and setting values outside that range may cause the upgrade to fail. You may specify the version field without setting image if an update exists with that version in the availableUpdates or history.\n\nIf an upgrade fails the operator will halt and report status about the failing component. Setting the desired update value back to the previous version will cause a rollback to be attempted. Not all rollbacks will succeed.",
 	"upstream":      "upstream may be used to specify the preferred update server. By default it will use the appropriate update server for the cluster and region.",
 	"channel":       "channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster. The default channel will be contain stable updates that are appropriate for production clusters.",
 	"overrides":     "overrides is list of overides for components that are managed by cluster version operator. Marking a component unmanaged will prevent the operator from creating or updating the object.",
@@ -410,13 +489,13 @@ func (ClusterVersionSpec) SwaggerDoc() map[string]string {
 }
 
 var map_ClusterVersionStatus = map[string]string{
-	"":                 "ClusterVersionStatus reports the status of the cluster versioning, including any upgrades that are in progress. The current field will be set to whichever version the cluster is reconciling to, and the conditions array will report whether the update succeeded, is in progress, or is failing.",
-	"desired":          "desired is the version that the cluster is reconciling towards. If the cluster is not yet fully initialized desired will be set with the information available, which may be a payload or a tag.",
-	"history":          "history contains a list of the most recent versions applied to the cluster. This value may be empty during cluster startup, and then will be updated when a new update is being applied. The newest update is first in the list and it is ordered by recency. Updates in the history have state Completed if the rollout completed - if an update was failing or halfway applied the state will be Partial. Only a limited amount of update history is preserved.",
-	"generation":       "generation reports which version of the spec is being processed. If this value is not equal to metadata.generation, then the current and conditions fields have not yet been updated to reflect the latest request.",
-	"versionHash":      "versionHash is a fingerprint of the content that the cluster will be updated with. It is used by the operator to avoid unnecessary work and is for internal use only.",
-	"conditions":       "conditions provides information about the cluster version. The condition \"Available\" is set to true if the desiredUpdate has been reached. The condition \"Progressing\" is set to true if an update is being applied. The condition \"Failing\" is set to true if an update is currently blocked by a temporary or permanent error. Conditions are only valid for the current desiredUpdate when metadata.generation is equal to status.generation.",
-	"availableUpdates": "availableUpdates contains the list of updates that are appropriate for this cluster. This list may be empty if no updates are recommended, if the update service is unavailable, or if an invalid channel has been specified.",
+	"":                   "ClusterVersionStatus reports the status of the cluster versioning, including any upgrades that are in progress. The current field will be set to whichever version the cluster is reconciling to, and the conditions array will report whether the update succeeded, is in progress, or is failing.",
+	"desired":            "desired is the version that the cluster is reconciling towards. If the cluster is not yet fully initialized desired will be set with the information available, which may be an image or a tag.",
+	"history":            "history contains a list of the most recent versions applied to the cluster. This value may be empty during cluster startup, and then will be updated when a new update is being applied. The newest update is first in the list and it is ordered by recency. Updates in the history have state Completed if the rollout completed - if an update was failing or halfway applied the state will be Partial. Only a limited amount of update history is preserved.",
+	"observedGeneration": "observedGeneration reports which version of the spec is being synced. If this value is not equal to metadata.generation, then the desired and conditions fields may represent from a previous version.",
+	"versionHash":        "versionHash is a fingerprint of the content that the cluster will be updated with. It is used by the operator to avoid unnecessary work and is for internal use only.",
+	"conditions":         "conditions provides information about the cluster version. The condition \"Available\" is set to true if the desiredUpdate has been reached. The condition \"Progressing\" is set to true if an update is being applied. The condition \"Failing\" is set to true if an update is currently blocked by a temporary or permanent error. Conditions are only valid for the current desiredUpdate when metadata.generation is equal to status.generation.",
+	"availableUpdates":   "availableUpdates contains the list of updates that are appropriate for this cluster. This list may be empty if no updates are recommended, if the update service is unavailable, or if an invalid channel has been specified.",
 }
 
 func (ClusterVersionStatus) SwaggerDoc() map[string]string {
@@ -437,9 +516,9 @@ func (ComponentOverride) SwaggerDoc() map[string]string {
 }
 
 var map_Update = map[string]string{
-	"":        "Update represents a release of the ClusterVersionOperator, referenced by the Payload member.",
-	"version": "version is a semantic versioning identifying the update version. When this field is part of spec, version is optional if payload is specified.",
-	"payload": "payload is a container image location that contains the update. When this field is part of spec, payload is optional if version is specified and the availableUpdates field contains a matching version.",
+	"":        "Update represents a release of the ClusterVersionOperator, referenced by the Image member.",
+	"version": "version is a semantic versioning identifying the update version. When this field is part of spec, version is optional if image is specified.",
+	"image":   "image is a container image location that contains the update. When this field is part of spec, image is optional if version is specified and the availableUpdates field contains a matching version.",
 }
 
 func (Update) SwaggerDoc() map[string]string {
@@ -451,8 +530,8 @@ var map_UpdateHistory = map[string]string{
 	"state":          "state reflects whether the update was fully applied. The Partial state indicates the update is not fully applied, while the Completed state indicates the update was successfully rolled out at least once (all parts of the update successfully applied).",
 	"startedTime":    "startedTime is the time at which the update was started.",
 	"completionTime": "completionTime, if set, is when the update was fully applied. The update that is currently being applied will have a null completion time. Completion time will always be set for entries that are not the current update (usually to the started time of the next update).",
-	"version":        "version is a semantic versioning identifying the update version. If the requested payload does not define a version, or if a failure occurs retrieving the payload, this value may be empty.",
-	"payload":        "payload is a container image location that contains the update. This value is always populated.",
+	"version":        "version is a semantic versioning identifying the update version. If the requested image does not define a version, or if a failure occurs retrieving the image, this value may be empty.",
+	"image":          "image is a container image location that contains the update. This value is always populated.",
 }
 
 func (UpdateHistory) SwaggerDoc() map[string]string {
@@ -470,12 +549,28 @@ func (Console) SwaggerDoc() map[string]string {
 	return map_Console
 }
 
+var map_ConsoleAuthentication = map[string]string{
+	"logoutRedirect": "An optional, absolute URL to redirect web browsers to after logging out of the console. If not specified, it will redirect to the default login page. This is required when using an identity provider that supports single sign-on (SSO) such as: - OpenID (Keycloak, Azure) - RequestHeader (GSSAPI, SSPI, SAML) - OAuth (GitHub, GitLab, Google) Logging out of the console will destroy the user's token. The logoutRedirect provides the user the option to perform single logout (SLO) through the identity provider to destroy their single sign-on session.",
+}
+
+func (ConsoleAuthentication) SwaggerDoc() map[string]string {
+	return map_ConsoleAuthentication
+}
+
 var map_ConsoleList = map[string]string{
 	"metadata": "Standard object's metadata.",
 }
 
 func (ConsoleList) SwaggerDoc() map[string]string {
 	return map_ConsoleList
+}
+
+var map_ConsoleStatus = map[string]string{
+	"publicHostname": "The hostname for the console. This will match the host for the route that is created for the console.",
+}
+
+func (ConsoleStatus) SwaggerDoc() map[string]string {
+	return map_ConsoleStatus
 }
 
 var map_DNS = map[string]string{
@@ -505,25 +600,6 @@ func (DNSSpec) SwaggerDoc() map[string]string {
 	return map_DNSSpec
 }
 
-var map_IdentityProvider = map[string]string{
-	"":         "IdentityProvider holds cluster-wide information about IdentityProvider.  The canonical name is `cluster`",
-	"metadata": "Standard object's metadata.",
-	"spec":     "spec holds user settable values for configuration",
-	"status":   "status holds observed values from the cluster. They may not be overridden.",
-}
-
-func (IdentityProvider) SwaggerDoc() map[string]string {
-	return map_IdentityProvider
-}
-
-var map_IdentityProviderList = map[string]string{
-	"metadata": "Standard object's metadata.",
-}
-
-func (IdentityProviderList) SwaggerDoc() map[string]string {
-	return map_IdentityProviderList
-}
-
 var map_Image = map[string]string{
 	"":         "Image holds cluster-wide information about how to handle images.  The canonical name is `cluster`",
 	"metadata": "Standard object's metadata.",
@@ -546,7 +622,7 @@ func (ImageList) SwaggerDoc() map[string]string {
 var map_ImageSpec = map[string]string{
 	"allowedRegistriesForImport": "AllowedRegistriesForImport limits the container image registries that normal users may import images from. Set this list to the registries that you trust to contain valid Docker images and that you want applications to be able to import from. Users with permission to create Images or ImageStreamMappings via the API are not affected by this policy - typically only administrators or system integrations will have those permissions.",
 	"externalRegistryHostnames":  "externalRegistryHostnames provides the hostnames for the default external image registry. The external hostname should be set only when the image registry is exposed externally. The first value is used in 'publicDockerImageRepository' field in ImageStreams. The value must be in \"hostname[:port]\" format.",
-	"additionalTrustedCA":        "AdditionalTrustedCA is a reference to a ConfigMap containing additional CAs that should be trusted during imagestream import.",
+	"additionalTrustedCA":        "AdditionalTrustedCA is a reference to a ConfigMap containing additional CAs that should be trusted during imagestream import. The namespace for this config map is openshift-config.",
 }
 
 func (ImageSpec) SwaggerDoc() map[string]string {
@@ -584,6 +660,7 @@ func (Infrastructure) SwaggerDoc() map[string]string {
 }
 
 var map_InfrastructureList = map[string]string{
+	"":         "InfrastructureList is",
 	"metadata": "Standard object's metadata.",
 }
 
@@ -591,8 +668,17 @@ func (InfrastructureList) SwaggerDoc() map[string]string {
 	return map_InfrastructureList
 }
 
+var map_InfrastructureSpec = map[string]string{
+	"": "InfrastructureSpec contains settings that apply to the cluster infrastructure.",
+}
+
+func (InfrastructureSpec) SwaggerDoc() map[string]string {
+	return map_InfrastructureSpec
+}
+
 var map_InfrastructureStatus = map[string]string{
-	"platform": "platform is the underlying infrastructure provider for the cluster. This value controls whether infrastructure automation such as service load balancers, dynamic volume provisioning, machine creation and deletion, and other integrations are enabled. If None, no infrastructure automation is enabled.",
+	"":         "InfrastructureStatus describes the infrastructure the cluster is leveraging.",
+	"platform": "platform is the underlying infrastructure provider for the cluster. This value controls whether infrastructure automation such as service load balancers, dynamic volume provisioning, machine creation and deletion, and other integrations are enabled. If None, no infrastructure automation is enabled. Allowed values are \"AWS\", \"Azure\", \"GCP\", \"Libvirt\", \"OpenStack\", \"VSphere\", and \"None\". Individual components may not support all platforms, and must handle unrecognized platforms as None if they do not support that platform.",
 }
 
 func (InfrastructureStatus) SwaggerDoc() map[string]string {
@@ -678,22 +764,22 @@ func (NetworkStatus) SwaggerDoc() map[string]string {
 	return map_NetworkStatus
 }
 
-var map_BasicAuthPasswordIdentityProvider = map[string]string{
+var map_BasicAuthIdentityProvider = map[string]string{
 	"": "BasicAuthPasswordIdentityProvider provides identities for users authenticating using HTTP basic auth credentials",
 }
 
-func (BasicAuthPasswordIdentityProvider) SwaggerDoc() map[string]string {
-	return map_BasicAuthPasswordIdentityProvider
+func (BasicAuthIdentityProvider) SwaggerDoc() map[string]string {
+	return map_BasicAuthIdentityProvider
 }
 
 var map_GitHubIdentityProvider = map[string]string{
 	"":              "GitHubIdentityProvider provides identities for users authenticating using GitHub credentials",
 	"clientID":      "clientID is the oauth client ID",
-	"clientSecret":  "clientSecret is is a reference to the secret containing the oauth client secret The secret referenced must contain a key named `clientSecret` containing the secret data.",
+	"clientSecret":  "clientSecret is a required reference to the secret by name containing the oauth client secret. The key \"clientSecret\" is used to locate the data. If the secret or expected key is not found, the identity provider is not honored. The namespace for this secret is openshift-config.",
 	"organizations": "organizations optionally restricts which organizations are allowed to log in",
 	"teams":         "teams optionally restricts which teams are allowed to log in. Format is <org>/<team>.",
 	"hostname":      "hostname is the optional domain (e.g. \"mycompany.com\") for use with a hosted instance of GitHub Enterprise. It must match the GitHub Enterprise settings value configured at /setup/settings#hostname.",
-	"ca":            "ca is a reference to a ConfigMap containing an optional trusted certificate authority bundle to use when making requests to the server. If empty, the default system roots are used. This can only be configured when hostname is set to a non-empty value.",
+	"ca":            "ca is an optional reference to a config map by name containing the PEM-encoded CA bundle. It is used as a trust anchor to validate the TLS certificate presented by the remote server. The key \"ca.crt\" is used to locate the data. If specified and the config map or expected key is not found, the identity provider is not honored. If the specified ca data is not valid, the identity provider is not honored. If empty, the default system roots are used. This can only be configured when hostname is set to a non-empty value. The namespace for this config map is openshift-config.",
 }
 
 func (GitHubIdentityProvider) SwaggerDoc() map[string]string {
@@ -702,11 +788,10 @@ func (GitHubIdentityProvider) SwaggerDoc() map[string]string {
 
 var map_GitLabIdentityProvider = map[string]string{
 	"":             "GitLabIdentityProvider provides identities for users authenticating using GitLab credentials",
-	"ca":           "ca is a reference to a ConfigMap containing an optional trusted certificate authority bundle to use when making requests to the server. If empty, the default system roots are used.",
-	"url":          "url is the oauth server base URL",
 	"clientID":     "clientID is the oauth client ID",
-	"clientSecret": "clientSecret is is a reference to the secret containing the oauth client secret The secret referenced must contain a key named `clientSecret` containing the secret data.",
-	"legacy":       "legacy determines that OAuth2 should be used, not OIDC",
+	"clientSecret": "clientSecret is a required reference to the secret by name containing the oauth client secret. The key \"clientSecret\" is used to locate the data. If the secret or expected key is not found, the identity provider is not honored. The namespace for this secret is openshift-config.",
+	"url":          "url is the oauth server base URL",
+	"ca":           "ca is an optional reference to a config map by name containing the PEM-encoded CA bundle. It is used as a trust anchor to validate the TLS certificate presented by the remote server. The key \"ca.crt\" is used to locate the data. If specified and the config map or expected key is not found, the identity provider is not honored. If the specified ca data is not valid, the identity provider is not honored. If empty, the default system roots are used. The namespace for this config map is openshift-config.",
 }
 
 func (GitLabIdentityProvider) SwaggerDoc() map[string]string {
@@ -716,7 +801,7 @@ func (GitLabIdentityProvider) SwaggerDoc() map[string]string {
 var map_GoogleIdentityProvider = map[string]string{
 	"":             "GoogleIdentityProvider provides identities for users authenticating using Google credentials",
 	"clientID":     "clientID is the oauth client ID",
-	"clientSecret": "clientSecret is is a reference to the secret containing the oauth client secret The secret referenced must contain a key named `clientSecret` containing the secret data.",
+	"clientSecret": "clientSecret is a required reference to the secret by name containing the oauth client secret. The key \"clientSecret\" is used to locate the data. If the secret or expected key is not found, the identity provider is not honored. The namespace for this secret is openshift-config.",
 	"hostedDomain": "hostedDomain is the optional Google App domain (e.g. \"mycompany.com\") to restrict logins to",
 }
 
@@ -724,43 +809,52 @@ func (GoogleIdentityProvider) SwaggerDoc() map[string]string {
 	return map_GoogleIdentityProvider
 }
 
-var map_HTPasswdPasswordIdentityProvider = map[string]string{
+var map_HTPasswdIdentityProvider = map[string]string{
 	"":         "HTPasswdPasswordIdentityProvider provides identities for users authenticating using htpasswd credentials",
-	"fileData": "fileData is a reference to a secret containing the data to use as the htpasswd file Looks under the key `htpasswd` unless a lookup key is specified in the secret ref",
+	"fileData": "fileData is a required reference to a secret by name containing the data to use as the htpasswd file. The key \"htpasswd\" is used to locate the data. If the secret or expected key is not found, the identity provider is not honored. If the specified htpasswd data is not valid, the identity provider is not honored. The namespace for this secret is openshift-config.",
 }
 
-func (HTPasswdPasswordIdentityProvider) SwaggerDoc() map[string]string {
-	return map_HTPasswdPasswordIdentityProvider
+func (HTPasswdIdentityProvider) SwaggerDoc() map[string]string {
+	return map_HTPasswdIdentityProvider
+}
+
+var map_IdentityProvider = map[string]string{
+	"":              "IdentityProvider provides identities for users authenticating using credentials",
+	"name":          "name is used to qualify the identities returned by this provider. - It MUST be unique and not shared by any other identity provider used - It MUST be a valid path segment: name cannot equal \".\" or \"..\" or contain \"/\" or \"%\" or \":\"\n  Ref: https://godoc.org/github.com/openshift/origin/pkg/user/apis/user/validation#ValidateIdentityProviderName",
+	"challenge":     "challenge indicates whether to issue WWW-Authenticate challenges for this provider",
+	"login":         "login indicates whether to use this identity provider for unauthenticated browsers to login against",
+	"mappingMethod": "mappingMethod determines how identities from this provider are mapped to users Defaults to \"claim\"",
+}
+
+func (IdentityProvider) SwaggerDoc() map[string]string {
+	return map_IdentityProvider
 }
 
 var map_IdentityProviderConfig = map[string]string{
 	"":              "IdentityProviderConfig contains configuration for using a specific identity provider",
 	"type":          "type identifies the identity provider type for this entry.",
 	"basicAuth":     "basicAuth contains configuration options for the BasicAuth IdP",
-	"allowAll":      "allowAll enables the AllowAllIdentityProvider which provides identities for users authenticating using non-empty passwords. Defaults to `false`, i.e. allowAll set to off",
-	"denyAll":       "denyAll enables the DenyAllPasswordIdentityProvider which provides no identities for users Defaults to `false`, ie. denyAll set to off",
-	"htpasswd":      "htpasswd enables user authentication using an HTPasswd file to validate credentials",
-	"ldap":          "ldap enables user authentication using LDAP credentials",
-	"keystone":      "keystone enables user authentication using keystone password credentials",
-	"requestHeader": "requestHeader enables user authentication using request header credentials",
-	"github":        "github enables  user authentication using GitHub credentials",
+	"github":        "github enables user authentication using GitHub credentials",
 	"gitlab":        "gitlab enables user authentication using GitLab credentials",
 	"google":        "google enables user authentication using Google credentials",
+	"htpasswd":      "htpasswd enables user authentication using an HTPasswd file to validate credentials",
+	"keystone":      "keystone enables user authentication using keystone password credentials",
+	"ldap":          "ldap enables user authentication using LDAP credentials",
 	"openID":        "openID enables user authentication using OpenID credentials",
+	"requestHeader": "requestHeader enables user authentication using request header credentials",
 }
 
 func (IdentityProviderConfig) SwaggerDoc() map[string]string {
 	return map_IdentityProviderConfig
 }
 
-var map_KeystonePasswordIdentityProvider = map[string]string{
-	"":                    "KeystonePasswordIdentityProvider provides identities for users authenticating using keystone password credentials",
-	"domainName":          "domainName is required for keystone v3",
-	"useKeystoneIdentity": "useKeystoneIdentity flag indicates that user should be authenticated by username, not keystone ID DEPRECATED - only use this option for legacy systems to ensure backwards compatibiity",
+var map_KeystoneIdentityProvider = map[string]string{
+	"":           "KeystonePasswordIdentityProvider provides identities for users authenticating using keystone password credentials",
+	"domainName": "domainName is required for keystone v3",
 }
 
-func (KeystonePasswordIdentityProvider) SwaggerDoc() map[string]string {
-	return map_KeystonePasswordIdentityProvider
+func (KeystoneIdentityProvider) SwaggerDoc() map[string]string {
+	return map_KeystoneIdentityProvider
 }
 
 var map_LDAPAttributeMapping = map[string]string{
@@ -775,47 +869,34 @@ func (LDAPAttributeMapping) SwaggerDoc() map[string]string {
 	return map_LDAPAttributeMapping
 }
 
-var map_LDAPPasswordIdentityProvider = map[string]string{
+var map_LDAPIdentityProvider = map[string]string{
 	"":             "LDAPPasswordIdentityProvider provides identities for users authenticating using LDAP credentials",
-	"url":          "url is an RFC 2255 URL which specifies the LDAP search parameters to use. The syntax of the URL is:\n   ldap://host:port/basedn?attribute?scope?filter",
+	"url":          "url is an RFC 2255 URL which specifies the LDAP search parameters to use. The syntax of the URL is: ldap://host:port/basedn?attribute?scope?filter",
 	"bindDN":       "bindDN is an optional DN to bind with during the search phase.",
-	"bindPassword": "bindPassword is a reference to the secret containing an optional password to bind with during the search phase. Looks under the key `bindPassword` unless a lookup key is specified in the secret ref",
+	"bindPassword": "bindPassword is an optional reference to a secret by name containing a password to bind with during the search phase. The key \"bindPassword\" is used to locate the data. If specified and the secret or expected key is not found, the identity provider is not honored. The namespace for this secret is openshift-config.",
 	"insecure":     "insecure, if true, indicates the connection should not use TLS WARNING: Should not be set to `true` with the URL scheme \"ldaps://\" as \"ldaps://\" URLs always\n         attempt to connect using TLS, even when `insecure` is set to `true`\nWhen `true`, \"ldap://\" URLS connect insecurely. When `false`, \"ldap://\" URLs are upgraded to a TLS connection using StartTLS as specified in https://tools.ietf.org/html/rfc2830.",
-	"ca":           "ca is a reference to a ConfigMap containing an optional trusted certificate authority bundle to use when making requests to the server. If empty, the default system roots are used.",
+	"ca":           "ca is an optional reference to a config map by name containing the PEM-encoded CA bundle. It is used as a trust anchor to validate the TLS certificate presented by the remote server. The key \"ca.crt\" is used to locate the data. If specified and the config map or expected key is not found, the identity provider is not honored. If the specified ca data is not valid, the identity provider is not honored. If empty, the default system roots are used. The namespace for this config map is openshift-config.",
 	"attributes":   "attributes maps LDAP attributes to identities",
 }
 
-func (LDAPPasswordIdentityProvider) SwaggerDoc() map[string]string {
-	return map_LDAPPasswordIdentityProvider
+func (LDAPIdentityProvider) SwaggerDoc() map[string]string {
+	return map_LDAPIdentityProvider
 }
 
 var map_OAuth = map[string]string{
-	"": "OAuth holds cluster-wide information about OAuth.  The canonical name is `cluster`",
+	"": "OAuth holds cluster-wide information about OAuth.  The canonical name is `cluster`. It is used to configure the integrated OAuth server. This configuration is only honored when the top level Authentication config has type set to IntegratedOAuth.",
 }
 
 func (OAuth) SwaggerDoc() map[string]string {
 	return map_OAuth
 }
 
-var map_OAuthIdentityProvider = map[string]string{
-	"":              "OAuthIdentityProvider provides identities for users authenticating using credentials",
-	"name":          "name is used to qualify the identities returned by this provider. - It MUST be unique and not shared by any other identity provider used - It MUST be a vlid path segment: name cannot equal \".\" or \"..\" or contain \"/\" or \"%\"\n  Ref: https://godoc.org/k8s.io/apimachinery/pkg/api/validation/path#ValidatePathSegmentName",
-	"challenge":     "challenge indicates whether to issue WWW-Authenticate challenges for this provider",
-	"login":         "login indicates whether to use this identity provider for unauthenticated browsers to login against",
-	"mappingMethod": "mappingMethod determines how identities from this provider are mapped to users Defaults to \"claim\"",
-	"grantMethod":   "grantMethod: allow, deny, prompt This method will be used only if the specific OAuth client doesn't provide a strategy of their own. Valid grant handling methods are:\n - auto:   always approves grant requests, useful for trusted clients\n - prompt: prompts the end user for approval of grant requests, useful for third-party clients\n - deny:   always denies grant requests, useful for black-listed clients\nDefaults to \"prompt\" if not set.",
-}
-
-func (OAuthIdentityProvider) SwaggerDoc() map[string]string {
-	return map_OAuthIdentityProvider
-}
-
 var map_OAuthRemoteConnectionInfo = map[string]string{
-	"":              "RemoteConnectionInfo holds information necessary for establishing a remote connection",
+	"":              "OAuthRemoteConnectionInfo holds information necessary for establishing a remote connection",
 	"url":           "url is the remote URL to connect to",
-	"ca":            "ca is a reference to a ConfigMap containing the CA for verifying TLS connections",
-	"tlsClientCert": "tlsClientCert references a secret containing the TLS client certificate to present when connecting to the server. Looks under the key \"tls.cert\" for the data unless a lookup key is specified in the secret ref",
-	"tlsClientKey":  "tlsClientKey references a secret containing the TLS private key for the client certificate Looks under the key \"tls.key\" for the data unless a lookup key is specified in the secret ref",
+	"ca":            "ca is an optional reference to a config map by name containing the PEM-encoded CA bundle. It is used as a trust anchor to validate the TLS certificate presented by the remote server. The key \"ca.crt\" is used to locate the data. If specified and the config map or expected key is not found, the identity provider is not honored. If the specified ca data is not valid, the identity provider is not honored. If empty, the default system roots are used. The namespace for this config map is openshift-config.",
+	"tlsClientCert": "tlsClientCert is an optional reference to a secret by name that contains the PEM-encoded TLS client certificate to present when connecting to the server. The key \"tls.crt\" is used to locate the data. If specified and the secret or expected key is not found, the identity provider is not honored. If the specified certificate data is not valid, the identity provider is not honored. The namespace for this secret is openshift-config.",
+	"tlsClientKey":  "tlsClientKey is an optional reference to a secret by name that contains the PEM-encoded TLS private key for the client certificate referenced in tlsClientCert. The key \"tls.key\" is used to locate the data. If specified and the secret or expected key is not found, the identity provider is not honored. If the specified certificate data is not valid, the identity provider is not honored. The namespace for this secret is openshift-config.",
 }
 
 func (OAuthRemoteConnectionInfo) SwaggerDoc() map[string]string {
@@ -824,7 +905,7 @@ func (OAuthRemoteConnectionInfo) SwaggerDoc() map[string]string {
 
 var map_OAuthSpec = map[string]string{
 	"":                  "OAuthSpec contains desired cluster auth configuration",
-	"identityProviders": "identityProviders is an ordered list of ways for a user to identify themselves",
+	"identityProviders": "identityProviders is an ordered list of ways for a user to identify themselves. When this list is empty, no identities are provisioned for users.",
 	"tokenConfig":       "tokenConfig contains options for authorization and access tokens",
 	"templates":         "templates allow you to customize pages like the login page.",
 }
@@ -843,9 +924,9 @@ func (OAuthStatus) SwaggerDoc() map[string]string {
 
 var map_OAuthTemplates = map[string]string{
 	"":                  "OAuthTemplates allow for customization of pages like the login page",
-	"login":             "login is a reference to a secret that specifies a go template to use to render the login page. If a key is not specified, the key `login.html` is used to locate the template data. If unspecified, the default login page is used.",
-	"providerSelection": "providerSelection is a reference to a secret that specifies a go template to use to render the provider selection page. If a key is not specified, the key `providers.html` is used to locate the template data. If unspecified, the default provider selection page is used.",
-	"error":             "error is a reference to a secret that specifies a go template to use to render error pages during the authentication or grant flow. If a key is not specified, the key `errrors.html` is used to locate the template data. If unspecified, the default error page is used.",
+	"login":             "login is the name of a secret that specifies a go template to use to render the login page. The key \"login.html\" is used to locate the template data. If specified and the secret or expected key is not found, the default login page is used. If the specified template is not valid, the default login page is used. If unspecified, the default login page is used. The namespace for this secret is openshift-config.",
+	"providerSelection": "providerSelection is the name of a secret that specifies a go template to use to render the provider selection page. The key \"providers.html\" is used to locate the template data. If specified and the secret or expected key is not found, the default provider selection page is used. If the specified template is not valid, the default provider selection page is used. If unspecified, the default provider selection page is used. The namespace for this secret is openshift-config.",
+	"error":             "error is the name of a secret that specifies a go template to use to render error pages during the authentication or grant flow. The key \"errors.html\" is used to locate the template data. If specified and the secret or expected key is not found, the default error page is used. If the specified template is not valid, the default error page is used. If unspecified, the default error page is used. The namespace for this secret is openshift-config.",
 }
 
 func (OAuthTemplates) SwaggerDoc() map[string]string {
@@ -854,7 +935,7 @@ func (OAuthTemplates) SwaggerDoc() map[string]string {
 
 var map_OpenIDClaims = map[string]string{
 	"":                  "OpenIDClaims contains a list of OpenID claims to use when authenticating with an OpenID identity provider",
-	"preferredUsername": "preferredUsername is the list of claims whose values should be used as the preferred username. If unspecified, the preferred username is determined from the value of the id claim",
+	"preferredUsername": "preferredUsername is the list of claims whose values should be used as the preferred username. If unspecified, the preferred username is determined from the value of the sub claim",
 	"name":              "name is the list of claims whose values should be used as the display name. Optional. If unspecified, no display name is set for the identity",
 	"email":             "email is the list of claims whose values should be used as the email address. Optional. If unspecified, no email is set for the identity",
 }
@@ -865,9 +946,9 @@ func (OpenIDClaims) SwaggerDoc() map[string]string {
 
 var map_OpenIDIdentityProvider = map[string]string{
 	"":                         "OpenIDIdentityProvider provides identities for users authenticating using OpenID credentials",
-	"ca":                       "ca is a reference to a ConfigMap containing an optional trusted certificate authority bundle to use when making requests to the server. If empty, the default system roots are used.",
 	"clientID":                 "clientID is the oauth client ID",
-	"clientSecret":             "clientSecret is is a reference to the secret containing the oauth client secret The secret referenced must contain a key named `clientSecret` containing the secret data.",
+	"clientSecret":             "clientSecret is a required reference to the secret by name containing the oauth client secret. The key \"clientSecret\" is used to locate the data. If the secret or expected key is not found, the identity provider is not honored. The namespace for this secret is openshift-config.",
+	"ca":                       "ca is an optional reference to a config map by name containing the PEM-encoded CA bundle. It is used as a trust anchor to validate the TLS certificate presented by the remote server. The key \"ca.crt\" is used to locate the data. If specified and the config map or expected key is not found, the identity provider is not honored. If the specified ca data is not valid, the identity provider is not honored. If empty, the default system roots are used. The namespace for this config map is openshift-config.",
 	"extraScopes":              "extraScopes are any scopes to request in addition to the standard \"openid\" scope.",
 	"extraAuthorizeParameters": "extraAuthorizeParameters are any custom parameters to add to the authorize request.",
 	"urls":   "urls to use to authenticate",
@@ -891,9 +972,9 @@ func (OpenIDURLs) SwaggerDoc() map[string]string {
 
 var map_RequestHeaderIdentityProvider = map[string]string{
 	"":                         "RequestHeaderIdentityProvider provides identities for users authenticating using request header credentials",
-	"loginURL":                 "loginURL is a URL to redirect unauthenticated /authorize requests to Unauthenticated requests from OAuth clients which expect interactive logins will be redirected here ${url} is replaced with the current URL, escaped to be safe in a query parameter\n  https://www.example.com/sso-login?then=${url}\n${query} is replaced with the current query string\n  https://www.example.com/auth-proxy/oauth/authorize?${query}\nRequired when UseAsLogin is set to true.",
-	"challengeURL":             "challengeURL is a URL to redirect unauthenticated /authorize requests to Unauthenticated requests from OAuth clients which expect WWW-Authenticate challenges will be redirected here. ${url} is replaced with the current URL, escaped to be safe in a query parameter\n  https://www.example.com/sso-login?then=${url}\n${query} is replaced with the current query string\n  https://www.example.com/auth-proxy/oauth/authorize?${query}\nRequired when UseAsChallenger is set to true.",
-	"ca":                       "clientCA is a reference to a configmap with the trusted signer certs. If empty, no request verification is done, and any direct request to the OAuth server can impersonate any identity from this provider, merely by setting a request header.",
+	"loginURL":                 "loginURL is a URL to redirect unauthenticated /authorize requests to Unauthenticated requests from OAuth clients which expect interactive logins will be redirected here ${url} is replaced with the current URL, escaped to be safe in a query parameter\n  https://www.example.com/sso-login?then=${url}\n${query} is replaced with the current query string\n  https://www.example.com/auth-proxy/oauth/authorize?${query}\nRequired when login is set to true.",
+	"challengeURL":             "challengeURL is a URL to redirect unauthenticated /authorize requests to Unauthenticated requests from OAuth clients which expect WWW-Authenticate challenges will be redirected here. ${url} is replaced with the current URL, escaped to be safe in a query parameter\n  https://www.example.com/sso-login?then=${url}\n${query} is replaced with the current query string\n  https://www.example.com/auth-proxy/oauth/authorize?${query}\nRequired when challenge is set to true.",
+	"ca":                       "ca is a required reference to a config map by name containing the PEM-encoded CA bundle. It is used as a trust anchor to validate the TLS certificate presented by the remote server. Specifically, it allows verification of incoming requests to prevent header spoofing. The key \"ca.crt\" is used to locate the data. If the config map or expected key is not found, the identity provider is not honored. If the specified ca data is not valid, the identity provider is not honored. The namespace for this config map is openshift-config.",
 	"clientCommonNames":        "clientCommonNames is an optional list of common names to require a match from. If empty, any client certificate validated against the clientCA bundle is considered authoritative.",
 	"headers":                  "headers is the set of headers to check for identity information",
 	"preferredUsernameHeaders": "preferredUsernameHeaders is the set of headers to check for the preferred username",
@@ -907,7 +988,6 @@ func (RequestHeaderIdentityProvider) SwaggerDoc() map[string]string {
 
 var map_TokenConfig = map[string]string{
 	"": "TokenConfig holds the necessary configuration options for authorization and access tokens",
-	"authorizeTokenMaxAgeSeconds":         "authorizeTokenMaxAgeSeconds defines the maximum age of authorize tokens",
 	"accessTokenMaxAgeSeconds":            "accessTokenMaxAgeSeconds defines the maximum age of access tokens",
 	"accessTokenInactivityTimeoutSeconds": "accessTokenInactivityTimeoutSeconds defines the default token inactivity timeout for tokens granted by any client. The value represents the maximum amount of time that can occur between consecutive uses of the token. Tokens become invalid if they are not used within this temporal window. The user will need to acquire a new token to regain access once a token times out. Valid values are integer values:\n  x < 0  Tokens time out is enabled but tokens never timeout unless configured per client (e.g. `-1`)\n  x = 0  Tokens time out is disabled (default)\n  x > 0  Tokens time out if there is no activity for x seconds\nThe current minimum allowed value for X is 300 (5 minutes)",
 }
@@ -933,6 +1013,25 @@ var map_ProjectList = map[string]string{
 
 func (ProjectList) SwaggerDoc() map[string]string {
 	return map_ProjectList
+}
+
+var map_ProjectSpec = map[string]string{
+	"": "ProjectSpec holds the project creation configuration.",
+	"projectRequestMessage":  "projectRequestMessage is the string presented to a user if they are unable to request a project via the projectrequest api endpoint",
+	"projectRequestTemplate": "projectRequestTemplate is the template to use for creating projects in response to projectrequest. This must point to a template in 'openshift-config' namespace. It is optional. If it is not specified, a default template is used.",
+}
+
+func (ProjectSpec) SwaggerDoc() map[string]string {
+	return map_ProjectSpec
+}
+
+var map_TemplateReference = map[string]string{
+	"":     "TemplateReference references a template in a specific namespace. The namespace must be specified at the point of use.",
+	"name": "name is the metadata.name of the referenced project request template",
+}
+
+func (TemplateReference) SwaggerDoc() map[string]string {
+	return map_TemplateReference
 }
 
 var map_Proxy = map[string]string{
@@ -979,6 +1078,14 @@ var map_SchedulingList = map[string]string{
 
 func (SchedulingList) SwaggerDoc() map[string]string {
 	return map_SchedulingList
+}
+
+var map_SchedulingSpec = map[string]string{
+	"policy": "policy is a reference to a ConfigMap containing scheduler policy which has user specified predicates and priorities. If this ConfigMap is not available scheduler will default to use DefaultAlgorithmProvider. The namespace for this configmap is openshift-config.",
+}
+
+func (SchedulingSpec) SwaggerDoc() map[string]string {
+	return map_SchedulingSpec
 }
 
 // AUTO-GENERATED FUNCTIONS END HERE
