@@ -6,3 +6,15 @@ spec:
     from:
       kind: DockerImage
       name: docker.io/openshift/origin-cluster-samples-operator:latest
+  - name: jenkins
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-jenkins:latest
+  - name: jenkins-agent-nodejs
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-jenkins-agent-nodejs:latest
+  - name: jenkins-agent-maven
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-jenkins-agent-maven:latest
