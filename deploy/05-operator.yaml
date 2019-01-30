@@ -14,6 +14,8 @@ spec:
         name: cluster-samples-operator
     spec:
       serviceAccountName: cluster-samples-operator
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
       tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/master
