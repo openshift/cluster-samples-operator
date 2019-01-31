@@ -1,0 +1,38 @@
+# The image streams in this file will be the canonical reference points
+# for consumers within the cluster to loosely reference these images.
+#
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
+  name: cli
+spec:
+  tags:
+  - name: latest
+    from:
+      kind: DockerImage
+      name: docker.io/openshift/origin-cli:v4.0
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
+  name: installer
+spec:
+  tags:
+  - name: latest
+    from:
+      kind: DockerImage
+      name: docker.io/openshift/origin-installer:v4.0
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
+  name: tests
+spec:
+  tags:
+  - name: latest
+    from:
+      kind: DockerImage
+      name: docker.io/openshift/origin-tests:v4.0
