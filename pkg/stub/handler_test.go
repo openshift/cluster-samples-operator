@@ -892,7 +892,7 @@ func TestImageStreamImportError(t *testing.T) {
 		}
 
 		importErr := cfg.Condition(v1.ImportImageErrorsExist)
-		if len(importErr.Reason) == 0 || !strings.Contains(importErr.Reason, is.Name) {
+		if len(importErr.Reason) == 0 || !cfg.NameInReason(importErr.Reason, is.Name) {
 			t.Fatalf("processImageStreamWatchEvent did not set import error reason field %#v for stream %#v", cfg, is)
 		}
 	}
