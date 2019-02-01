@@ -676,7 +676,14 @@ func (h *Handler) Handle(event v1.Event) error {
 			cfg.ConditionFalse(v1.ImageChangesInProgress) &&
 			cfg.Condition(v1.MigrationInProgress).LastUpdateTime.Before(&cfg.Condition(v1.ImageChangesInProgress).LastUpdateTime) &&
 			v1.GitVersionString() != cfg.Status.Version {
-			if cfg.ConditionFalse(v1.ImportImageErrorsExist) {
+			if cfg.ConditionTrue(v1.ImportImageErrorsExist) {
+				logrus.Printf("An image import error occurred applying the latest configuration on version %s; this operator will periodically retry the import, or an administrator can investigate and remedy manually", v1.GitVersionString())
+			}
+			cfg.Status.Version = v1.GitVersionString()
+			logrus.Printf("The samples are now at version %s", cfg.Status.Version)
+			logrus.Println("CRDUPDATE upd status version")
+			return h.crdwrapper.UpdateStatus(cfg)
+			/*if cfg.ConditionFalse(v1.ImportImageErrorsExist) {
 				cfg.Status.Version = v1.GitVersionString()
 				logrus.Printf("The samples are now at version %s", cfg.Status.Version)
 				logrus.Println("CRDUPDATE upd status version")
@@ -684,6 +691,8 @@ func (h *Handler) Handle(event v1.Event) error {
 			}
 			logrus.Printf("An image import error occurred applying the latest configuration on version %s, problem resolution needed", v1.GitVersionString())
 			return nil
+
+			*/
 		}
 
 		// once the status version is in sync, we can turn off the migration condition

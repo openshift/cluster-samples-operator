@@ -339,14 +339,14 @@ func (s *Config) ClearNameInReason(reason, name string) string {
 const (
 	noInstallDetailed = "Samples installation in error at %s: %s"
 	installed         = "Samples installation successful at %s"
-	moving            = "Samples moving to %s"
+	moving            = "Samples processing to %s"
 )
 
 // ClusterOperatorStatusAvailableCondition return values are as follows:
 // 1) the value to set on the ClusterOperator Available condition
 // 2) string is the message to set on the Available condition
 func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionStatus, string) {
-	notAtAnyVersionYet := len(s.Status.Version) == 0
+	//notAtAnyVersionYet := len(s.Status.Version) == 0
 
 	falseRC := configv1.ConditionFalse
 
@@ -358,13 +358,21 @@ func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionSt
 	// config issues will be highlighted in the progressing/failing messages, per
 	// https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions
 
-	if notAtAnyVersionYet {
+	if !s.ConditionTrue(SamplesExist) { // notAtAnyVersionYet {
 		// return false for the initial state; don't set any messages yet
 		return falseRC, ""
 	}
 
 	// otherwise version of last successful install
-	return configv1.ConditionTrue, fmt.Sprintf(installed, s.Status.Version)
+	versionToNote := s.Status.Version
+	if len(versionToNote) == 0 {
+		// initial install is still in progress, but we are far
+		// enough along that we report this version to the cluster operator
+		// we still don't set the version on Config until images in progress
+		// flushes out
+		versionToNote = GitVersionString()
+	}
+	return configv1.ConditionTrue, fmt.Sprintf(installed, versionToNote) //s.Status.Version)
 
 }
 
@@ -387,11 +395,11 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 			"image pull credentials needed",
 			fmt.Sprintf(noInstallDetailed, GitVersionString(), s.Condition(ImportCredentialsExist).Message)
 	}
-	if s.ConditionTrue(ImportImageErrorsExist) {
+	/*if s.ConditionTrue(ImportImageErrorsExist) {
 		return trueRC,
 			"image import problem",
 			fmt.Sprintf(noInstallDetailed, GitVersionString(), s.Condition(ImportImageErrorsExist).Message)
-	}
+	}*/
 	// right now, any condition being unknown is indicative of a failure
 	// condition, either api server interaction or file system interaction;
 	// Conversely, those errors result in a ConditionUnknown setting on one
