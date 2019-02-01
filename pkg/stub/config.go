@@ -12,13 +12,11 @@ import (
 )
 
 func (h *Handler) ClearStatusConfigForRemoved(cfg *v1.Config) {
-	cfg.Status.InstallType = ""
 	cfg.Status.Architectures = []string{}
 }
 
 func (h *Handler) StoreCurrentValidConfig(cfg *v1.Config) {
 	cfg.Status.SamplesRegistry = cfg.Spec.SamplesRegistry
-	cfg.Status.InstallType = cfg.Spec.InstallType
 	cfg.Status.Architectures = cfg.Spec.Architectures
 	cfg.Status.SkippedImagestreams = cfg.Spec.SkippedImagestreams
 	cfg.Status.SkippedTemplates = cfg.Spec.SkippedTemplates
@@ -32,22 +30,10 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 		switch arch {
 		case v1.X86Architecture:
 		case v1.PPCArchitecture:
-			if cfg.Spec.InstallType == v1.CentosSamplesDistribution {
-				err := fmt.Errorf("do not support centos distribution on ppc64le")
-				return h.processError(cfg, v1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
-			}
 		default:
 			err := fmt.Errorf("architecture %s unsupported; only support %s and %s", arch, v1.X86Architecture, v1.PPCArchitecture)
 			return h.processError(cfg, v1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 		}
-	}
-
-	switch cfg.Spec.InstallType {
-	case v1.RHELSamplesDistribution:
-	case v1.CentosSamplesDistribution:
-	default:
-		err := fmt.Errorf("invalid install type %s specified, should be rhel or centos", string(cfg.Spec.InstallType))
-		return h.processError(cfg, v1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
 
 	// only if the values being requested are valid, should we then proceed to check
@@ -58,10 +44,6 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 	if !cfg.ConditionTrue(v1.SamplesExist) && !cfg.ConditionTrue(v1.ImageChangesInProgress) {
 		logrus.Println("Spec is valid because this operator has not processed a config yet")
 		return nil
-	}
-	if len(cfg.Status.InstallType) > 0 && cfg.Spec.InstallType != cfg.Status.InstallType {
-		err := fmt.Errorf("cannot change installtype from %s to %s", cfg.Status.InstallType, cfg.Spec.InstallType)
-		return h.processError(cfg, v1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
 
 	if len(cfg.Status.Architectures) > 0 {
@@ -303,8 +285,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 	case operatorsv1api.Managed:
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState {
 			logrus.Println("management state set to managed")
-			if cfg.Spec.InstallType == v1.RHELSamplesDistribution &&
-				cfg.ConditionFalse(v1.ImportCredentialsExist) {
+			if cfg.ConditionFalse(v1.ImportCredentialsExist) {
 				h.copyDefaultClusterPullSecret(nil)
 			}
 		}
