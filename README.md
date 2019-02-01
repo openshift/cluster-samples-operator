@@ -2,7 +2,7 @@
 
 The samples operator manages the sample imagestreams and templates stored in the openshift namespace, and any docker credentials, stored as a secret, needed for the imagestreams to import the images they reference.
 
-On initial startup, the operator will create the default samples resource to initiate the creation of the imagestreams and templates.  Currently, the imagestreams are the CentOS based OKD imagestreams pointing to images on docker.io.  Similarly the templates are those categorized as OKD templates.  When details for obtaining the credentials for registry.redhat.io are finalized, we will begin defaulting to the RHEL and OCP imagestreams and templates.
+On initial startup, the operator will create the default samples resource to initiate the creation of the imagestreams and templates.  The imagestreams are the RHEL based OCP imagestreams pointing to images on registry.redhat.access.com.  Similarly the templates are those categorized as OCP templates.  When details for obtaining the credentials for registry.redhat.io are finalized, we will begin defaulting to that registry for the imagestreams.
 
 The samples operator, along with it's configuration resources, are contained within the openshift-cluster-samples-operator namespace. On startup it will copy the pull secret captured by the install into the "openshift" namespace with the name "samples-registry-credentials" to facilitate imagestream imports.  An admin can create any additional secret(s) in the openshift namespace as needed (where those secrets contain the content of a docker config.json) needed to facilitate image import.
 
@@ -32,8 +32,6 @@ The samples resource offers the following configuration fields:
 -- Removed: the operator will remove the set of managed imagestreams and templates in the openshift namespace. It will ignore new samples created by the cluster admin or any samples in the skipped lists.  After the removals are complete, the operator will work like it is in the 'Unmanaged' state and ignore any watch events on the sample resources, imagestreams, or templates.  It will operate on secrets to facilitate the 'centos' to 'rhel' switch.  There are some caveats around concurrent creates and removal (see Change behaviors section).
 - Samples Registry
 -- Override the registry that images are imported from
-- Install Type
--- Use 'centos' for CentOS imagestreams and 'rhel' for RHEL imagestreams (and associatively between OKD and OCP content for the templates)
 - Architecture
 -- Place holder to choose between x86 and ppc content
 - Skipped Imagestreams
@@ -43,12 +41,13 @@ The samples resource offers the following configuration fields:
 
 ## Config restrictions
 
-The install type and architectures are not allowed to be changed while in the 'Managed' state.
+The architectures are not allowed to be changed while in the 'Managed' state.
 
-In order to change the install type and architectures values, an administrator must:
+In order to change the architectures values, an administrator must:
 - Mark the ManagementState as 'Removed', saving the change.
-- In a subsequent change, switch the install type or architecture and change the ManagementState back to Managed.
-- In the case of changing from 'centos' to 'rhel', the operator will still process Secrets while in Removed state.  You can create the secret either before switching to Removed, while in Removed state before switching to Managed state, or after switching to Managed state (though you'll see delays creating the samples until the secret event is processed if you create the secret after switching to Managed).
+- In a subsequent change, switch the architecture and change the ManagementState back to Managed.
+
+The operator will still process Secrets while in Removed state.  You can create the secret either before switching to Removed, while in Removed state before switching to Managed state, or after switching to Managed state (though you'll see delays creating the samples until the secret event is processed if you create the secret after switching to Managed). This is done to help facilitate the changing of the registry, where the user chooses to remove all the samples before switching to insure a clean slate (removing before switching is not required).
 
 ## Config behaviors
 

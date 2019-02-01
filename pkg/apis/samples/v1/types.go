@@ -31,13 +31,6 @@ type Config struct {
 	Status            ConfigStatus `json:"status,omitempty"`
 }
 
-type SamplesDistributionType string
-
-const (
-	RHELSamplesDistribution   = SamplesDistributionType("rhel")
-	CentosSamplesDistribution = SamplesDistributionType("centos")
-)
-
 const (
 	// SamplesRegistryCredentials is the name for a secret that contains a username+password/token
 	// for the registry, where if the secret is present, will be used for authentication.
@@ -104,9 +97,6 @@ type ConfigSpec struct {
 	// 'centos' defaults to docker.io.
 	SamplesRegistry string `json:"samplesRegistry,omitempty" protobuf:"bytes,2,opt,name=samplesRegistry"`
 
-	// InstallType specifies whether to install the RHEL or Centos distributions.
-	InstallType SamplesDistributionType `json:"installType,omitempty" protobuf:"bytes,3,opt,name=installType"`
-
 	// Architectures determine which hardware architecture(s) to install, where x86_64 and ppc64le are the
 	// supported choices.
 	Architectures []string `json:"architectures,omitempty" protobuf:"bytes,4,opt,name=architectures"`
@@ -139,9 +129,6 @@ type ConfigStatus struct {
 	// An InstallType of 'rhel' defaults to registry.redhat.io, and an InstallType of
 	// 'centos' defaults to docker.io.
 	SamplesRegistry string `json:"samplesRegistry,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,3,rep,name=samplesRegistry"`
-
-	// InstallType specifies whether to install the RHEL or Centos distributions.
-	InstallType SamplesDistributionType `json:"installType,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,4,rep,name=installType"`
 
 	// Architectures determine which hardware architecture(s) to install, where x86_64 and ppc64le are the
 	// supported choices.
@@ -440,9 +427,7 @@ func (s *Config) ClusterNeedsCreds() bool {
 		s.Spec.ManagementState == operatorv1.Unmanaged {
 		return false
 	}
-	return s.Spec.InstallType == RHELSamplesDistribution &&
-		s.ConditionFalse(ImportCredentialsExist) &&
-		(s.Spec.SamplesRegistry == "" || s.Spec.SamplesRegistry == "registry.redhat.io")
+	return s.ConditionFalse(ImportCredentialsExist) && (s.Spec.SamplesRegistry == "" || s.Spec.SamplesRegistry == "registry.redhat.io")
 }
 
 type Event struct {
