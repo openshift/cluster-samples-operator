@@ -73,7 +73,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 						logrus.Warningf("Image import for imagestream %s tag %s generation %v failed with detailed message %s", is.Name, statusTag.Tag, mostRecentErrorGeneration, message)
 						anyErrors = true
 						// add this imagestream to the Reason field
-						if !strings.Contains(importError.Reason, is.Name+" ") {
+						if !cfg.NameInReason(importError.Reason, is.Name) {
 							now := kapis.Now()
 							importError.Reason = importError.Reason + is.Name + " "
 							importError.Message = importError.Message + "<imagestream/" + is.Name + ">" + message + "<imagestream/" + is.Name + ">"
@@ -133,9 +133,9 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			now := kapis.Now()
 			// remove this imagestream name, including the space separator
 			logrus.Debugf("current reason %s ", processing.Reason)
-			replaceOccurs := strings.Contains(processing.Reason, is.Name)
+			replaceOccurs := cfg.NameInReason(processing.Reason, is.Name)
 			if replaceOccurs {
-				processing.Reason = strings.Replace(processing.Reason, is.Name+" ", "", -1)
+				processing.Reason = cfg.ClearNameInReason(processing.Reason, is.Name)
 				logrus.Debugf("processing reason now %s", processing.Reason)
 				if len(strings.TrimSpace(processing.Reason)) == 0 {
 					logrus.Println("The last in progress imagestream has completed")
@@ -153,7 +153,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 
 		// clear out error for this stream if there were errors previously but no longer are
 		// think a scheduled import failing then recovering
-		if strings.Contains(importError.Reason, is.Name) && !anyErrors {
+		if cfg.NameInReason(importError.Reason, is.Name) && !anyErrors {
 			importError = h.clearStreamFromImportError(is.Name, importError, cfg)
 			if importError != nil {
 				logrus.Printf("CRDUPDATE no error imgstr update %s", is.Name)
@@ -209,7 +209,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 	progressing.LastTransitionTime = now
 	logrus.Debugf("Handle changing processing from false to true for imagestream %s", imagestream.Name)
 	progressing.Status = corev1.ConditionTrue
-	if !strings.Contains(progressing.Reason, imagestream.Name+" ") {
+	if !cfg.NameInReason(progressing.Reason, imagestream.Name) {
 		progressing.Reason = progressing.Reason + imagestream.Name + " "
 	}
 	cfg.ConditionUpdate(progressing)
@@ -331,14 +331,14 @@ func (h *Handler) coreUpdateDockerPullSpec(oldreg, newreg string, oldies []strin
 }
 
 func (h *Handler) clearStreamFromImportError(name string, importError *v1.ConfigCondition, cfg *v1.Config) *v1.ConfigCondition {
-	if strings.Contains(importError.Reason, name) {
+	if cfg.NameInReason(importError.Reason, name) {
 		logrus.Printf("clearing imagestream %s from the import image error condition", name)
 	}
 	start := strings.Index(importError.Message, "<imagestream/"+name+">")
 	end := strings.LastIndex(importError.Message, "<imagestream/"+name+">")
 	if start >= 0 && end > 0 {
 		now := kapis.Now()
-		importError.Reason = strings.Replace(importError.Reason, name+" ", "", -1)
+		importError.Reason = cfg.ClearNameInReason(importError.Reason, name)
 		entireMsg := importError.Message[start : end+len("<imagestream/"+name+">")]
 		importError.Message = strings.Replace(importError.Message, entireMsg, "", -1)
 		if len(strings.TrimSpace(importError.Reason)) == 0 {

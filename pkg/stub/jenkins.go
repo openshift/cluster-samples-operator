@@ -15,6 +15,7 @@ func tagInPayload(tag, env string, stream *imagev1.ImageStream) *imagev1.ImageSt
 	}
 	for _, tagSpec := range stream.Spec.Tags {
 		if tagSpec.Name == tag {
+			logrus.Printf("updating image ref for tag %s in stream %s with image %s", tag, stream.Name, imageRef)
 			tagSpec.From.Name = imageRef
 			break
 		}

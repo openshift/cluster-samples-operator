@@ -2,6 +2,7 @@ package v1
 
 import (
 	"fmt"
+	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -311,6 +312,31 @@ func (s *Config) Condition(c ConfigConditionType) *ConfigCondition {
 	}
 	s.Status.Conditions = append(s.Status.Conditions, newCondition)
 	return &newCondition
+}
+
+func (s *Config) NameInReason(reason, name string) bool {
+	switch {
+	case strings.Index(reason, name+" ") == 0:
+		// if the first entry is name + " "
+		return true
+	case strings.Contains(reason, " "+name+" "):
+		// otherwise, for a subsequent entry, it must have a preceding space,
+		// to account for 'jenkins-agent-nodejs' vs. 'nodejs'
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Config) ClearNameInReason(reason, name string) string {
+	switch {
+	case strings.Index(reason, name+" ") == 0:
+		return strings.Replace(reason, name+" ", "", 1)
+	case strings.Contains(reason, " "+name+" "):
+		return strings.Replace(reason, " "+name+" ", " ", 1)
+	default:
+		return reason
+	}
 }
 
 const (

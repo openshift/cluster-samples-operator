@@ -752,7 +752,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			progressing.Status = corev1.ConditionTrue
 			for isName := range h.imagestreamFile {
 				_, skipped := h.skippedImagestreams[isName]
-				if !strings.Contains(progressing.Reason, isName+" ") && !skipped {
+				if !cfg.NameInReason(progressing.Reason, isName) && !skipped {
 					progressing.Reason = progressing.Reason + isName + " "
 				}
 			}
