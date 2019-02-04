@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ClusterOperatorName = "openshift-cluster-samples-operator"
+	ClusterOperatorName = "openshift-samples"
 )
 
 // ClusterOperatorHandler allows for wrappering access to configv1.ClusterOperator

@@ -5,7 +5,7 @@ RUN make build
 
 FROM registry.svc.ci.openshift.org/ocp/4.0:base
 COPY --from=builder /go/src/github.com/openshift/cluster-samples-operator/cluster-samples-operator /usr/bin/
-COPY deploy/image-references deploy/0* /manifests/
+COPY manifests/image-references manifests/0* /manifests/
 COPY tmp/build/assets /opt/openshift/
 RUN useradd cluster-samples-operator
 USER cluster-samples-operator
