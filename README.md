@@ -79,6 +79,8 @@ The samples resource maintains the following conditions in its status:
 -- True when an error has occurred
 -- The list of imagestreams with an error will be in the reason field
 -- The details of each error reported will be in the message field
+- MigrationInProgress
+-- True when the samples operator has detected that its version is different than the samples operator version the current samples set were installed with
 
 # CVO Cluster Operator Status
 

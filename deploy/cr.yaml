@@ -1,8 +1,0 @@
-apiVersion: samples.operator.openshift.io/v1
-kind: Config
-metadata:
-  name: instance
-spec:
-  installtype: centos
-  architectures:
-    - x86_64

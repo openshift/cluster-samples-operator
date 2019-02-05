@@ -128,10 +128,7 @@ type ConfigSpec struct {
 type ConfigStatus struct {
 	// operatorv1.ManagementState reflects the current operational status of the on/off switch for
 	// the operator.  This operator compares the ManagementState as part of determining that we are turning
-	// the operator back on (i.e. "Managed") when it was previously "Unmanaged".  The "Removed" to "Managed"
-	// transition is currently handled by the fact that our config map is missing.
-	// TODO when we ditch the config map and store current config in the operator's status, we'll most likely
-	// need to track "Removed" to "Managed" transitions via compares here as well.
+	// the operator back on (i.e. "Managed") when it was previously "Unmanaged".
 	ManagementState operatorv1.ManagementState `json:"managementState,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=managementState"`
 	// Conditions represents the available maintenance status of the sample
 	// imagestreams and templates.
@@ -342,14 +339,14 @@ func (s *Config) ClearNameInReason(reason, name string) string {
 const (
 	noInstallDetailed = "Samples installation in error at %s: %s"
 	installed         = "Samples installation successful at %s"
-	moving            = "Samples moving to %s"
+	moving            = "Samples processing to %s"
 )
 
 // ClusterOperatorStatusAvailableCondition return values are as follows:
 // 1) the value to set on the ClusterOperator Available condition
 // 2) string is the message to set on the Available condition
 func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionStatus, string) {
-	notAtAnyVersionYet := len(s.Status.Version) == 0
+	//notAtAnyVersionYet := len(s.Status.Version) == 0
 
 	falseRC := configv1.ConditionFalse
 
@@ -361,13 +358,21 @@ func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionSt
 	// config issues will be highlighted in the progressing/failing messages, per
 	// https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions
 
-	if notAtAnyVersionYet {
+	if !s.ConditionTrue(SamplesExist) { // notAtAnyVersionYet {
 		// return false for the initial state; don't set any messages yet
 		return falseRC, ""
 	}
 
 	// otherwise version of last successful install
-	return configv1.ConditionTrue, fmt.Sprintf(installed, s.Status.Version)
+	versionToNote := s.Status.Version
+	if len(versionToNote) == 0 {
+		// initial install is still in progress, but we are far
+		// enough along that we report this version to the cluster operator
+		// we still don't set the version on Config until images in progress
+		// flushes out
+		versionToNote = GitVersionString()
+	}
+	return configv1.ConditionTrue, fmt.Sprintf(installed, versionToNote) //s.Status.Version)
 
 }
 
@@ -385,16 +390,16 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 			"invalid configuration",
 			fmt.Sprintf(noInstallDetailed, GitVersionString(), s.Condition(ConfigurationValid).Message)
 	}
-	if s.Spec.InstallType == RHELSamplesDistribution && s.ConditionFalse(ImportCredentialsExist) {
+	if s.ClusterNeedsCreds() {
 		return trueRC,
 			"image pull credentials needed",
 			fmt.Sprintf(noInstallDetailed, GitVersionString(), s.Condition(ImportCredentialsExist).Message)
 	}
-	if s.ConditionTrue(ImportImageErrorsExist) {
+	/*if s.ConditionTrue(ImportImageErrorsExist) {
 		return trueRC,
 			"image import problem",
 			fmt.Sprintf(noInstallDetailed, GitVersionString(), s.Condition(ImportImageErrorsExist).Message)
-	}
+	}*/
 	// right now, any condition being unknown is indicative of a failure
 	// condition, either api server interaction or file system interaction;
 	// Conversely, those errors result in a ConditionUnknown setting on one
@@ -426,6 +431,14 @@ func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, 
 		return configv1.ConditionFalse, fmt.Sprintf(installed, s.Status.Version)
 	}
 	return configv1.ConditionFalse, ""
+}
+
+// ClusterNeedsCreds checks the conditions that drive whether the operator complains about
+// needing credentials to import RHEL content
+func (s *Config) ClusterNeedsCreds() bool {
+	return s.Spec.InstallType == RHELSamplesDistribution &&
+		s.ConditionFalse(ImportCredentialsExist) &&
+		(s.Spec.SamplesRegistry == "" || s.Spec.SamplesRegistry == "registry.redhat.io")
 }
 
 type Event struct {
