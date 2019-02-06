@@ -335,6 +335,8 @@ func TestSkipped(t *testing.T) {
 	tkeys := getTKeys()
 	cfg.Spec.SkippedImagestreams = iskeys
 	cfg.Spec.SkippedTemplates = tkeys
+	cfg.Status.SkippedImagestreams = iskeys
+	cfg.Status.SkippedTemplates = tkeys
 
 	mimic(&h, v1.RHELSamplesDistribution, x86OCPContentRootDir)
 

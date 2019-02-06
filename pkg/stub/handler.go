@@ -60,7 +60,7 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config) (*Handler, error) 
 
 	h.crdwrapper = crdWrapper
 
-	h.Fileimagegetter = &DefaultImageStreamFromFileGetter{}
+	h.Fileimagegetter = &DefaultImageStreamFromFileGetter{h: h}
 	h.Filetemplategetter = &DefaultTemplateFromFileGetter{}
 	h.Filefinder = &DefaultResourceFileLister{}
 
@@ -153,7 +153,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 	// on pod restarts samples watch events come in before the first
 	// Config event, or we might not get an event at all if there were no changes,
 	// so build list here
-	h.buildFileMaps(cfg)
+	h.buildFileMaps(cfg, false)
 
 	// make sure skip filter list is ready
 	h.buildSkipFilters(cfg)
@@ -631,7 +631,7 @@ func (h *Handler) Handle(event v1.Event) error {
 
 				// in case this is a bring up after initial install, we take a pass
 				// and see if any samples were deleted while samples operator was down
-				h.buildFileMaps(cfg)
+				h.buildFileMaps(cfg, false)
 				// passing in false means if the samples is present, we leave it alone
 				return h.createSamples(cfg, false)
 			}
@@ -737,7 +737,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		}
 
 		if !cfg.ConditionTrue(v1.ImageChangesInProgress) {
-			err = h.buildFileMaps(cfg)
+			err = h.buildFileMaps(cfg, true)
 			if err != nil {
 				return err
 			}
