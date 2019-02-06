@@ -2,6 +2,7 @@ package stub
 
 import (
 	"fmt"
+	"strings"
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
@@ -71,7 +72,7 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 		for i, arch := range cfg.Status.Architectures {
 			// make 'em keep the order consistent ;-/
 			if arch != cfg.Spec.Architectures[i] {
-				err := fmt.Errorf("cannot change architectures from %#v to %#v", cfg.Status.Architectures, cfg.Spec.Architectures)
+				err := fmt.Errorf("cannot change architectures from %s to %s", strings.TrimSpace(strings.Join(cfg.Status.Architectures, " ")), strings.TrimSpace(strings.Join(cfg.Spec.Architectures, " ")))
 				return h.processError(cfg, v1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 			}
 		}
