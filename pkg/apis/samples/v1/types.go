@@ -187,7 +187,7 @@ const (
 	// in the Reason field of the condition.  The Reason field being empty corresponds
 	// with this condition being marked true.
 	ImageChangesInProgress ConfigConditionType = "ImageChangesInProgress"
-	// RemovedManagementStateOnHold represents whether the Config ManagementState
+	// RemovePending represents whether the Config ManagementState
 	// has been set to Removed while a samples creation/update cycle is still in progress.  In other
 	// words, when ImageChangesInProgress is True.  We
 	// do not want to the create/updates and deletes of the samples to be occurring in parallel.
@@ -196,7 +196,7 @@ const (
 	// update ImageChangesInProgress and the sampleresource watch simply returning an error an initiating
 	// a retry when ManagementState was set to Removed lead to a prolonged, sometimes seemingly unresolved,
 	// period of circular contention
-	RemovedManagementStateOnHold ConfigConditionType = "RemovePending"
+	RemovePending ConfigConditionType = "RemovePending"
 	// MigrationInProgress represents the special case where the operator is running off of
 	// a new version of its image, and samples are deployed of a previous version.  This condition
 	// facilitates the maintenance of this operator's ClusterOperator object.

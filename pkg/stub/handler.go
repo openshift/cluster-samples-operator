@@ -315,7 +315,7 @@ func (h *Handler) initConditions(cfg *v1.Config) *v1.Config {
 		cfg.ConditionUpdate(valid)
 	}
 	cfg.Condition(v1.ImageChangesInProgress)
-	cfg.Condition(v1.RemovedManagementStateOnHold)
+	cfg.Condition(v1.RemovePending)
 	cfg.Condition(v1.MigrationInProgress)
 	cfg.Condition(v1.ImportImageErrorsExist)
 	return cfg

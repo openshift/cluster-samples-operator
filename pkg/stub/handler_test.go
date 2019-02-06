@@ -31,7 +31,7 @@ var (
 		v1.ImportCredentialsExist,
 		v1.ConfigurationValid,
 		v1.ImageChangesInProgress,
-		v1.RemovedManagementStateOnHold,
+		v1.RemovePending,
 		v1.MigrationInProgress,
 		v1.ImportImageErrorsExist}
 )
