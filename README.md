@@ -72,7 +72,7 @@ The samples resource maintains the following conditions in its status:
 -- A 'samples-registry-credentials' secret has been placed in the operator’s namespace and that secret has been copied into the openshift namespace
 - ConfigurationValid
 -- True or false based on whether any of the restricted changes noted above have been submitted
-- RemovedManagementStateOnHold
+- RemovePending
 -- Indicator that we have a management state removed setting pending, but are waiting for in progress imagestreams to complete
 - ImportImageErrorsExist
 -- Indicator of which imagestreams had errors during the image import phase for one of their tags

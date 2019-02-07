@@ -247,13 +247,13 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		// first, we will not process a Removed setting if a prior create/update cycle is still in progress;
 		// if still creating/updating, set the remove on hold condition and we'll try the remove once that
 		// is false
-		if cfg.ConditionTrue(v1.ImageChangesInProgress) && cfg.ConditionTrue(v1.RemovedManagementStateOnHold) {
+		if cfg.ConditionTrue(v1.ImageChangesInProgress) && cfg.ConditionTrue(v1.RemovePending) {
 			return false, false, nil
 		}
 
-		if cfg.ConditionTrue(v1.ImageChangesInProgress) && !cfg.ConditionTrue(v1.RemovedManagementStateOnHold) {
+		if cfg.ConditionTrue(v1.ImageChangesInProgress) && !cfg.ConditionTrue(v1.RemovePending) {
 			now := kapis.Now()
-			condition := cfg.Condition(v1.RemovedManagementStateOnHold)
+			condition := cfg.Condition(v1.RemovePending)
 			condition.LastTransitionTime = now
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionTrue
@@ -262,9 +262,9 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		}
 
 		// turn off on hold if need be
-		if cfg.ConditionTrue(v1.RemovedManagementStateOnHold) && cfg.ConditionFalse(v1.ImageChangesInProgress) {
+		if cfg.ConditionTrue(v1.RemovePending) && cfg.ConditionFalse(v1.ImageChangesInProgress) {
 			now := kapis.Now()
-			condition := cfg.Condition(v1.RemovedManagementStateOnHold)
+			condition := cfg.Condition(v1.RemovePending)
 			condition.LastTransitionTime = now
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionFalse
