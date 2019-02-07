@@ -26,10 +26,6 @@ import (
 	kubeset "k8s.io/client-go/kubernetes"
 )
 
-var (
-	kubeClient *kubeset.Clientset
-)
-
 func TestMain(m *testing.M) {
 	kubeconfig, err := sampopclient.GetConfig()
 	if err != nil {
