@@ -436,6 +436,10 @@ func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, 
 // ClusterNeedsCreds checks the conditions that drive whether the operator complains about
 // needing credentials to import RHEL content
 func (s *Config) ClusterNeedsCreds() bool {
+	if s.Spec.ManagementState == operatorv1.Removed ||
+		s.Spec.ManagementState == operatorv1.Unmanaged {
+		return false
+	}
 	return s.Spec.InstallType == RHELSamplesDistribution &&
 		s.ConditionFalse(ImportCredentialsExist) &&
 		(s.Spec.SamplesRegistry == "" || s.Spec.SamplesRegistry == "registry.redhat.io")
