@@ -1,4 +1,4 @@
-package e2e_test
+package e2e
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -41,7 +40,6 @@ var (
 	imageClient    *imageset.Clientset
 	templateClient *templateset.Clientset
 	crClient       *sampleclientv1.Clientset
-	mutex          = sync.Mutex{}
 )
 
 const (
@@ -542,8 +540,6 @@ func verifyDeletedTemplatesNotRecreated(t *testing.T) {
 }
 
 func TestImageStreamInOpenshiftNamespace(t *testing.T) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	verifyOperatorUp(t)
 	validateContent(t, nil)
 	verifyClusterOperatorConditionsComplete(t)
@@ -551,8 +547,6 @@ func TestImageStreamInOpenshiftNamespace(t *testing.T) {
 }
 
 func TestRecreateConfigAfterDelete(t *testing.T) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	cfg := verifyOperatorUp(t)
 
 	oldTime := cfg.CreationTimestamp
@@ -592,8 +586,6 @@ func TestRecreateConfigAfterDelete(t *testing.T) {
 }
 
 func TestSpecManagementStateField(t *testing.T) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	now := kapis.Now()
 	cfg := verifyOperatorUp(t)
 	oldTime := cfg.CreationTimestamp
@@ -711,8 +703,6 @@ func TestSpecManagementStateField(t *testing.T) {
 }
 
 func TestInstallTypeConfigChangeValidation(t *testing.T) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cfg := verifyOperatorUp(t)
 		cfg.Spec.InstallType = samplesapi.CentosSamplesDistribution
@@ -743,8 +733,6 @@ func TestInstallTypeConfigChangeValidation(t *testing.T) {
 }
 
 func TestArchitectureConfigChangeValidation(t *testing.T) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	err := verifyConditionsCompleteSamplesAdded()
 	if err != nil {
 		dumpPod(t)
@@ -780,8 +768,6 @@ func TestArchitectureConfigChangeValidation(t *testing.T) {
 }
 
 func TestSkippedProcessing(t *testing.T) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	err := verifyConditionsCompleteSamplesAdded()
 	if err != nil {
 		dumpPod(t)
@@ -840,8 +826,6 @@ func TestSkippedProcessing(t *testing.T) {
 }
 
 func TestRecreateDeletedManagedSample(t *testing.T) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	verifyOperatorUp(t)
 	// first make sure we are at normal state
 	err := verifyConditionsCompleteSamplesAdded()
