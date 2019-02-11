@@ -1,13 +1,30 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: coreos-pull-secret-reader
+  namespace: kube-system
+rules:
+- apiGroups:
+  - ""
+  resourceNames:
+  - coreos-pull-secret
+  resources:
+  - secrets
+  verbs:
+  - get
+
+---
+
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: cluster-samples-operator-kube-system-edit
+  name: cluster-samples-operator-kube-system-view
   namespace: kube-system
 subjects:
 - kind: ServiceAccount
   name: cluster-samples-operator
   namespace: openshift-cluster-samples-operator
 roleRef:
-  kind: ClusterRole
-  name: edit
+  kind: Role
+  name: coreos-pull-secret-reader
   apiGroup: rbac.authorization.k8s.io
