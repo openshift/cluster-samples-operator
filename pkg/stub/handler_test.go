@@ -612,7 +612,11 @@ func TestCreateDeleteSecretBeforeCR(t *testing.T) {
 	h.crdwrapper.(*fakeCRDWrapper).cfg = nil
 	event.Object = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            v1.SamplesRegistryCredentials,
+			Name:      v1.SamplesRegistryCredentials,
+			Namespace: "openshift",
+			Annotations: map[string]string{
+				v1.SamplesVersionAnnotation: v1.GitVersionString(),
+			},
 			ResourceVersion: "a",
 		},
 	}
@@ -650,7 +654,11 @@ func TestCreateDeleteSecretAfterCR(t *testing.T) {
 
 	event.Object = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            v1.SamplesRegistryCredentials,
+			Name:      v1.SamplesRegistryCredentials,
+			Namespace: "openshift",
+			Annotations: map[string]string{
+				v1.SamplesVersionAnnotation: v1.GitVersionString(),
+			},
 			ResourceVersion: "a",
 		},
 	}
@@ -659,8 +667,18 @@ func TestCreateDeleteSecretAfterCR(t *testing.T) {
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	event.Deleted = true
-	err = h.Handle(event)
+	h.secretRetryCount = 3 // bypass retry on CR update race
+	cfg.Spec.ManagementState = operatorsv1api.Removed
 	statuses[1] = corev1.ConditionFalse
+	err = h.Handle(event)
+	// import cred should be false if from removed, since we don't recreate
+	validate(true, err, "", cfg, conditions, statuses, t)
+
+	cfg.Spec.ManagementState = operatorsv1api.Managed
+	h.secretRetryCount = 3
+	statuses[1] = corev1.ConditionTrue
+	err = h.Handle(event)
+	// import cred should be true since we should recreate when managed
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 }
@@ -682,7 +700,11 @@ func TestSameSecret(t *testing.T) {
 
 	event.Object = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            v1.SamplesRegistryCredentials,
+			Name:      v1.SamplesRegistryCredentials,
+			Namespace: "openshift",
+			Annotations: map[string]string{
+				v1.SamplesVersionAnnotation: v1.GitVersionString(),
+			},
 			ResourceVersion: "a",
 		},
 	}
@@ -702,7 +724,8 @@ func TestSecretAPIError(t *testing.T) {
 
 	event.Object = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            v1.SamplesRegistryCredentials,
+			Name:            coreosPullSecretName,
+			Namespace:       coreosPullSecretNamespace,
 			ResourceVersion: "a",
 		},
 	}
@@ -710,7 +733,7 @@ func TestSecretAPIError(t *testing.T) {
 	fakesecretclient.err = fmt.Errorf("problemchangingsecret")
 	err = h.Handle(event)
 	statuses[1] = corev1.ConditionUnknown
-	validate(false, err, "problemchangingsecret", cfg, conditions, statuses, t)
+	validate(true, err, "", cfg, conditions, statuses, t)
 }
 
 func TestImageGetError(t *testing.T) {
@@ -1306,8 +1329,6 @@ func NewTestHandler() Handler {
 
 	h.cvowrapper = operator.NewClusterOperatorHandler(nil)
 	h.cvowrapper.ClusterOperatorWrapper = &cvowrapper
-
-	h.namespace = "foo"
 
 	h.skippedImagestreams = make(map[string]bool)
 	h.skippedTemplates = make(map[string]bool)

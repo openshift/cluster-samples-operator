@@ -65,7 +65,6 @@ type Controller struct {
 
 	listers *sampopclient.Listers
 
-	namespace   string
 	handlerStub *stub.Handler
 }
 
@@ -79,18 +78,16 @@ func NewController() (*Controller, error) {
 		return nil, err
 	}
 
-	namespace := stub.GetNamespace()
 	listers := &sampopclient.Listers{}
 	c := &Controller{
 		restconfig:     kubeconfig,
 		cvowrapper:     operatorstatus.NewClusterOperatorHandler(operatorClient),
 		crWorkqueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "samplesconfig-changes"),
 		osSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openshift-secret-changes"),
-		opSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "operator-namespace-secret-changes"),
+		opSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "kube-system-namespace-secret-changes"),
 		isWorkqueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "imagestream-changes"),
 		tWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "template-changes"),
 		listers:        listers,
-		namespace:      namespace,
 	}
 
 	c.handlerStub, err = stub.NewSamplesOperatorHandler(kubeconfig)
@@ -122,10 +119,10 @@ func NewController() (*Controller, error) {
 	}
 
 	c.kubeOSNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, "openshift", nil)
-	c.kubeOPNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, c.namespace, nil)
+	c.kubeOPNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, "kube-system", nil)
 	//TODO - eventually a k8s go-client deps bump will lead to the form below, similar to the image registry operator's kubeinformer initialization,
 	// and similar to what is available with the openshift go-client for imagestreams and templates
-	//kubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncDuration, kubeinformers.WithNamespace(c.namespace))
+	//kubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncDuration, kubeinformers.WithNamespace("kube-system"))
 	c.imageInformerFactory = imageinformers.NewSharedInformerFactoryWithOptions(imageClient, defaultResyncDuration, imageinformers.WithNamespace("openshift"))
 	c.templateInformerFactory = templateinformers.NewSharedInformerFactoryWithOptions(templateClient, defaultResyncDuration, templateinformers.WithNamespace("openshift"))
 	c.sampopInformerFactory = sampopinformers.NewSharedInformerFactory(sampopClient, defaultResyncDuration)
@@ -136,7 +133,7 @@ func NewController() (*Controller, error) {
 
 	c.opSecInformer = c.kubeOPNSInformerFactory.Core().V1().Secrets().Informer()
 	c.opSecInformer.AddEventHandler(c.opSecretInformerEventHandler())
-	c.listers.OperatorNamespaceSecrets = c.kubeOPNSInformerFactory.Core().V1().Secrets().Lister().Secrets(c.namespace)
+	c.listers.OperatorNamespaceSecrets = c.kubeOPNSInformerFactory.Core().V1().Secrets().Lister().Secrets("kube-system")
 
 	c.isInformer = c.imageInformerFactory.Image().V1().ImageStreams().Informer()
 	c.isInformer.AddEventHandler(c.imagestreamInformerEventHandler())
