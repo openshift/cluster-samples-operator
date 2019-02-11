@@ -115,6 +115,8 @@ type Handler struct {
 	mapsMutex sync.Mutex
 
 	secretRetryCount int8
+
+	copyKubeSysPullSecretErr error
 }
 
 // prepSamplesWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
@@ -283,6 +285,8 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg.Spec.SamplesRegistry = "registry.access.redhat.com"
 		cfg.Spec.ManagementState = operatorsv1api.Managed
 		h.AddFinalizer(cfg)
+		// can't update conditions during create ... save error for config validation
+		h.copyKubeSysPullSecretErr = h.copyDefaultClusterPullSecret()
 		logrus.Println("creating default Config")
 		err = h.crdwrapper.Create(cfg)
 		if err != nil {
@@ -678,6 +682,13 @@ func (h *Handler) Handle(event v1.Event) error {
 			v1.GitVersionString() != cfg.Status.Version {
 			if cfg.ConditionTrue(v1.ImportImageErrorsExist) {
 				logrus.Printf("An image import error occurred applying the latest configuration on version %s; this operator will periodically retry the import, or an administrator can investigate and remedy manually", v1.GitVersionString())
+			}
+			// flag secret copy err, but still post version ... analogous to import errors for jenkins only
+			// admin can manually import and clear this out
+			if h.copyKubeSysPullSecretErr != nil {
+				err := h.copyKubeSysPullSecretErr
+				h.copyKubeSysPullSecretErr = nil
+				h.processError(cfg, v1.ImportCredentialsExist, corev1.ConditionFalse, err, "%v")
 			}
 			cfg.Status.Version = v1.GitVersionString()
 			logrus.Printf("The samples are now at version %s", cfg.Status.Version)
