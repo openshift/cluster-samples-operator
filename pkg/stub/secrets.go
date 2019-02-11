@@ -10,6 +10,34 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	coreosPullSecretNamespace = "kube-system"
+	coreosPullSecretName      = "coreos-pull-secret"
+)
+
+func (h *Handler) copyDefaultClusterPullSecret() error {
+	secret, err := h.secretclientwrapper.Get("openshift", v1.SamplesRegistryCredentials)
+	if err == nil {
+		logrus.Printf("The secret %s already exists in the openshift namespace so it will not be copied from the kube-admin namesapce", v1.SamplesRegistryCredentials)
+		return nil
+	}
+	secret, err = h.secretclientwrapper.Get(coreosPullSecretNamespace, coreosPullSecretName)
+	if err != nil {
+		return err
+	}
+	logrus.Printf("Copying secret %s from the %s namespace into the operator's namespace", coreosPullSecretName, coreosPullSecretNamespace)
+	secretToCreate := corev1.Secret{}
+	secret.DeepCopyInto(&secretToCreate)
+	secretToCreate.Name = v1.SamplesRegistryCredentials
+	secretToCreate.Namespace = ""
+	secretToCreate.ResourceVersion = ""
+	secretToCreate.UID = ""
+	secretToCreate.Annotations = make(map[string]string)
+	secretToCreate.Annotations[v1.SamplesVersionAnnotation] = v1.GitVersionString()
+	_, err = h.secretclientwrapper.Create("openshift", &secretToCreate)
+	return err
+}
+
 func (h *Handler) manageDockerCfgSecret(deleted bool, Config *v1.Config, s *corev1.Secret) error {
 	secret := s
 	var err error
