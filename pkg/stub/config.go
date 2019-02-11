@@ -174,10 +174,10 @@ func (h *Handler) buildSkipFilters(opcfg *v1.Config) {
 	defer h.mapsMutex.Unlock()
 	newStreamMap := make(map[string]bool)
 	newTempMap := make(map[string]bool)
-	for _, st := range opcfg.Spec.SkippedTemplates {
+	for _, st := range opcfg.Status.SkippedTemplates {
 		newTempMap[st] = true
 	}
-	for _, si := range opcfg.Spec.SkippedImagestreams {
+	for _, si := range opcfg.Status.SkippedImagestreams {
 		newStreamMap[si] = true
 	}
 	h.skippedImagestreams = newStreamMap
@@ -185,10 +185,10 @@ func (h *Handler) buildSkipFilters(opcfg *v1.Config) {
 
 }
 
-func (h *Handler) buildFileMaps(cfg *v1.Config) error {
+func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 	h.mapsMutex.Lock()
 	defer h.mapsMutex.Unlock()
-	if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 {
+	if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 || forceRebuild {
 		for _, arch := range cfg.Spec.Architectures {
 			dir := h.GetBaseDir(arch, cfg)
 			files, err := h.Filefinder.List(dir)

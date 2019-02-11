@@ -785,6 +785,18 @@ func TestSkippedProcessing(t *testing.T) {
 		t.Fatalf("error updating samples resource %v and %#v", err, verifyOperatorUp(t))
 	}
 
+	err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+		cfg := verifyOperatorUp(t)
+		if len(cfg.Status.SkippedImagestreams) == 0 || len(cfg.Status.SkippedTemplates) == 0 {
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("samples resource skipped lists never processed %#v", verifyOperatorUp(t))
+	}
+
 	verifyDeletedImageStreamNotRecreated(t)
 	verifyDeletedTemplatesNotRecreated(t)
 

@@ -154,6 +154,9 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 }
 
 func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInCluster *imagev1.ImageStream, opcfg *v1.Config) error {
+	// handle jenkins mutations if needed
+	imagestreamInOperatorImage = jenkinsOverrides(imagestreamInOperatorImage)
+
 	// whether we are now skipping this imagestream, or are upserting it, remove any prior errors from the import error
 	// condition; in the skip case, we don't want errors to a now skipped stream blocking availability status; in the upsert
 	// case, any errors will cause the imagestream controller to attempt another image import
