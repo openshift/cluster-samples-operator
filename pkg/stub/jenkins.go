@@ -22,3 +22,18 @@ func tagInPayload(tag, env string, stream *imagev1.ImageStream) *imagev1.ImageSt
 	}
 	return stream
 }
+
+func jenkinsOverrides(imagestream *imagev1.ImageStream) *imagev1.ImageStream {
+	// we override what is at openshift/library for the jenkins images
+	// to point to what we have seeded in the payload
+	switch {
+	case imagestream.Name == "jenkins":
+		return tagInPayload("2", "IMAGE_JENKINS", imagestream)
+	case imagestream.Name == "jenkins-agent-maven":
+		return tagInPayload("v4.0", "IMAGE_AGENT_MAVEN", imagestream)
+	case imagestream.Name == "jenkins-agent-nodejs":
+		return tagInPayload("v4.0", "IMAGE_AGENT_NODEJS", imagestream)
+	}
+	// otherwise return as is
+	return imagestream
+}

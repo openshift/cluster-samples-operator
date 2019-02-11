@@ -128,7 +128,6 @@ type ImageStreamFromFileGetter interface {
 }
 
 type DefaultImageStreamFromFileGetter struct {
-	h *Handler
 }
 
 func (g *DefaultImageStreamFromFileGetter) Get(fullFilePath string) (is *imagev1.ImageStream, err error) {
@@ -141,20 +140,6 @@ func (g *DefaultImageStreamFromFileGetter) Get(fullFilePath string) (is *imagev1
 	err = json.Unmarshal(isjsonfile, imagestream)
 	if err != nil {
 		return nil, err
-	}
-	if g.h != nil {
-		// if we are not skipping jenkins imagestream, tag in images from payload
-		if _, ok := g.h.imagestreamFile["jenkins"]; ok {
-			switch {
-			case imagestream.Name == "jenkins":
-				imagestream = tagInPayload("2", "IMAGE_JENKINS", imagestream)
-			case imagestream.Name == "jenkins-agent-maven":
-				imagestream = tagInPayload("v4.0", "IMAGE_AGENT_MAVEN", imagestream)
-			case imagestream.Name == "jenkins-agent-nodejs":
-				imagestream = tagInPayload("v4.0", "IMAGE_AGENT_NODEJS", imagestream)
-			}
-
-		}
 	}
 
 	return imagestream, nil

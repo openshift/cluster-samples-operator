@@ -60,7 +60,7 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config) (*Handler, error) 
 
 	h.crdwrapper = crdWrapper
 
-	h.Fileimagegetter = &DefaultImageStreamFromFileGetter{h: h}
+	h.Fileimagegetter = &DefaultImageStreamFromFileGetter{}
 	h.Filetemplategetter = &DefaultTemplateFromFileGetter{}
 	h.Filefinder = &DefaultResourceFileLister{}
 
@@ -737,6 +737,8 @@ func (h *Handler) Handle(event v1.Event) error {
 		}
 
 		if !cfg.ConditionTrue(v1.ImageChangesInProgress) {
+			// pass in true to force rebuild of maps, which we do here because at this point
+			// we have taken on some form of config change
 			err = h.buildFileMaps(cfg, true)
 			if err != nil {
 				return err

@@ -185,10 +185,10 @@ func (h *Handler) buildSkipFilters(opcfg *v1.Config) {
 
 }
 
-func (h *Handler) buildFileMaps(cfg *v1.Config, cfgChange bool) error {
+func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 	h.mapsMutex.Lock()
 	defer h.mapsMutex.Unlock()
-	if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 || cfgChange {
+	if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 || forceRebuild {
 		for _, arch := range cfg.Spec.Architectures {
 			dir := h.GetBaseDir(arch, cfg)
 			files, err := h.Filefinder.List(dir)
