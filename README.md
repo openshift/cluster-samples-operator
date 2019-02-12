@@ -4,9 +4,9 @@ The samples operator manages the sample imagestreams and templates stored in the
 
 On initial startup, the operator will create the default samples resource to initiate the creation of the imagestreams and templates.  Currently, the imagestreams are the CentOS based OKD imagestreams pointing to images on docker.io.  Similarly the templates are those categorized as OKD templates.  When details for obtaining the credentials for registry.redhat.io are finalized, we will begin defaulting to the RHEL and OCP imagestreams and templates.
 
-The samples operator, along with it's configuration resources, are contained within the openshift-cluster-samples-operator namespace. If an admin creates a secret with the name "samples-registry-credentials" which contains the content of a docker config.json file in the operators namespace, it will be copied into the openshift namespace for use during imagestream import.
+The samples operator, along with it's configuration resources, are contained within the openshift-cluster-samples-operator namespace. On startup it will copy the pull secret captured by the install into the "openshift" namespace with the name "samples-registry-credentials" to facilitate imagestream imports.  An admin can create any additional secret(s) in the openshift namespace as needed (where those secrets contain the content of a docker config.json) needed to facilitate image import.
 
-The image for the samples operator contains imagestream and template definitions for the associated OpenShift release. Each sample includes an annotation that denotes the OpenShift version that it is compatible with. The operator uses this annotation to ensure that each sample matches it's release version. Samples outside of its inventory are ignored, as are skipped samples (see below). Modifications to any samples that are managed by the operator will be reverted automatically.
+The image for the samples operator contains imagestream and template definitions for the associated OpenShift release. Each sample includes an annotation that denotes the OpenShift version that it is compatible with. The operator uses this annotation to ensure that each sample matches it's release version. Samples outside of its inventory are ignored, as are skipped samples (see below). Modifications to any samples that are managed by the operator will be reverted automatically.  The jenkins images are actually part of the image payload from the install and are tagged into the image streams in question directly.
 
 
 
@@ -16,7 +16,7 @@ The samples resource includes a finalizer which will clean up the following upon
 - Operator managed templates
 - Operator generated configuration resources
 - Cluster status resources
-- A samples-registry-credentials secret (if supplied)
+- The samples-registry-credentials secret
 
 
 
@@ -69,7 +69,7 @@ The samples resource maintains the following conditions in its status:
 -- False when all of the generations match, or unrecoverable errors occurred during import … the last seen error will be in the message field
 -- The list of pending imagestreams will be in the reason field
 - ImportCredentialsExist
--- A 'samples-registry-credentials' secret has been placed in the operator’s namespace and that secret has been copied into the openshift namespace
+-- A 'samples-registry-credentials' secret has been copied into the openshift namespace
 - ConfigurationValid
 -- True or false based on whether any of the restricted changes noted above have been submitted
 - RemovePending
@@ -106,7 +106,7 @@ cluster admin can attempt to rectify the situation by
 
 Deployment, Events in operator’s namespace (openshift-cluster-samples-operator):  basic `oc get pods`, `oc get events`, `oc logs` of the operator pod 
 
-Secrets: `oc get secrets` in both openshift and operator’s namespace
+Secrets: `oc get secrets` in the openshift namespace
 
 Samples: `oc get is -n openshift`, `oc get templates -n openshift`  … use of -o yaml on any given imagestream should show the status, and import errors will be noted there as well
 

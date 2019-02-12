@@ -69,8 +69,6 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config) (*Handler, error) 
 	h.secretclientwrapper = &defaultSecretClientWrapper{coreclient: h.coreclient}
 	h.cvowrapper = operatorstatus.NewClusterOperatorHandler(h.configclient)
 
-	h.namespace = GetNamespace()
-
 	h.skippedImagestreams = make(map[string]bool)
 	h.skippedTemplates = make(map[string]bool)
 
@@ -104,8 +102,6 @@ type Handler struct {
 	Filetemplategetter TemplateFromFileGetter
 	Filefinder         ResourceFileLister
 
-	namespace string
-
 	skippedTemplates    map[string]bool
 	skippedImagestreams map[string]bool
 
@@ -115,8 +111,6 @@ type Handler struct {
 	mapsMutex sync.Mutex
 
 	secretRetryCount int8
-
-	copyKubeSysPullSecretErr error
 }
 
 // prepSamplesWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
@@ -285,8 +279,12 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg.Spec.SamplesRegistry = "registry.access.redhat.com"
 		cfg.Spec.ManagementState = operatorsv1api.Managed
 		h.AddFinalizer(cfg)
-		// can't update conditions during create ... save error for config validation
-		h.copyKubeSysPullSecretErr = h.copyDefaultClusterPullSecret()
+		// we should get a watch event for the default pull secret, but just in case
+		// we miss the watch event, as well as reducing churn with not starting the
+		// imagestream creates until we get the event, we'll do a one time copy attempt
+		// here ... we don't track errors cause if it doen't work with this one time,
+		// we'll then fall back on the watch events, sync intervals, etc.
+		h.copyDefaultClusterPullSecret(nil)
 		logrus.Println("creating default Config")
 		err = h.crdwrapper.Create(cfg)
 		if err != nil {
@@ -416,7 +414,7 @@ func (h *Handler) Handle(event v1.Event) error {
 
 	case *corev1.Secret:
 		dockercfgSecret, _ := event.Object.(*corev1.Secret)
-		if dockercfgSecret.Name != v1.SamplesRegistryCredentials {
+		if !secretsWeCareAbout(dockercfgSecret) {
 			return nil
 		}
 
@@ -425,88 +423,7 @@ func (h *Handler) Handle(event v1.Event) error {
 
 		cfg, _ := h.crdwrapper.Get(v1.ConfigName)
 		if cfg != nil {
-			// if the secret event gets through while we are creating samples, it will
-			// lead to a conflict when updating in progress to true in the initial create
-			// loop, which can lead to an extra cycle of creates as we'll return an error there and retry;
-			// so we check on local flag for creations in progress, and force a retry of the secret
-			// event; similar to what we do in the imagestream/template watches
-			if cache.UpsertsAmount() > 0 {
-				return fmt.Errorf("retry secret event because in the middle of an sample upsert cycle")
-			}
-
-			switch cfg.Spec.ManagementState {
-			case operatorsv1api.Removed:
-				// so our current recipe to switch to rhel is to
-				// - mark mgmt state removed
-				// - after that complete, edit again, mark install type to rhel and mgmt state to managed
-				// but what about the secret needed for rhel ... do we force the user to create the secret
-				// while still in managed/centos state?  Even with that, the "removed" action removes the
-				// secret the operator creates in the openshift namespace since it was owned/created by
-				// the operator
-				// So we allow the processing of the secret event while in removed state to
-				// facilitate the switch from centos to rhel, as necessitating use of removed as the means for
-				// changing from centos to rhel since  we allow changing the distribution once the samples have initially been created
-				logrus.Printf("processing secret watch event while in Removed state; deletion event: %v", event.Deleted)
-			case operatorsv1api.Unmanaged:
-				logrus.Debugln("Ignoring secret event because samples resource is in unmanaged state")
-				return nil
-			case operatorsv1api.Managed:
-				logrus.Printf("processing secret watch event while in Managed state; deletion event: %v", event.Deleted)
-			default:
-				logrus.Printf("processing secret watch event like we are in Managed state, even though it is set to %v; deletion event %v", cfg.Spec.ManagementState, event.Deleted)
-			}
-			deleted := event.Deleted
-			if dockercfgSecret.Namespace == "openshift" {
-				if !deleted {
-					if dockercfgSecret.Annotations != nil {
-						_, ok := dockercfgSecret.Annotations[v1.SamplesVersionAnnotation]
-						if ok {
-							// this is just a notification from our prior create
-							logrus.Println("creation of credential in openshift namespace recognized")
-							return nil
-						}
-					}
-					// not foolproof protection of course, but the lack of the annotation
-					// means somebody tried to create our credential in the openshift namespace
-					// on there own ... we are not allowing that
-					err := fmt.Errorf("the samples credential was created in the openshift namespace without the version annotation")
-					return h.processError(cfg, v1.ImportCredentialsExist, corev1.ConditionUnknown, err, "%v")
-				}
-				// if deleted, but import credential == true, that means somebody deleted the credential in the openshift
-				// namespace while leaving the secret in the operator namespace alone; we don't like that either, and will
-				// recreate; but we have to account for the fact that on a valid delete/remove, the secret deletion occurs
-				// before the updating of the samples resource, so we employ a short term retry
-				if cfg.ConditionTrue(v1.ImportCredentialsExist) {
-					if h.secretRetryCount < 3 {
-						err := fmt.Errorf("retry on credential deletion in the openshift namespace to make sure the operator deleted it")
-						h.secretRetryCount++
-						return err
-					}
-					logrus.Println("credential in openshift namespace deleted while it still exists in operator namespace so recreating")
-					s, err := h.secretclientwrapper.Get(h.namespace, v1.SamplesRegistryCredentials)
-					if err != nil {
-						if !kerrors.IsNotFound(err) {
-							// retry
-							return err
-						}
-						// if the credential is missing there too, move on and make sure import cred is false
-					} else {
-						// reset deleted flag, dockercfgSecret so manageDockerCfgSecret will recreate
-						deleted = false
-						dockercfgSecret = s
-					}
-				}
-				logrus.Println("deletion of credential in openshift namespace after deletion of credential in operator namespace recognized")
-				return nil
-			}
-			h.secretRetryCount = 0
-			err := h.manageDockerCfgSecret(deleted, cfg, dockercfgSecret)
-			if err != nil {
-				return err
-			}
-			// flush the status changes generated by the processing
-			logrus.Printf("CRDUPDATE event secret update")
-			return h.crdwrapper.UpdateStatus(cfg)
+			return h.processSecretEvent(cfg, dockercfgSecret, event)
 		} else {
 			return fmt.Errorf("Received secret %s but do not have the Config yet, requeuing", dockercfgSecret.Name)
 		}
@@ -572,6 +489,16 @@ func (h *Handler) Handle(event v1.Event) error {
 				}()
 			}
 			return nil
+		}
+
+		if cfg.ConditionUnknown(v1.ImportCredentialsExist) {
+			// retry the default cred copy if it failed previously
+			err := h.copyDefaultClusterPullSecret(nil)
+			if err == nil {
+				h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.ImportCredentialsExist)
+				logrus.Println("CRDUPDATE cleared import cred unknown")
+				return h.crdwrapper.UpdateStatus(cfg)
+			}
 		}
 
 		// Every time we see a change to the Config object, update the ClusterOperator status
@@ -656,7 +583,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		if callSDKToUpdate {
 			// flush status update ... the only error generated by WaitingForCredential, not
 			// by api obj access
-			logrus.Println("Config update ignored since need the RHEL credential")
+			logrus.Println("CRDUPDATE Config update ignored since need the RHEL credential")
 			// if update to set import cred condition to false fails, return that error
 			// to requeue
 			return h.crdwrapper.UpdateStatus(cfg)
@@ -682,13 +609,6 @@ func (h *Handler) Handle(event v1.Event) error {
 			v1.GitVersionString() != cfg.Status.Version {
 			if cfg.ConditionTrue(v1.ImportImageErrorsExist) {
 				logrus.Printf("An image import error occurred applying the latest configuration on version %s; this operator will periodically retry the import, or an administrator can investigate and remedy manually", v1.GitVersionString())
-			}
-			// flag secret copy err, but still post version ... analogous to import errors for jenkins only
-			// admin can manually import and clear this out
-			if h.copyKubeSysPullSecretErr != nil {
-				err := h.copyKubeSysPullSecretErr
-				h.copyKubeSysPullSecretErr = nil
-				h.processError(cfg, v1.ImportCredentialsExist, corev1.ConditionFalse, err, "%v")
 			}
 			cfg.Status.Version = v1.GitVersionString()
 			logrus.Printf("The samples are now at version %s", cfg.Status.Version)
@@ -747,6 +667,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			err = h.createSamples(cfg, true)
 			if err != nil {
 				h.processError(cfg, v1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
+				logrus.Printf("CRDUPDATE setting in progress to unknown")
 				e := h.crdwrapper.UpdateStatus(cfg)
 				if e != nil {
 					return e

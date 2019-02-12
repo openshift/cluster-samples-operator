@@ -127,15 +127,35 @@ func verifyOperatorUp(t *testing.T) *samplesapi.Config {
 	return cfg
 }
 
+func verifySecretPresent(t *testing.T) {
+	setupClients(t)
+	secClient := kubeClient.CoreV1().Secrets("openshift")
+	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
+		_, err := secClient.Get(samplesapi.SamplesRegistryCredentials, metav1.GetOptions{})
+		if err != nil {
+			if !kerrors.IsNotFound(err) {
+				t.Fatalf("error accessing secret %v", err)
+			}
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("timeout for secret getting created cfg %#v", verifyOperatorUp(t))
+	}
+}
+
 func verifyConditionsCompleteSamplesAdded() error {
 	return wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
 		cfg, err := crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
-		if cfg.Condition(samplesapi.SamplesExist).Status == corev1.ConditionTrue &&
-			cfg.Condition(samplesapi.ConfigurationValid).Status == corev1.ConditionTrue &&
-			cfg.Condition(samplesapi.ImageChangesInProgress).Status == corev1.ConditionFalse {
+		if cfg.ConditionTrue(samplesapi.SamplesExist) &&
+			cfg.ConditionTrue(samplesapi.ConfigurationValid) &&
+			cfg.ConditionTrue(samplesapi.ImportCredentialsExist) &&
+			cfg.ConditionFalse(samplesapi.ImageChangesInProgress) {
 			return true, nil
 		}
 
@@ -144,14 +164,15 @@ func verifyConditionsCompleteSamplesAdded() error {
 
 }
 
-func verifyConditionsCompleteSamplecfgRemoved() error {
+func verifyConditionsCompleteSamplesRemoved() error {
 	return wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
 		cfg, err := crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			return false, nil
 		}
-		if cfg.Condition(samplesapi.SamplesExist).Status == corev1.ConditionFalse &&
-			cfg.Condition(samplesapi.ImageChangesInProgress).Status == corev1.ConditionFalse {
+		if cfg.ConditionFalse(samplesapi.SamplesExist) &&
+			cfg.ConditionFalse(samplesapi.ImageChangesInProgress) &&
+			cfg.ConditionFalse(samplesapi.ImportCredentialsExist) {
 			return true, nil
 		}
 
@@ -542,6 +563,12 @@ func verifyDeletedTemplatesNotRecreated(t *testing.T) {
 func TestImageStreamInOpenshiftNamespace(t *testing.T) {
 	verifyOperatorUp(t)
 	validateContent(t, nil)
+	err := verifyConditionsCompleteSamplesAdded()
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("Config did not stabilize on startup %#v", verifyOperatorUp(t))
+	}
+	verifySecretPresent(t)
 	verifyClusterOperatorConditionsComplete(t)
 	t.Logf("Config after TestImageStreamInOpenshiftNamespace: %#v", verifyOperatorUp(t))
 }
@@ -600,7 +627,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		t.Fatalf("error updating Config %v and %#v", err, verifyOperatorUp(t))
 	}
 
-	err = verifyConditionsCompleteSamplecfgRemoved()
+	err = verifyConditionsCompleteSamplesRemoved()
 	if err != nil {
 		dumpPod(t)
 		cfg = verifyOperatorUp(t)

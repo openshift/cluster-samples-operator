@@ -305,20 +305,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			logrus.Println("management state set to managed")
 			if cfg.Spec.InstallType == v1.RHELSamplesDistribution &&
 				cfg.ConditionFalse(v1.ImportCredentialsExist) {
-				secret, err := h.secretclientwrapper.Get(h.namespace, v1.SamplesRegistryCredentials)
-				if err == nil && secret != nil {
-					// as part of going from centos to rhel, if the secret was created *BEFORE* we went to
-					// removed state, it got removed in the openshift namespace as part of going to remove;
-					// so we want to get it back into the openshift namespace;  to do so, we
-					// initiate a secret event vs. doing the copy ourselves here
-					logrus.Println("updating operator namespace credential to initiate creation of credential in openshift namespace")
-					if secret.Annotations == nil {
-						secret.Annotations = map[string]string{}
-					}
-					// testing showed that we needed to change something for the update to actually go through
-					secret.Annotations[v1.SamplesRecreateCredentialAnnotation] = kapis.Now().String()
-					h.secretclientwrapper.Update(h.namespace, secret)
-				}
+				h.copyDefaultClusterPullSecret(nil)
 			}
 		}
 		// will set status state to managed at top level caller
