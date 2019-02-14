@@ -75,6 +75,15 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool) {
 	}
 
 	logrus.Debugf("cfg skipped streams %#v", cfg.Spec.SkippedImagestreams)
+	unskippedStreams := map[string]bool{}
+	streamsThatWereSkipped := map[string]bool{}
+	for _, stream := range cfg.Status.SkippedImagestreams {
+		streamsThatWereSkipped[stream] = true
+		// compare against the newly built spec list, if not in there, it is unskipped
+		if _, ok := h.skippedImagestreams[stream]; !ok {
+			unskippedStreams[stream] = true
+		}
+	}
 
 	if len(cfg.Spec.SkippedImagestreams) != len(cfg.Status.SkippedImagestreams) {
 		logrus.Printf("SkippedImagestreams changed in size from %#v to %#v", cfg.Status.SkippedImagestreams, cfg.Spec.SkippedImagestreams)
@@ -82,12 +91,10 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool) {
 			// skip list reduced, meaning we need to upsert some samples we were ignoring
 			return true, true, false
 		}
-		for _, stream := range cfg.Status.SkippedImagestreams {
-			// even if the skipped list has been increased, if a stream we were skipping
-			// has been removed, we need to upsert; assumes buildSkipFilters called beforehand
-			if _, ok := h.skippedImagestreams[stream]; !ok {
-				return true, true, true
-			}
+		// even if the skipped list has been increased, if a stream we were skipping
+		// has been removed, we need to upsert; assumes buildSkipFilters called beforehand
+		if len(unskippedStreams) > 0 {
+			return true, true, true
 		}
 		// otherwise, we've only added to the skip list, so don't upsert,but also see if we
 		// need to  update the cfg from the main loop to clear out any prior image import
@@ -108,12 +115,12 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool) {
 
 	clearImageImportErrors := false
 	changeInContent := false
-	for i, skip := range cfg.Spec.SkippedImagestreams {
-		if skip != cfg.Status.SkippedImagestreams[i] {
+	for _, skip := range cfg.Spec.SkippedImagestreams {
+		if _, ok := streamsThatWereSkipped[skip]; !ok {
+			logrus.Printf("imagestream %s no longer skipped", skip)
 			changeInContent = true
 			importErrors := cfg.Condition(v1.ImportImageErrorsExist)
 			beforeError := cfg.NameInReason(importErrors.Reason, skip)
-			logrus.Printf("SkippedImagestreams changed in content from %s to %s", cfg.Status.SkippedImagestreams[i], skip)
 			importErrors = h.clearStreamFromImportError(skip, importErrors, cfg)
 			afterError := cfg.NameInReason(importErrors.Reason, skip)
 			if beforeError && !afterError {
@@ -156,10 +163,10 @@ func (h *Handler) buildSkipFilters(opcfg *v1.Config) {
 	defer h.mapsMutex.Unlock()
 	newStreamMap := make(map[string]bool)
 	newTempMap := make(map[string]bool)
-	for _, st := range opcfg.Status.SkippedTemplates {
+	for _, st := range opcfg.Spec.SkippedTemplates {
 		newTempMap[st] = true
 	}
-	for _, si := range opcfg.Status.SkippedImagestreams {
+	for _, si := range opcfg.Spec.SkippedImagestreams {
 		newStreamMap[si] = true
 	}
 	h.skippedImagestreams = newStreamMap

@@ -479,6 +479,52 @@ func verifyDeletedImageStreamRecreated(t *testing.T) {
 	}
 }
 
+func verifySkippedStreamManagedLabel(t *testing.T, value string) {
+	err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
+		stream, err := imageClient.ImageV1().ImageStreams("openshift").Get("jenkins", metav1.GetOptions{})
+		if err != nil {
+			t.Logf("%v", err)
+			return true, nil
+		}
+		if stream.Labels != nil {
+			label, _ := stream.Labels[samplesapi.SamplesManagedLabel]
+			if label == value {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		dumpPod(t)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("label update did not occur %v samples resource %#v", err, cfg)
+	}
+
+}
+
+func verifySkippedTemplateManagedLabel(t *testing.T, value string) {
+	err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
+		stream, err := templateClient.TemplateV1().Templates("openshift").Get("jenkins-ephemeral", metav1.GetOptions{})
+		if err != nil {
+			t.Logf("%v", err)
+			return true, nil
+		}
+		if stream.Labels != nil {
+			label, _ := stream.Labels[samplesapi.SamplesManagedLabel]
+			if label == value {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		dumpPod(t)
+		cfg := verifyOperatorUp(t)
+		t.Fatalf("label update did not occur %v samples resource %#v", err, cfg)
+	}
+
+}
+
 func verifyDeletedImageStreamNotRecreated(t *testing.T) {
 	err := imageClient.ImageV1().ImageStreams("openshift").Delete("jenkins", &metav1.DeleteOptions{})
 	if err != nil {
@@ -864,6 +910,8 @@ func TestSkippedProcessing(t *testing.T) {
 		t.Fatalf("samples resource skipped lists never processed %#v", verifyOperatorUp(t))
 	}
 
+	verifySkippedStreamManagedLabel(t, "false")
+	verifySkippedTemplateManagedLabel(t, "false")
 	verifyDeletedImageStreamNotRecreated(t)
 	verifyDeletedTemplatesNotRecreated(t)
 
@@ -895,6 +943,9 @@ func TestSkippedProcessing(t *testing.T) {
 		dumpPod(t)
 		t.Fatalf("samples resource skipped lists never processed %#v", verifyOperatorUp(t))
 	}
+
+	verifySkippedStreamManagedLabel(t, "true")
+	verifySkippedTemplateManagedLabel(t, "true")
 
 	// checking in progress before validating content helps
 	// makes sure we go into image changes true mode from false
