@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/util/retry"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	templatev1 "github.com/openshift/api/template/v1"
@@ -639,6 +640,15 @@ func (h *Handler) Handle(event v1.Event) error {
 
 		h.StoreCurrentValidConfig(cfg)
 
+		// now that we have stored the skip lists in status,
+		// cycle through the skip lists and update the managed flag if needed
+		for _, name := range cfg.Status.SkippedTemplates {
+			h.setSampleManagedLabelToFalse("template", name)
+		}
+		for _, name := range cfg.Status.SkippedImagestreams {
+			h.setSampleManagedLabelToFalse("imagestream", name)
+		}
+
 		// this boolean is driven by VariableConfigChanged based on comparing spec/status skip lists and
 		// cross referencing with any image import errors
 		if configChangeRequiresImportErrorUpdate && !configChangeRequiresUpsert {
@@ -734,6 +744,39 @@ func (h *Handler) Handle(event v1.Event) error {
 			}
 			return err
 		}
+	}
+	return nil
+}
+
+func (h *Handler) setSampleManagedLabelToFalse(kind, name string) error {
+	var err error
+	switch kind {
+	case "imagestream":
+		var stream *imagev1.ImageStream
+		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			stream, err = h.imageclientwrapper.Get("openshift", name, metav1.GetOptions{})
+			if err == nil && stream != nil && stream.Labels != nil {
+				label, _ := stream.Labels[v1.SamplesManagedLabel]
+				if label == "true" {
+					stream.Labels[v1.SamplesManagedLabel] = "false"
+					_, err = h.imageclientwrapper.Update("openshift", stream)
+				}
+			}
+			return err
+		})
+	case "template":
+		var tpl *templatev1.Template
+		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			tpl, err = h.templateclientwrapper.Get("openshift", name, metav1.GetOptions{})
+			if err == nil && tpl != nil && tpl.Labels != nil {
+				label, _ := tpl.Labels[v1.SamplesManagedLabel]
+				if label == "true" {
+					tpl.Labels[v1.SamplesManagedLabel] = "false"
+					_, err = h.templateclientwrapper.Update("openshift", tpl)
+				}
+			}
+			return err
+		})
 	}
 	return nil
 }
