@@ -94,7 +94,7 @@ Cluster Operator status conditions are managed.
 
 # Troubleshooting
 
-CRD instance for the samples operator config:  `oc get configs.samples.operator.openshift.io instance -o yaml`
+CRD instance for the samples operator config:  `oc get configs.samples.operator.openshift.io cluster -o yaml`
 
 Check the status of the conditions. (See above for details on those conditions)
 
