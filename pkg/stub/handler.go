@@ -245,7 +245,8 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 				return true, nil
 			}
 			if err != nil {
-				return false, err
+				logrus.Printf("create default config access error %v", err)
+				return false, nil
 			}
 			// based on 4.0 testing, we've been seeing empty resources returned
 			// in the not found case, but just in case ...
