@@ -47,7 +47,7 @@ const (
 	// for use during imagestream import.
 	SamplesRegistryCredentials = "samples-registry-credentials"
 	// ConfigName is the name/identifier of the static, singleton operator employed for the samples.
-	ConfigName = "instance"
+	ConfigName = "cluster"
 	// X86Architecture is the value used to specify the x86_64 hardware architecture
 	// in the Architectures array field.
 	X86Architecture = "x86_64"
