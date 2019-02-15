@@ -33,7 +33,7 @@ The samples resource offers the following configuration fields:
 - Samples Registry
 -- Override the registry that images are imported from
 - Architecture
--- Place holder to choose between x86 and ppc content
+-- Place holder to choose an architecture type.  Currently only x86 is supported.
 - Skipped Imagestreams
 -- Imagestreams that are in the operator’s inventory, but that the cluster admin wants the operator to ignore / not manage
 - Skipped Templates 
@@ -41,11 +41,11 @@ The samples resource offers the following configuration fields:
 
 ## Config restrictions
 
-The architectures are not allowed to be changed while in the 'Managed' state.
+When we start supporting multiple architectures, the architecture list is not allowed to be changed while in the 'Managed' state.
 
 In order to change the architectures values, an administrator must:
 - Mark the ManagementState as 'Removed', saving the change.
-- In a subsequent change, switch the architecture and change the ManagementState back to Managed.
+- In a subsequent change, change the architecture and change the ManagementState back to Managed.
 
 The operator will still process Secrets while in Removed state.  You can create the secret either before switching to Removed, while in Removed state before switching to Managed state, or after switching to Managed state (though you'll see delays creating the samples until the secret event is processed if you create the secret after switching to Managed). This is done to help facilitate the changing of the registry, where the user chooses to remove all the samples before switching to insure a clean slate (removing before switching is not required).
 

@@ -144,39 +144,6 @@ func TestWithArchDist(t *testing.T) {
 		statuses, t)
 	//}
 
-	h, cfg, event = setup()
-	/*fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
-	fakesecretclient.s = secret*/
-	mimic(&h, ppc64OCPContentRootDir)
-	cfg.Spec.Architectures = []string{
-		v1.PPCArchitecture,
-	}
-	/*err := h.Handle(credEvent)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg,
-		conditions,
-		statuses, t)*/
-	err = h.Handle(event)
-	//statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg,
-		conditions,
-		statuses, t)
-	err = h.Handle(event)
-	//statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg,
-		conditions,
-		statuses, t)
-
-	// verify cannot change arch
-	cfg.ResourceVersion = "2"
-	cfg.Spec.Architectures = []string{
-		v1.X86Architecture,
-	}
-	mimic(&h, x86OCPContentRootDir)
-	h.Handle(event)
-	invalidConfig(t, "cannot change architectures from", cfg.Condition(v1.ConfigurationValid))
 }
 
 func TestWithArch(t *testing.T) {
@@ -1050,24 +1017,6 @@ func TestBadTopLevelStatus(t *testing.T) {
 	// error returned by h.Handle indicates etcd was not updated
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(false, err, "badsdkupdate", cfg, conditions, statuses, t)
-}
-
-func TestUnsupportedArchChange(t *testing.T) {
-	h, cfg, event := setup()
-	cfg.Spec.Architectures = []string{v1.PPCArchitecture}
-	// fake out secret import as shortcut ... we test secret events elsewhere
-	cred := cfg.Condition(v1.ImportCredentialsExist)
-	cred.Status = corev1.ConditionTrue
-	cfg.ConditionUpdate(cred)
-	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
-
-	cfg.Spec.Architectures = []string{v1.X86Architecture}
-	cfg.ResourceVersion = "2"
-
-	err = h.Handle(event)
-	invalidConfig(t, "cannot change architecture", cfg.Condition(v1.ConfigurationValid))
 }
 
 func invalidConfig(t *testing.T, msg string, cfgValid *v1.ConfigCondition) {

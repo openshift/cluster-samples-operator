@@ -845,41 +845,6 @@ func TestSpecManagementStateField(t *testing.T) {
 	t.Logf("Config after TestSpecManagementStateField: %#v", verifyOperatorUp(t))
 }
 
-func TestArchitectureConfigChangeValidation(t *testing.T) {
-	err := verifyConditionsCompleteSamplesAdded(t)
-	if err != nil {
-		dumpPod(t)
-		t.Fatalf("samples not stable at start of arch cfg chg test %#v", verifyOperatorUp(t))
-	}
-	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		cfg := verifyOperatorUp(t)
-		cfg.Spec.Architectures[0] = samplesapi.PPCArchitecture
-		cfg, err := crClient.Samples().Configs().Update(cfg)
-		return err
-	})
-	if err != nil {
-		dumpPod(t)
-		t.Fatalf("error updating Config %v and %#v", err, verifyOperatorUp(t))
-	}
-
-	verifyConfigurationValid(t, corev1.ConditionFalse)
-
-	//reset install type back
-	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		cfg := verifyOperatorUp(t)
-		cfg.Spec.Architectures[0] = samplesapi.X86Architecture
-		cfg, err = crClient.Samples().Configs().Update(cfg)
-		return err
-	})
-	if err != nil {
-		dumpPod(t)
-		t.Fatalf("error updating Config %v and %#v", err, verifyOperatorUp(t))
-	}
-
-	verifyConfigurationValid(t, corev1.ConditionTrue)
-	t.Logf("Config after TestArchitectureConfigChangeValidation: %#v", verifyOperatorUp(t))
-}
-
 func TestSkippedProcessing(t *testing.T) {
 	err := verifyConditionsCompleteSamplesAdded(t)
 	if err != nil {
