@@ -537,8 +537,11 @@ func (h *Handler) Handle(event v1.Event) error {
 		configChanged := false
 		configChangeRequiresUpsert := false
 		configChangeRequiresImportErrorUpdate := false
+		registryChanged := false
+		unskippedStreams := map[string]bool{}
+		unskippedTemplates := map[string]bool{}
 		if cfg.Spec.ManagementState == cfg.Status.ManagementState {
-			configChanged, configChangeRequiresUpsert, configChangeRequiresImportErrorUpdate = h.VariableConfigChanged(cfg)
+			configChanged, configChangeRequiresUpsert, configChangeRequiresImportErrorUpdate, registryChanged, unskippedStreams, unskippedTemplates = h.VariableConfigChanged(cfg)
 			logrus.Debugf("config changed %v upsert needed %v import error upd needed %v exists/true %v progressing/false %v op version %s status version %s",
 				configChanged,
 				configChangeRequiresUpsert,
@@ -559,7 +562,7 @@ func (h *Handler) Handle(event v1.Event) error {
 				// and see if any samples were deleted while samples operator was down
 				h.buildFileMaps(cfg, false)
 				// passing in false means if the samples is present, we leave it alone
-				return h.createSamples(cfg, false)
+				return h.createSamples(cfg, false, registryChanged, unskippedStreams, unskippedTemplates)
 			}
 			// if config changed requiring an upsert, but a prior config action is still in progress,
 			// reset in progress to false and return; the next event should drive the actual
@@ -668,7 +671,7 @@ func (h *Handler) Handle(event v1.Event) error {
 				return err
 			}
 
-			err = h.createSamples(cfg, true)
+			err = h.createSamples(cfg, true, registryChanged, unskippedStreams, unskippedTemplates)
 			if err != nil {
 				h.processError(cfg, v1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
 				logrus.Printf("CRDUPDATE setting in progress to unknown")
@@ -686,6 +689,11 @@ func (h *Handler) Handle(event v1.Event) error {
 			progressing.Status = corev1.ConditionTrue
 			for isName := range h.imagestreamFile {
 				_, skipped := h.skippedImagestreams[isName]
+				unskipping := len(unskippedStreams) > 0
+				_, unskipped := unskippedStreams[isName]
+				if unskipping && !unskipped {
+					continue
+				}
 				if !cfg.NameInReason(progressing.Reason, isName) && !skipped {
 					progressing.Reason = progressing.Reason + isName + " "
 				}
@@ -716,7 +724,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		// the image imports are complete; hence we would not get any more
 		// events until the next relist to clear out in progress; so let's
 		// cycle through them here now
-		if cache.AllUpsertEventsArrived() {
+		if cache.AllUpsertEventsArrived() && cfg.ConditionTrue(v1.ImageChangesInProgress) {
 			keysToClear := []string{}
 			for key, is := range cache.GetUpsertImageStreams() {
 				if is == nil {
@@ -728,20 +736,26 @@ func (h *Handler) Handle(event v1.Event) error {
 						continue
 					}
 				}
-				cfg = h.processImportStatus(is, cfg)
+				cfg, _ = h.processImportStatus(is, cfg)
 			}
 			for _, key := range keysToClear {
 				cache.RemoveUpsert(key)
+				cfg.ClearNameInReason(cfg.Condition(v1.ImageChangesInProgress).Reason, key)
+				cfg.ClearNameInReason(cfg.Condition(v1.ImportImageErrorsExist).Reason, key)
 			}
-		}
-		if cfg.ConditionFalse(v1.ImageChangesInProgress) {
-			logrus.Printf("CRDUPDATE setting in progress to false after examining cached imagestream events")
-			err = h.crdwrapper.UpdateStatus(cfg)
-			if err == nil {
-				// only clear out cache if we got the update through
-				cache.ClearUpsertsCache()
+			if len(strings.TrimSpace(cfg.Condition(v1.ImageChangesInProgress).Reason)) == 0 {
+				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
+				logrus.Println("The last in progress imagestream has completed")
 			}
-			return err
+			if cfg.ConditionFalse(v1.ImageChangesInProgress) {
+				logrus.Printf("CRDUPDATE setting in progress to false after examining cached imagestream events")
+				err = h.crdwrapper.UpdateStatus(cfg)
+				if err == nil {
+					// only clear out cache if we got the update through
+					cache.ClearUpsertsCache()
+				}
+				return err
+			}
 		}
 	}
 	return nil
@@ -780,7 +794,7 @@ func (h *Handler) setSampleManagedLabelToFalse(kind, name string) error {
 	return nil
 }
 
-func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent bool) error {
+func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged bool, unskippedStreams, unskippedTemplates map[string]bool) error {
 	// first, got through the list and prime our upsert cache
 	// prior to any actual upserts
 	imagestreams := []*imagev1.ImageStream{}
@@ -789,6 +803,15 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent bool) error {
 		if err != nil {
 			return err
 		}
+
+		// if unskippedStreams has >0 entries, then we are down this path to only upsert the streams
+		// listed there
+		if len(unskippedStreams) > 0 {
+			if _, ok := unskippedStreams[imagestream.Name]; !ok {
+				continue
+			}
+		}
+
 		if _, isok := h.skippedImagestreams[imagestream.Name]; !isok {
 			if updateIfPresent {
 				cache.AddUpsert(imagestream.Name)
@@ -819,10 +842,25 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent bool) error {
 			return err
 		}
 	}
+
+	// if after initial startup, and not migration, the only cfg change was changing the registry, since that does not impact
+	// the templates, we can move on
+	if len(unskippedTemplates) == 0 && registryChanged && cfg.ConditionTrue(v1.SamplesExist) && cfg.ConditionFalse(v1.MigrationInProgress) {
+		return nil
+	}
+
 	for _, fileName := range h.templateFile {
 		template, err := h.Filetemplategetter.Get(fileName)
 		if err != nil {
 			return err
+		}
+
+		// if unskippedTemplates has >0 entries, then we are down this path to only upsert the templates
+		// listed there
+		if len(unskippedTemplates) > 0 {
+			if _, ok := unskippedTemplates[template.Name]; !ok {
+				continue
+			}
 		}
 
 		t, err := h.templateclientwrapper.Get("openshift", template.Name, metav1.GetOptions{})

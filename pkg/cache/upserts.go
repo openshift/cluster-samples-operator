@@ -38,11 +38,11 @@ func AllUpsertEventsArrived() bool {
 	now := kapis.Now()
 	for key, stream := range upserts {
 		if stream == nil {
-			if now.Sub(timeout.Time) > 15*time.Minute {
+			if now.Sub(timeout.Time) > 5*time.Minute {
 				// if we have not retrieved all the events
-				// within 15 minutes of the start of recording,
+				// within 5 minutes of the start of recording,
 				// let's move on
-				logrus.Printf("have not received an upsert event for %s in 15 minutes so cache is skipping this one", key)
+				logrus.Printf("have not received an upsert event for %s in 5 minutes so cache is skipping this one", key)
 				continue
 			}
 			return false
