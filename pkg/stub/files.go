@@ -55,13 +55,7 @@ func (h *Handler) GetBaseDir(arch string, opcfg *v1.Config) (dir string) {
 	// invalid settings have already been sorted out by SpecValidation
 	switch arch {
 	case v1.X86Architecture:
-		switch opcfg.Spec.InstallType {
-		case v1.RHELSamplesDistribution:
-			dir = x86OCPContentRootDir
-		case v1.CentosSamplesDistribution:
-			dir = x86OKDContentRootDir
-		default:
-		}
+		dir = x86OCPContentRootDir
 	case v1.PPCArchitecture:
 		dir = ppc64OCPContentRootDir
 	default:

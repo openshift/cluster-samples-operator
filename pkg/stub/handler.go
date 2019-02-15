@@ -37,7 +37,6 @@ import (
 
 const (
 	x86OCPContentRootDir   = "/opt/openshift/operator/ocp-x86_64"
-	x86OKDContentRootDir   = "/opt/openshift/operator/okd-x86_64"
 	ppc64OCPContentRootDir = "/opt/openshift/operator/ocp-ppc64le"
 	installtypekey         = "keyForInstallTypeField"
 	regkey                 = "keyForSamplesRegistryField"
@@ -275,7 +274,6 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg.Kind = "Config"
 		cfg.APIVersion = v1.GroupName + "/" + v1.Version
 		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.X86Architecture)
-		cfg.Spec.InstallType = v1.RHELSamplesDistribution
 		//TODO force use of registry.access.redhat.com until we sort out TBR/registry.redhat.io creds
 		cfg.Spec.SamplesRegistry = "registry.access.redhat.com"
 		cfg.Spec.ManagementState = operatorsv1api.Managed
@@ -637,10 +635,6 @@ func (h *Handler) Handle(event v1.Event) error {
 
 		if len(cfg.Spec.Architectures) == 0 {
 			cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.X86Architecture)
-		}
-
-		if len(cfg.Spec.InstallType) == 0 {
-			cfg.Spec.InstallType = v1.CentosSamplesDistribution
 		}
 
 		h.StoreCurrentValidConfig(cfg)

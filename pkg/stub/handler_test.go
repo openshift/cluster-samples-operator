@@ -55,10 +55,6 @@ func TestNoArchOrDist(t *testing.T) {
 }
 
 func TestWithDist(t *testing.T) {
-	distlist := []v1.SamplesDistributionType{
-		v1.CentosSamplesDistribution,
-		v1.RHELSamplesDistribution,
-	}
 	//TODO add back in after TBR creds sorted out
 	/*secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -68,41 +64,35 @@ func TestWithDist(t *testing.T) {
 	}
 	credEvent := v1.Event{Object: secret}*/
 
-	for _, dist := range distlist {
-		h, cfg, event := setup()
-		cfg.Spec.InstallType = dist
-		//TODO add back in when creds sorted out
-		/*if dist == v1.RHELSamplesDistribution {
-			fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
-			fakesecretclient.s = secret
-			err := h.Handle(event)
-			statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-			validate(true, err, "", cfg, conditions, statuses, t)
-			err = h.Handle(credEvent)
-			statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-			validate(true, err, "", cfg, conditions, statuses, t)
-			err = h.Handle(event)
-			statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-			validate(true, err, "", cfg, conditions, statuses, t)
-			err = h.Handle(event)
-			statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-			validate(true, err, "", cfg, conditions, statuses, t)
-		} else {*/
+	h, cfg, event := setup()
+	//TODO add back in when creds sorted out
+	/*if dist == v1.RHELSamplesDistribution {
+		fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
+		fakesecretclient.s = secret
 		err := h.Handle(event)
-		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		validate(true, err, "", cfg, conditions, statuses, t)
+		err = h.Handle(credEvent)
+		statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		validate(true, err, "", cfg, conditions, statuses, t)
 		err = h.Handle(event)
-		statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		validate(true, err, "", cfg, conditions, statuses, t)
-		//}
-	}
+		err = h.Handle(event)
+		statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		validate(true, err, "", cfg, conditions, statuses, t)
+	} else {*/
+	err := h.Handle(event)
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	validate(true, err, "", cfg, conditions, statuses, t)
+	err = h.Handle(event)
+	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	validate(true, err, "", cfg, conditions, statuses, t)
+	//}
+
 }
 
 func TestWithArchDist(t *testing.T) {
-	distlist := []v1.SamplesDistributionType{
-		v1.CentosSamplesDistribution,
-		v1.RHELSamplesDistribution,
-	}
 	//TODO add back in after TBR creds sorted out
 	/*secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -112,56 +102,52 @@ func TestWithArchDist(t *testing.T) {
 	}
 	credEvent := v1.Event{Object: secret}*/
 
-	for _, dist := range distlist {
-		h, cfg, event := setup()
-		cfg.Spec.Architectures = []string{
-			v1.X86Architecture,
-		}
-		cfg.Spec.InstallType = dist
-		//TODO add back in after TBR creds sorted out
-		/*if dist == v1.RHELSamplesDistribution {
-			fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
-			fakesecretclient.s = secret
-			err := h.Handle(event)
-			statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-			validate(true, err, "", cfg,
-				conditions,
-				statuses, t)
-			err = h.Handle(credEvent)
-			statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-			validate(true, err, "", cfg,
-				conditions,
-				statuses, t)
-			err = h.Handle(event)
-			statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-			validate(true, err, "", cfg,
-				conditions,
-				statuses, t)
-			err = h.Handle(event)
-			statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-			validate(true, err, "", cfg,
-				conditions,
-				statuses, t)
-		} else {*/
-		mimic(&h, dist, x86OKDContentRootDir)
+	h, cfg, event := setup()
+	cfg.Spec.Architectures = []string{
+		v1.X86Architecture,
+	}
+	//TODO add back in after TBR creds sorted out
+	/*if dist == v1.RHELSamplesDistribution {
+		fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
+		fakesecretclient.s = secret
 		err := h.Handle(event)
-		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		validate(true, err, "", cfg,
+			conditions,
+			statuses, t)
+		err = h.Handle(credEvent)
+		statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		validate(true, err, "", cfg,
 			conditions,
 			statuses, t)
 		err = h.Handle(event)
-		statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		validate(true, err, "", cfg,
 			conditions,
 			statuses, t)
-		//}
-	}
+		err = h.Handle(event)
+		statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		validate(true, err, "", cfg,
+			conditions,
+			statuses, t)
+	} else {*/
+	mimic(&h, x86OCPContentRootDir)
+	err := h.Handle(event)
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	validate(true, err, "", cfg,
+		conditions,
+		statuses, t)
+	err = h.Handle(event)
+	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	validate(true, err, "", cfg,
+		conditions,
+		statuses, t)
+	//}
 
-	h, cfg, event := setup()
+	h, cfg, event = setup()
 	/*fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
 	fakesecretclient.s = secret*/
-	mimic(&h, v1.RHELSamplesDistribution, ppc64OCPContentRootDir)
-	cfg.Spec.InstallType = v1.RHELSamplesDistribution
+	mimic(&h, ppc64OCPContentRootDir)
 	cfg.Spec.Architectures = []string{
 		v1.PPCArchitecture,
 	}
@@ -170,9 +156,9 @@ func TestWithArchDist(t *testing.T) {
 	validate(true, err, "", cfg,
 		conditions,
 		statuses, t)*/
-	err := h.Handle(event)
+	err = h.Handle(event)
 	//statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg,
 		conditions,
 		statuses, t)
@@ -183,35 +169,14 @@ func TestWithArchDist(t *testing.T) {
 		conditions,
 		statuses, t)
 
-	// verify cannot change arch and distro
+	// verify cannot change arch
 	cfg.ResourceVersion = "2"
-	cfg.Spec.InstallType = v1.CentosSamplesDistribution
 	cfg.Spec.Architectures = []string{
 		v1.X86Architecture,
 	}
-	mimic(&h, v1.CentosSamplesDistribution, x86OCPContentRootDir)
-	h.Handle(event)
-	invalidConfig(t, "cannot change installtype from", cfg.Condition(v1.ConfigurationValid))
-	cfg.Spec.InstallType = v1.RHELSamplesDistribution
+	mimic(&h, x86OCPContentRootDir)
 	h.Handle(event)
 	invalidConfig(t, "cannot change architectures from", cfg.Condition(v1.ConfigurationValid))
-}
-
-func TestWithBadDist(t *testing.T) {
-	h, cfg, event := setup()
-	cfg.Spec.InstallType = v1.SamplesDistributionType("foo")
-	h.Handle(event)
-	invalidConfig(t, "invalid install type", cfg.Condition(v1.ConfigurationValid))
-}
-
-func TestWithBadDistPPCArch(t *testing.T) {
-	h, cfg, event := setup()
-	cfg.Spec.InstallType = v1.SamplesDistributionType("foo")
-	cfg.Spec.Architectures = []string{
-		v1.PPCArchitecture,
-	}
-	h.Handle(event)
-	invalidConfig(t, "invalid install type", cfg.Condition(v1.ConfigurationValid))
 }
 
 func TestWithArch(t *testing.T) {
@@ -232,32 +197,11 @@ func TestWithBadArch(t *testing.T) {
 	invalidConfig(t, "architecture bad unsupported", cfg.Condition(v1.ConfigurationValid))
 }
 
-func TestConfigurationValidCondition(t *testing.T) {
-	h, cfg, event := setup()
-	err := h.Handle(event)
-	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-	cfg.Spec.InstallType = "rhel8"
-	cfg.ResourceVersion = "2"
-	err = h.Handle(event)
-	invalidConfig(t, "invalid install type", cfg.Condition(v1.ConfigurationValid))
-	cfg.Spec.InstallType = "centos"
-	cfg.ResourceVersion = "3"
-	err = h.Handle(event)
-	invalidConfig(t, "cannot change installtype from rhel to centos", cfg.Condition(v1.ConfigurationValid))
-	cfg.Spec.InstallType = "rhel"
-	cfg.ResourceVersion = "4"
-	err = h.Handle(event)
-	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-	cfg.ResourceVersion = "5"
-	err = h.Handle(event)
-	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-}
-
 func TestManagementState(t *testing.T) {
 	h, cfg, event := setup()
 	iskeys := getISKeys()
 	tkeys := getTKeys()
-	mimic(&h, v1.RHELSamplesDistribution, x86OCPContentRootDir)
+	mimic(&h, x86OCPContentRootDir)
 	cfg.Spec.ManagementState = operatorsv1api.Unmanaged
 
 	err := h.Handle(event)
@@ -338,7 +282,7 @@ func TestSkipped(t *testing.T) {
 	cfg.Status.SkippedImagestreams = iskeys
 	cfg.Status.SkippedTemplates = tkeys
 
-	mimic(&h, v1.RHELSamplesDistribution, x86OCPContentRootDir)
+	mimic(&h, x86OCPContentRootDir)
 
 	err := h.Handle(event)
 	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
@@ -393,97 +337,82 @@ func TestSkipped(t *testing.T) {
 }
 
 func TestProcessed(t *testing.T) {
-	dists := []v1.SamplesDistributionType{
-		v1.CentosSamplesDistribution,
-		v1.RHELSamplesDistribution,
+	h, cfg, event := setup()
+	event.Object = cfg
+	cfg.Spec.SamplesRegistry = "foo.io"
+	iskeys := getISKeys()
+	tkeys := getTKeys()
+
+	mimic(&h, x86OCPContentRootDir)
+
+	err := h.Handle(event)
+	validate(true, err, "", cfg,
+		conditions,
+		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+
+	err = h.Handle(event)
+	validate(true, err, "", cfg,
+		conditions,
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	err = h.Handle(event)
+	validate(true, err, "", cfg,
+		conditions,
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+
+	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
+	for _, key := range iskeys {
+		if _, ok := h.skippedImagestreams[key]; ok {
+			t.Fatalf("bad skipped processing for %s: %#v", key, h)
+		}
+		if _, ok := fakeisclient.upsertkeys[key]; !ok {
+			t.Fatalf("is did not reach client %s: %#v", key, h)
+		}
+	}
+	is, _ := fakeisclient.Get("", "foo", metav1.GetOptions{})
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	is, _ = fakeisclient.Get("", "bar", metav1.GetOptions{})
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
 	}
 
-	for _, dist := range dists {
-		h, cfg, event := setup()
-		event.Object = cfg
-		cfg.Spec.InstallType = dist
-		cfg.Spec.SamplesRegistry = "foo.io"
-		iskeys := getISKeys()
-		tkeys := getTKeys()
-
-		if dist == v1.CentosSamplesDistribution {
-			mimic(&h, dist, x86OKDContentRootDir)
+	faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
+	for _, key := range tkeys {
+		if _, ok := h.skippedTemplates[key]; ok {
+			t.Fatalf("bad skipped processing for %s: %#v", key, h)
 		}
-		if dist == v1.RHELSamplesDistribution {
-			mimic(&h, dist, x86OCPContentRootDir)
+		if _, ok := faketclient.upsertkeys[key]; !ok {
+			t.Fatalf("t did not reach client %s: %#v", key, h)
 		}
+	}
 
-		err := h.Handle(event)
-		validate(true, err, "", cfg,
-			conditions,
-			[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	// make sure registries are updated after already updating from the defaults
+	cfg.Spec.SamplesRegistry = "bar.io"
+	cfg.ResourceVersion = "2"
+	// fake out that the samples completed updating
+	progressing := cfg.Condition(v1.ImageChangesInProgress)
+	progressing.Status = corev1.ConditionFalse
+	cfg.ConditionUpdate(progressing)
 
-		err = h.Handle(event)
-		validate(true, err, "", cfg,
-			conditions,
-			[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-		err = h.Handle(event)
-		validate(true, err, "", cfg,
-			conditions,
-			[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-
-		fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
-		for _, key := range iskeys {
-			if _, ok := h.skippedImagestreams[key]; ok {
-				t.Fatalf("bad skipped processing for %s: %#v", key, h)
-			}
-			if _, ok := fakeisclient.upsertkeys[key]; !ok {
-				t.Fatalf("is did not reach client %s: %#v", key, h)
-			}
-		}
-		is, _ := fakeisclient.Get("", "foo", metav1.GetOptions{})
-		if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
-			t.Fatalf("stream repo not updated %#v, %#v", is, h)
-		}
-		is, _ = fakeisclient.Get("", "bar", metav1.GetOptions{})
-		if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
-			t.Fatalf("stream repo not updated %#v, %#v", is, h)
-		}
-
-		faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
-		for _, key := range tkeys {
-			if _, ok := h.skippedTemplates[key]; ok {
-				t.Fatalf("bad skipped processing for %s: %#v", key, h)
-			}
-			if _, ok := faketclient.upsertkeys[key]; !ok {
-				t.Fatalf("t did not reach client %s: %#v", key, h)
-			}
-		}
-
-		// make sure registries are updated after already updating from the defaults
-		cfg.Spec.SamplesRegistry = "bar.io"
-		cfg.ResourceVersion = "2"
-		cfg.Spec.InstallType = dist
-		// fake out that the samples completed updating
-		progressing := cfg.Condition(v1.ImageChangesInProgress)
-		progressing.Status = corev1.ConditionFalse
-		cfg.ConditionUpdate(progressing)
-
-		err = h.Handle(event)
-		validate(true, err, "", cfg,
-			conditions,
-			[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-		is, _ = fakeisclient.Get("", "foo", metav1.GetOptions{})
-		if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
-			t.Fatalf("stream repo not updated %#v, %#v", is, h)
-		}
-		is, _ = fakeisclient.Get("", "bar", metav1.GetOptions{})
-		if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
-			t.Fatalf("stream repo not updated %#v, %#v", is, h)
-		}
-
+	err = h.Handle(event)
+	validate(true, err, "", cfg,
+		conditions,
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	is, _ = fakeisclient.Get("", "foo", metav1.GetOptions{})
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	is, _ = fakeisclient.Get("", "bar", metav1.GetOptions{})
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
 	}
 
 }
 
 func TestImageStreamEvent(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, v1.RHELSamplesDistribution, x86OCPContentRootDir)
+	mimic(&h, x86OCPContentRootDir)
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
@@ -520,7 +449,6 @@ func TestImageStreamEvent(t *testing.T) {
 		},
 	}
 
-	cfg.Status.InstallType = v1.RHELSamplesDistribution
 	cfg.Status.Architectures = []string{v1.X86Architecture}
 	cfg.Status.SkippedImagestreams = []string{}
 	cfg.Status.SkippedTemplates = []string{}
@@ -582,7 +510,7 @@ func TestImageStreamEvent(t *testing.T) {
 
 func TestTemplateEvent(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, v1.RHELSamplesDistribution, x86OCPContentRootDir)
+	mimic(&h, x86OCPContentRootDir)
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
@@ -745,7 +673,7 @@ func TestImageGetError(t *testing.T) {
 		h, cfg, event := setup()
 		event.Object = cfg
 
-		mimic(&h, v1.RHELSamplesDistribution, x86OCPContentRootDir)
+		mimic(&h, x86OCPContentRootDir)
 
 		fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 		fakeisclient.geterrors = map[string]error{"foo": iserr}
@@ -913,7 +841,7 @@ func TestImageStreamImportError(t *testing.T) {
 	}
 	for _, is := range streams {
 		h, cfg, _ := setup()
-		mimic(&h, v1.RHELSamplesDistribution, x86OCPContentRootDir)
+		mimic(&h, x86OCPContentRootDir)
 		dir := h.GetBaseDir(v1.X86Architecture, cfg)
 		files, _ := h.Filefinder.List(dir)
 		h.processFiles(dir, files, cfg)
@@ -980,7 +908,7 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 		},
 	}
 	h, cfg, _ := setup()
-	mimic(&h, v1.RHELSamplesDistribution, x86OCPContentRootDir)
+	mimic(&h, x86OCPContentRootDir)
 	dir := h.GetBaseDir(v1.X86Architecture, cfg)
 	files, _ := h.Filefinder.List(dir)
 	h.processFiles(dir, files, cfg)
@@ -1051,7 +979,7 @@ func TestTemplateGetEreror(t *testing.T) {
 		h, cfg, event := setup()
 		event.Object = cfg
 
-		mimic(&h, v1.RHELSamplesDistribution, x86OCPContentRootDir)
+		mimic(&h, x86OCPContentRootDir)
 
 		faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 		faketclient.geterrors = map[string]error{"bo": terr}
@@ -1105,7 +1033,7 @@ func TestBadTopDirList(t *testing.T) {
 
 func TestBadSubDirList(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, v1.RHELSamplesDistribution, x86OCPContentRootDir)
+	mimic(&h, x86OCPContentRootDir)
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
 	fakefinder.errors = map[string]error{x86OCPContentRootDir + "/imagestreams": fmt.Errorf("badsubdir")}
 	err := h.Handle(event)
@@ -1124,22 +1052,9 @@ func TestBadTopLevelStatus(t *testing.T) {
 	validate(false, err, "badsdkupdate", cfg, conditions, statuses, t)
 }
 
-func TestUnsupportedDistroChange(t *testing.T) {
-	h, cfg, event := setup()
-	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
-
-	cfg.Spec.InstallType = v1.CentosSamplesDistribution
-	cfg.ResourceVersion = "2"
-	err = h.Handle(event)
-	invalidConfig(t, "cannot change installtype", cfg.Condition(v1.ConfigurationValid))
-}
-
 func TestUnsupportedArchChange(t *testing.T) {
 	h, cfg, event := setup()
 	cfg.Spec.Architectures = []string{v1.PPCArchitecture}
-	cfg.Spec.InstallType = v1.RHELSamplesDistribution
 	// fake out secret import as shortcut ... we test secret events elsewhere
 	cred := cfg.Condition(v1.ImportCredentialsExist)
 	cred.Status = corev1.ConditionTrue
@@ -1172,14 +1087,10 @@ func getTKeys() []string {
 	return []string{"bo", "go"}
 }
 
-func mimic(h *Handler, dist v1.SamplesDistributionType, topdir string) {
+func mimic(h *Handler, topdir string) {
 	cache.ClearUpsertsCache()
-	registry1 := "docker.io"
-	registry2 := "docker.io"
-	if dist == v1.RHELSamplesDistribution {
-		registry1 = "registry.access.redhat.com"
-		registry2 = "registry.redhat.io"
-	}
+	registry1 := "registry.access.redhat.com"
+	registry2 := "registry.redhat.io"
 	fakefile := h.Filefinder.(*fakeResourceFileLister)
 	fakefile.files = map[string][]fakeFileInfo{
 		topdir: {
