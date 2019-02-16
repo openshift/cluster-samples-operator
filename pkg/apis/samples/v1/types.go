@@ -44,9 +44,6 @@ const (
 	// X86Architecture is the value used to specify the x86_64 hardware architecture
 	// in the Architectures array field.
 	X86Architecture = "x86_64"
-	// PPCArchitecture is the value used to specify the ppc64le hardware architecture
-	// in the Architectures array field.
-	PPCArchitecture = "ppc64le"
 	// ConfigFinalizer is the text added to the Config.Finalizer field
 	// to enable finalizer processing.
 	ConfigFinalizer = GroupName + "/finalizer"

@@ -37,12 +37,11 @@ import (
 )
 
 const (
-	x86OCPContentRootDir   = "/opt/openshift/operator/ocp-x86_64"
-	ppc64OCPContentRootDir = "/opt/openshift/operator/ocp-ppc64le"
-	installtypekey         = "keyForInstallTypeField"
-	regkey                 = "keyForSamplesRegistryField"
-	skippedstreamskey      = "keyForSkippedImageStreamsField"
-	skippedtempskey        = "keyForSkippedTemplatesField"
+	x86OCPContentRootDir = "/opt/openshift/operator/ocp-x86_64"
+	installtypekey       = "keyForInstallTypeField"
+	regkey               = "keyForSamplesRegistryField"
+	skippedstreamskey    = "keyForSkippedImageStreamsField"
+	skippedtempskey      = "keyForSkippedTemplatesField"
 )
 
 func NewSamplesOperatorHandler(kubeconfig *restclient.Config) (*Handler, error) {
