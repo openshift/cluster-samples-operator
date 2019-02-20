@@ -274,8 +274,6 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg.Kind = "Config"
 		cfg.APIVersion = v1.GroupName + "/" + v1.Version
 		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.X86Architecture)
-		//TODO force use of registry.access.redhat.com until we sort out TBR/registry.redhat.io creds
-		cfg.Spec.SamplesRegistry = "registry.access.redhat.com"
 		cfg.Spec.ManagementState = operatorsv1api.Managed
 		h.AddFinalizer(cfg)
 		// we should get a watch event for the default pull secret, but just in case
@@ -386,10 +384,6 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 		return err
 	}
 
-	//TODO when we start copying secrets from kubesystem to act as the default secret for pulling rhel content
-	// we'll want to delete that one too ... we'll need to put a marking on the secret to indicate we created it
-	// vs. the admin creating it
-
 	return nil
 }
 
@@ -417,8 +411,12 @@ func (h *Handler) Handle(event v1.Event) error {
 			return nil
 		}
 
-		//TODO what do we do about possible missed delete events since we
-		// cannot add a finalizer in our namespace secret
+		// if we miss a delete event in the openshift namespace (since we cannot
+		// add a finalizer in our namespace secret), we our watch
+		// on the kube-system coreos pull secret should still repopulate;
+		// if that gets deleted, the whole cluster is hosed; plus, there is talk
+		// of moving data like that to a special config namespace that is somehow
+		// protected
 
 		cfg, _ := h.crdwrapper.Get(v1.ConfigName)
 		if cfg != nil {
