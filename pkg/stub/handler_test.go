@@ -46,8 +46,9 @@ func TestWrongSampleResourceName(t *testing.T) {
 
 func TestNoArchOrDist(t *testing.T) {
 	h, cfg, event := setup()
+	processCred(&h, cfg, t)
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	err = h.Handle(event)
 	statuses[0] = corev1.ConditionTrue
@@ -55,104 +56,45 @@ func TestNoArchOrDist(t *testing.T) {
 }
 
 func TestWithDist(t *testing.T) {
-	//TODO add back in after TBR creds sorted out
-	/*secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            v1.SamplesRegistryCredentials,
-			ResourceVersion: "a",
-		},
-	}
-	credEvent := v1.Event{Object: secret}*/
-
 	h, cfg, event := setup()
-	//TODO add back in when creds sorted out
-	/*if dist == v1.RHELSamplesDistribution {
-		fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
-		fakesecretclient.s = secret
-		err := h.Handle(event)
-		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-		validate(true, err, "", cfg, conditions, statuses, t)
-		err = h.Handle(credEvent)
-		statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-		validate(true, err, "", cfg, conditions, statuses, t)
-		err = h.Handle(event)
-		statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-		validate(true, err, "", cfg, conditions, statuses, t)
-		err = h.Handle(event)
-		statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-		validate(true, err, "", cfg, conditions, statuses, t)
-	} else {*/
+	processCred(&h, cfg, t)
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	err = h.Handle(event)
-	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
-	//}
 
 }
 
 func TestWithArchDist(t *testing.T) {
-	//TODO add back in after TBR creds sorted out
-	/*secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            v1.SamplesRegistryCredentials,
-			ResourceVersion: "a",
-		},
-	}
-	credEvent := v1.Event{Object: secret}*/
-
 	h, cfg, event := setup()
+	processCred(&h, cfg, t)
 	cfg.Spec.Architectures = []string{
 		v1.X86Architecture,
 	}
-	//TODO add back in after TBR creds sorted out
-	/*if dist == v1.RHELSamplesDistribution {
-		fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
-		fakesecretclient.s = secret
-		err := h.Handle(event)
-		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-		validate(true, err, "", cfg,
-			conditions,
-			statuses, t)
-		err = h.Handle(credEvent)
-		statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-		validate(true, err, "", cfg,
-			conditions,
-			statuses, t)
-		err = h.Handle(event)
-		statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-		validate(true, err, "", cfg,
-			conditions,
-			statuses, t)
-		err = h.Handle(event)
-		statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-		validate(true, err, "", cfg,
-			conditions,
-			statuses, t)
-	} else {*/
 	mimic(&h, x86OCPContentRootDir)
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg,
 		conditions,
 		statuses, t)
 	err = h.Handle(event)
-	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg,
 		conditions,
 		statuses, t)
-	//}
 
 }
 
 func TestWithArch(t *testing.T) {
 	h, cfg, event := setup()
+	processCred(&h, cfg, t)
 	cfg.Spec.Architectures = []string{
 		v1.X86Architecture,
 	}
 	err := h.Handle(event)
-	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 }
 
 func TestWithBadArch(t *testing.T) {
@@ -166,13 +108,14 @@ func TestWithBadArch(t *testing.T) {
 
 func TestManagementState(t *testing.T) {
 	h, cfg, event := setup()
+	processCred(&h, cfg, t)
 	iskeys := getISKeys()
 	tkeys := getTKeys()
 	mimic(&h, x86OCPContentRootDir)
 	cfg.Spec.ManagementState = operatorsv1api.Unmanaged
 
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
@@ -191,18 +134,18 @@ func TestManagementState(t *testing.T) {
 	cfg.ResourceVersion = "2"
 	cfg.Spec.ManagementState = operatorsv1api.Managed
 	err = h.Handle(event)
-	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	err = h.Handle(event)
 	// event after in progress set to true, sets exists to true
-	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	// event after exists is true that should trigger samples upsert
 	err = h.Handle(event)
 	// event after in progress set to true
-	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	for _, key := range iskeys {
@@ -242,6 +185,7 @@ func TestManagementState(t *testing.T) {
 
 func TestSkipped(t *testing.T) {
 	h, cfg, event := setup()
+	processCred(&h, cfg, t)
 	iskeys := getISKeys()
 	tkeys := getTKeys()
 	cfg.Spec.SkippedImagestreams = iskeys
@@ -252,7 +196,7 @@ func TestSkipped(t *testing.T) {
 	mimic(&h, x86OCPContentRootDir)
 
 	err := h.Handle(event)
-	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	for _, key := range iskeys {
@@ -379,9 +323,10 @@ func TestProcessed(t *testing.T) {
 
 func TestImageStreamEvent(t *testing.T) {
 	h, cfg, event := setup()
+	processCred(&h, cfg, t)
 	mimic(&h, x86OCPContentRootDir)
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	// expedite the stream events coming in
 	cache.ClearUpsertsCache()
@@ -477,9 +422,10 @@ func TestImageStreamEvent(t *testing.T) {
 
 func TestTemplateEvent(t *testing.T) {
 	h, cfg, event := setup()
+	processCred(&h, cfg, t)
 	mimic(&h, x86OCPContentRootDir)
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	err = h.Handle(event)
 	statuses[0] = corev1.ConditionTrue
@@ -532,11 +478,16 @@ func TestCreateDeleteSecretBeforeCR(t *testing.T) {
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
 		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	processCred(&h, cfg, t)
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
 		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	err = h.Handle(event)
+	validate(true, err, "", cfg,
+		conditions,
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 
 }
 
@@ -544,24 +495,12 @@ func TestCreateDeleteSecretAfterCR(t *testing.T) {
 	h, cfg, event := setup()
 
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
-
-	event.Object = &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      v1.SamplesRegistryCredentials,
-			Namespace: "openshift",
-			Annotations: map[string]string{
-				v1.SamplesVersionAnnotation: v1.GitVersionString(),
-			},
-			ResourceVersion: "a",
-		},
-	}
-	err = h.Handle(event)
+	processCred(&h, cfg, t)
 	statuses[1] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
 
-	event.Deleted = true
 	h.secretRetryCount = 3 // bypass retry on CR update race
 	cfg.Spec.ManagementState = operatorsv1api.Removed
 	statuses[1] = corev1.ConditionFalse
@@ -571,9 +510,13 @@ func TestCreateDeleteSecretAfterCR(t *testing.T) {
 
 	cfg.Spec.ManagementState = operatorsv1api.Managed
 	h.secretRetryCount = 3
-	statuses[1] = corev1.ConditionTrue
 	err = h.Handle(event)
-	// import cred should be true since we should recreate when managed
+	// even though we recreate the secret, we wait for the event to come in
+	// to set import cred to true
+	validate(true, err, "", cfg, conditions, statuses, t)
+	// mimic event from recreate that should have occurred
+	processCred(&h, cfg, t)
+	statuses[1] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 }
@@ -583,17 +526,15 @@ func setup() (Handler, *v1.Config, v1.Event) {
 	cfg, _ := h.CreateDefaultResourceIfNeeded(nil)
 	cfg = h.initConditions(cfg)
 	h.crdwrapper.(*fakeCRDWrapper).cfg = cfg
+	cache.ClearUpsertsCache()
 	return h, cfg, v1.Event{Object: cfg}
 }
 
-func TestSameSecret(t *testing.T) {
-	h, cfg, event := setup()
-
-	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
-
-	event.Object = &corev1.Secret{
+func processCred(h *Handler, cfg *v1.Config, t *testing.T) {
+	if !cfg.ConditionFalse(v1.ImportCredentialsExist) {
+		t.Fatalf("import cred exists unexpectedly true: %#v", cfg)
+	}
+	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      v1.SamplesRegistryCredentials,
 			Namespace: "openshift",
@@ -603,18 +544,32 @@ func TestSameSecret(t *testing.T) {
 			ResourceVersion: "a",
 		},
 	}
-	err = h.Handle(event)
+	credEvent := v1.Event{Object: secret}
+	err := h.Handle(credEvent)
+	if !cfg.ConditionTrue(v1.ImportCredentialsExist) {
+		t.Fatalf("secret event did not set import cred to true; err: %v, cfg: %#v", err, cfg)
+	}
+}
+
+func TestSameSecret(t *testing.T) {
+	h, cfg, event := setup()
+
+	err := h.Handle(event)
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	validate(true, err, "", cfg, conditions, statuses, t)
+	processCred(&h, cfg, t)
 	statuses[1] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	err = h.Handle(event)
+	statuses[3] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
 }
 
 func TestSecretAPIError(t *testing.T) {
 	h, cfg, event := setup()
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	event.Object = &corev1.Secret{
@@ -638,14 +593,14 @@ func TestImageGetError(t *testing.T) {
 	}
 	for _, iserr := range errors {
 		h, cfg, event := setup()
-		event.Object = cfg
+		processCred(&h, cfg, t)
 
 		mimic(&h, x86OCPContentRootDir)
 
 		fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 		fakeisclient.geterrors = map[string]error{"foo": iserr}
 
-		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		err := h.Handle(event)
 		if !kerrors.IsNotFound(iserr) {
 			statuses[3] = corev1.ConditionUnknown
@@ -944,14 +899,14 @@ func TestTemplateGetEreror(t *testing.T) {
 	}
 	for _, terr := range errors {
 		h, cfg, event := setup()
-		event.Object = cfg
+		processCred(&h, cfg, t)
 
 		mimic(&h, x86OCPContentRootDir)
 
 		faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 		faketclient.geterrors = map[string]error{"bo": terr}
 
-		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		err := h.Handle(event)
 		if !kerrors.IsNotFound(terr) {
 			statuses[3] = corev1.ConditionUnknown
@@ -973,10 +928,11 @@ func TestDeletedCR(t *testing.T) {
 
 func TestSameCR(t *testing.T) {
 	h, cfg, event := setup()
+	processCred(&h, cfg, t)
 	cfg.ResourceVersion = "a"
 
 	// first pass on the resource creates the samples
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	err := h.Handle(event)
 	validate(true, err, "", cfg, conditions, statuses, t)
 
@@ -985,37 +941,41 @@ func TestSameCR(t *testing.T) {
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	err = h.Handle(event)
+	statuses[3] = corev1.ConditionFalse
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 }
 
 func TestBadTopDirList(t *testing.T) {
 	h, cfg, event := setup()
+	processCred(&h, cfg, t)
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
 	fakefinder.errors = map[string]error{x86OCPContentRootDir: fmt.Errorf("badtopdir")}
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(false, err, "badtopdir", cfg, conditions, statuses, t)
 }
 
 func TestBadSubDirList(t *testing.T) {
 	h, cfg, event := setup()
+	processCred(&h, cfg, t)
 	mimic(&h, x86OCPContentRootDir)
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
 	fakefinder.errors = map[string]error{x86OCPContentRootDir + "/imagestreams": fmt.Errorf("badsubdir")}
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(false, err, "badsubdir", cfg, conditions, statuses, t)
 }
 
 func TestBadTopLevelStatus(t *testing.T) {
 	h, cfg, event := setup()
+	processCred(&h, cfg, t)
 	fakestatus := h.crdwrapper.(*fakeCRDWrapper)
 	fakestatus.updateerr = fmt.Errorf("badsdkupdate")
 	err := h.Handle(event)
 	// with deferring sdk updates to the very end, the local object will still have valid statuses on it, even though the error
 	// error returned by h.Handle indicates etcd was not updated
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(false, err, "badsdkupdate", cfg, conditions, statuses, t)
 }
 

@@ -221,10 +221,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 }
 
 func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.ImageStream, opcfg *v1.Config) {
-	//TODO remove when TBR creds sorted out and we do not explicitly set SamplesRegistry to registry.access.redhat.com
-	// by default we want to leave the jenkins images as using the payload set to the IMAGE* env's
-	// but if the customer overrides (after we switch to TBR and don't set SamplesRegistry by default), we'll let them
-	// change jenkins related images
+	// we always want to leave the jenkins images as using the payload set to the IMAGE* env's;
 	switch imagestream.Name {
 	case "jenkins":
 		return
@@ -233,29 +230,32 @@ func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.Ima
 	case "jenkins-agent-maven":
 		return
 	}
-	if len(opcfg.Spec.SamplesRegistry) > 0 {
-		logrus.Debugf("updateDockerPullSpec stream %s has repo %s", imagestream.Name, imagestream.Spec.DockerImageRepository)
-		// don't mess with deprecated field unless it is actually set with something
-		if len(imagestream.Spec.DockerImageRepository) > 0 &&
-			!strings.HasPrefix(imagestream.Spec.DockerImageRepository, opcfg.Spec.SamplesRegistry) {
-			// if not one of our 4 defaults ...
-			imagestream.Spec.DockerImageRepository = h.coreUpdateDockerPullSpec(imagestream.Spec.DockerImageRepository,
-				opcfg.Spec.SamplesRegistry,
-				oldies)
-		}
 
-		for _, tagref := range imagestream.Spec.Tags {
-			logrus.Debugf("updateDockerPullSpec stream %s and tag %s has from %#v", imagestream.Name, tagref.Name, tagref.From)
-			if tagref.From != nil {
-				switch tagref.From.Kind {
-				// ImageStreamTag and ImageStreamImage will ultimately point to a DockerImage From object reference
-				// we are only updating the actual registry pull specs
-				case "DockerImage":
-					if !strings.HasPrefix(tagref.From.Name, opcfg.Spec.SamplesRegistry) {
-						tagref.From.Name = h.coreUpdateDockerPullSpec(tagref.From.Name,
-							opcfg.Spec.SamplesRegistry,
-							oldies)
-					}
+	if len(opcfg.Spec.SamplesRegistry) == 0 {
+		return
+	}
+
+	logrus.Debugf("updateDockerPullSpec stream %s has repo %s", imagestream.Name, imagestream.Spec.DockerImageRepository)
+	// don't mess with deprecated field unless it is actually set with something
+	if len(imagestream.Spec.DockerImageRepository) > 0 &&
+		!strings.HasPrefix(imagestream.Spec.DockerImageRepository, opcfg.Spec.SamplesRegistry) {
+		// if not one of our 4 defaults ...
+		imagestream.Spec.DockerImageRepository = h.coreUpdateDockerPullSpec(imagestream.Spec.DockerImageRepository,
+			opcfg.Spec.SamplesRegistry,
+			oldies)
+	}
+
+	for _, tagref := range imagestream.Spec.Tags {
+		logrus.Debugf("updateDockerPullSpec stream %s and tag %s has from %#v", imagestream.Name, tagref.Name, tagref.From)
+		if tagref.From != nil {
+			switch tagref.From.Kind {
+			// ImageStreamTag and ImageStreamImage will ultimately point to a DockerImage From object reference
+			// we are only updating the actual registry pull specs
+			case "DockerImage":
+				if !strings.HasPrefix(tagref.From.Name, opcfg.Spec.SamplesRegistry) {
+					tagref.From.Name = h.coreUpdateDockerPullSpec(tagref.From.Name,
+						opcfg.Spec.SamplesRegistry,
+						oldies)
 				}
 			}
 		}
