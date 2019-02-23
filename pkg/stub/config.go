@@ -67,94 +67,91 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 // second boolean: does the config change require a samples upsert; for example, simply adding
 // to a skip list does not require a samples upsert
 // third boolean: even if an upsert is not needed, update the config instance to clear out image import errors
-func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool) {
+// fourth boolean: if the registry changed, that means a) we have to update all imagestreams regardless of skip lists;
+// and b) we don't have to update the templates if that is the only change
+// first map: imagestreams that were unskipped (imagestream updates can be expensive, so an optimization)
+// second map: templates that were unskipped
+func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool, bool, map[string]bool, map[string]bool) {
+	configChangeAtAll := false
+	configChangeRequireUpsert := false
+	clearImageImportErrors := false
+	registryChange := false
+
+	logrus.Debugf("the before skipped templates %#v", cfg.Status.SkippedTemplates)
+	logrus.Debugf("the after skipped templates %#v and associated map %#v", cfg.Spec.SkippedTemplates, h.skippedTemplates)
+	logrus.Debugf("the before skipped streams %#v", cfg.Status.SkippedImagestreams)
+	logrus.Debugf("the after skipped streams %#v and associated map %#v", cfg.Spec.SkippedImagestreams, h.skippedImagestreams)
+
+	unskippedTemplates := map[string]bool{}
+	// capture additions/subtractions from skipped list in general change boolean
+	if len(cfg.Spec.SkippedTemplates) != len(cfg.Status.SkippedTemplates) {
+		configChangeAtAll = true
+	}
+
+	// build the list of skipped templates; assumes buildSkipFilters called beforehand
+	for _, tpl := range cfg.Status.SkippedTemplates {
+		// if something that was skipped (in Status list) is no longer skipped, build list/capture that fact
+		// this should capture reductions in the skipped list, as well as changing entries, but the number of skips
+		// staying the same
+		if _, ok := h.skippedTemplates[tpl]; !ok {
+			unskippedTemplates[tpl] = true
+			configChangeAtAll = true // set to true in case sizes are equal, but contents have changed
+			configChangeRequireUpsert = true
+		}
+	}
+
+	if configChangeAtAll {
+		logrus.Printf("SkippedTemplates changed from %#v to %#v", cfg.Status.SkippedTemplates, cfg.Spec.SkippedTemplates)
+	}
+
+	unskippedStreams := map[string]bool{}
 	if cfg.Spec.SamplesRegistry != cfg.Status.SamplesRegistry {
 		logrus.Printf("SamplesRegistry changed from %s to %s", cfg.Status.SamplesRegistry, cfg.Spec.SamplesRegistry)
-		return true, true, false
+		configChangeAtAll = true
+		configChangeRequireUpsert = true
+		registryChange = true
+		return configChangeAtAll, configChangeRequireUpsert, clearImageImportErrors, registryChange, unskippedStreams, unskippedTemplates
 	}
 
-	logrus.Debugf("cfg skipped streams %#v", cfg.Spec.SkippedImagestreams)
-	unskippedStreams := map[string]bool{}
+	streamChange := false
+	// capture additions/subtractions from skipped list in general change boolean
+	if len(cfg.Spec.SkippedImagestreams) != len(cfg.Status.SkippedImagestreams) {
+		configChangeAtAll = true
+		streamChange = true
+	}
+
 	streamsThatWereSkipped := map[string]bool{}
+	// build the list of skipped imagestreams; assumes buildSkipFilters called beforehand
 	for _, stream := range cfg.Status.SkippedImagestreams {
 		streamsThatWereSkipped[stream] = true
-		// compare against the newly built spec list, if not in there, it is unskipped
+		// if something that was skipped (in Status list) is no longer skipped, build list/capture that fact
+		// this should capture reductions in the skipped list, as well as changing entries, but the number of skips
+		// staying the same
 		if _, ok := h.skippedImagestreams[stream]; !ok {
 			unskippedStreams[stream] = true
+			configChangeAtAll = true // set to true in case sizes are equal, but contents have changed
+			configChangeRequireUpsert = true
+			streamChange = true
 		}
 	}
 
-	if len(cfg.Spec.SkippedImagestreams) != len(cfg.Status.SkippedImagestreams) {
-		logrus.Printf("SkippedImagestreams changed in size from %#v to %#v", cfg.Status.SkippedImagestreams, cfg.Spec.SkippedImagestreams)
-		if len(cfg.Spec.SkippedImagestreams) < len(cfg.Status.SkippedImagestreams) {
-			// skip list reduced, meaning we need to upsert some samples we were ignoring
-			return true, true, false
-		}
-		// even if the skipped list has been increased, if a stream we were skipping
-		// has been removed, we need to upsert; assumes buildSkipFilters called beforehand
-		if len(unskippedStreams) > 0 {
-			return true, true, true
-		}
-		// otherwise, we've only added to the skip list, so don't upsert,but also see if we
-		// need to  update the cfg from the main loop to clear out any prior image import
-		// errors for skipped streams
-		clearImageImportErrors := false
-		for _, stream := range cfg.Spec.SkippedImagestreams {
-			importErrors := cfg.Condition(v1.ImportImageErrorsExist)
-			beforeError := cfg.NameInReason(importErrors.Reason, stream)
-			importErrors = h.clearStreamFromImportError(stream, cfg.Condition(v1.ImportImageErrorsExist), cfg)
-			afterError := cfg.NameInReason(importErrors.Reason, stream)
-			if beforeError && !afterError {
-				clearImageImportErrors = true
-				// we do not break here cause we want to clear out all possible streams
-			}
-		}
-		return true, false, clearImageImportErrors
+	if streamChange {
+		logrus.Printf("SkippedImagestreams changed from %#v to %#v", cfg.Status.SkippedImagestreams, cfg.Spec.SkippedImagestreams)
 	}
 
-	clearImageImportErrors := false
-	changeInContent := false
-	for _, skip := range cfg.Spec.SkippedImagestreams {
-		if _, ok := streamsThatWereSkipped[skip]; !ok {
-			logrus.Printf("imagestream %s no longer skipped", skip)
-			changeInContent = true
-			importErrors := cfg.Condition(v1.ImportImageErrorsExist)
-			beforeError := cfg.NameInReason(importErrors.Reason, skip)
-			importErrors = h.clearStreamFromImportError(skip, importErrors, cfg)
-			afterError := cfg.NameInReason(importErrors.Reason, skip)
-			if beforeError && !afterError {
-				clearImageImportErrors = true
-			}
-		}
-	}
-	if changeInContent {
-		return changeInContent, changeInContent, clearImageImportErrors
-	}
-
-	if len(cfg.Spec.SkippedTemplates) != len(cfg.Status.SkippedTemplates) {
-		logrus.Printf("SkippedTemplates changed from %#v to %#v", cfg.Status.SkippedTemplates, cfg.Spec.SkippedTemplates)
-		if len(cfg.Spec.SkippedTemplates) < len(cfg.Status.SkippedTemplates) {
-			return true, true, false
-		}
-		for _, tpl := range cfg.Status.SkippedTemplates {
-			// even if the skipped list has been increased, if a tpl we were skipping
-			// has been removed, we need to upsert; assumes buildSkipFilters called beforehand
-			if _, ok := h.skippedTemplates[tpl]; !ok {
-				return true, true, false
-			}
-		}
-		return true, false, false
-	}
-
-	for i, skip := range cfg.Spec.SkippedTemplates {
-		if skip != cfg.Status.SkippedTemplates[i] {
-			logrus.Printf("SkippedTemplates changed in content from %s to %s", cfg.Status.SkippedTemplates[i], skip)
-			return true, true, false
+	// see if need to update the cfg from the main loop to clear out any prior image import
+	// errors for skipped streams
+	for _, stream := range cfg.Spec.SkippedImagestreams {
+		importErrors := cfg.Condition(v1.ImportImageErrorsExist)
+		beforeError := cfg.NameInReason(importErrors.Reason, stream)
+		importErrors = h.clearStreamFromImportError(stream, cfg.Condition(v1.ImportImageErrorsExist), cfg)
+		if beforeError {
+			clearImageImportErrors = true
+			// we do not break here cause we want to clear out all possible streams
 		}
 	}
 
-	logrus.Debugf("Incoming Config unchanged from last processed version")
-	return false, false, false
+	return configChangeAtAll, configChangeRequireUpsert, clearImageImportErrors, registryChange, unskippedStreams, unskippedTemplates
 }
 
 func (h *Handler) buildSkipFilters(opcfg *v1.Config) {

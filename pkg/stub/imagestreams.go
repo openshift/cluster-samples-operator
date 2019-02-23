@@ -17,7 +17,11 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 	// our pattern is the top most caller locks the mutex
 
 	cfg, filePath, doUpsert, err := h.prepSamplesWatchEvent("imagestream", is.Name, is.Annotations, deleted)
-	logrus.Debugf("prep watch event imgstr %s doUpsert %v err==nil %v cfg==nil %v", is.Name, doUpsert, err == nil, cfg == nil)
+	if cfg != nil && cfg.ConditionTrue(v1.ImageChangesInProgress) {
+		logrus.Printf("Imagestream %s watch event do upsert %v; no errors in prep %v,  possibly update operator conditions %v", is.Name, doUpsert, err == nil, cfg != nil)
+	} else {
+		logrus.Debugf("Imagestream %s watch event do upsert %v; no errors in prep %v,  possibly update operator conditions %v", is.Name, doUpsert, err == nil, cfg != nil)
+	}
 	if !doUpsert {
 		if err != nil {
 			return err
@@ -56,20 +60,27 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 				}
 
 				// see if we should turn off pending, clear errors
-				cfg = h.processImportStatus(is, cfg)
-				if strings.Contains(cfg.Condition(v1.ImageChangesInProgress).Reason, is.Name+" ") {
-					logrus.Printf("imagestream %s still not finished with its image imports", is.Name)
+				nonMatchDetail := ""
+				cfg, nonMatchDetail = h.processImportStatus(is, cfg)
+				if cfg.NameInReason(cfg.Condition(v1.ImageChangesInProgress).Reason, is.Name) {
+					logrus.Printf("imagestream %s still not finished with its image imports, including %s", is.Name, nonMatchDetail)
 					// cached instances are processed at the end of the handler Config event flow
 					return nil
 				}
 			}
 			for _, key := range keysToClear {
 				cache.RemoveUpsert(key)
+				cfg.ClearNameInReason(cfg.Condition(v1.ImageChangesInProgress).Reason, key)
+				cfg.ClearNameInReason(cfg.Condition(v1.ImportImageErrorsExist).Reason, key)
 			}
 			afterProgressReason := cfg.Condition(v1.ImageChangesInProgress).Reason
 			afterErrorReason := cfg.Condition(v1.ImportImageErrorsExist).Reason
 			if beforeInReasons &&
 				(beforeProgressReason != afterProgressReason || beforeErrorReason != afterErrorReason) {
+				if len(strings.TrimSpace(afterProgressReason)) == 0 {
+					h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
+					logrus.Println("The last in progress imagestream has completed")
+				}
 				logrus.Printf("CRDUPDATE updating progress/error condition after results for %s", is.Name)
 				err = h.crdwrapper.UpdateStatus(cfg)
 				if err == nil {
@@ -82,7 +93,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		// otherwise, if someone else changed it in such a way that we don't want to
 		// upsert it again, or we missed an event and this is a relist, update conditions
 		// as needed
-		cfg = h.processImportStatus(is, cfg)
+		cfg, _ = h.processImportStatus(is, cfg)
 		afterProgressReason := cfg.Condition(v1.ImageChangesInProgress).Reason
 		afterErrorReason := cfg.Condition(v1.ImportImageErrorsExist).Reason
 		if beforeInReasons &&
@@ -305,10 +316,11 @@ func (h *Handler) clearStreamFromImportError(name string, importError *v1.Config
 	return importError
 }
 
-func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) *v1.Config {
+func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (*v1.Config, string) {
 	pending := false
 	anyErrors := false
 	importError := cfg.Condition(v1.ImportImageErrorsExist)
+	nonMatchDetail := ""
 
 	// need to check for error conditions outside of the spec/status comparison because in an error scenario
 	// you can end up with less status tags than spec tags (especially if one tag refs another), but don't cite
@@ -391,6 +403,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) *
 										matched = true
 										break
 									}
+									nonMatchDetail = fmt.Sprintf("spec tag %s is at generation %d, but status tag %s is at generation %d", specTag.Name, *specTag.Generation, statusTag.Tag, event.Generation)
 								}
 							}
 						}
@@ -402,6 +415,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) *
 				}
 			} else {
 				pending = true
+				nonMatchDetail = "the number of status tags does not equal the number of spec tags"
 			}
 		}
 	} else {
@@ -447,5 +461,5 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) *
 		h.clearStreamFromImportError(is.Name, importError, cfg)
 	}
 
-	return cfg
+	return cfg, nonMatchDetail
 }
