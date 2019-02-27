@@ -424,6 +424,11 @@ func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, 
 // ClusterNeedsCreds checks the conditions that drive whether the operator complains about
 // needing credentials to import RHEL content
 func (s *Config) ClusterNeedsCreds() bool {
+	if strings.TrimSpace(s.Spec.SamplesRegistry) != "" &&
+		strings.TrimSpace(s.Spec.SamplesRegistry) != "registry.redhat.io" {
+		return false
+	}
+
 	if s.Spec.ManagementState == operatorv1.Removed ||
 		s.Spec.ManagementState == operatorv1.Unmanaged {
 		return false
@@ -431,7 +436,21 @@ func (s *Config) ClusterNeedsCreds() bool {
 	if s.Status.Conditions == nil {
 		return true
 	}
-	return s.ConditionFalse(ImportCredentialsExist) && (s.Spec.SamplesRegistry == "" || s.Spec.SamplesRegistry == "registry.redhat.io")
+
+	// some timing paths can lead to only the  config valid condition existing,
+	// so explicitly check it the import creds condition is even there yet
+	foundImportCred := false
+	for _, rc := range s.Status.Conditions {
+		if rc.Type == ImportCredentialsExist {
+			foundImportCred = true
+			break
+		}
+	}
+	if !foundImportCred {
+		return true
+	}
+
+	return s.ConditionFalse(ImportCredentialsExist)
 }
 
 type Event struct {
