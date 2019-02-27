@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"k8s.io/client-go/util/flowcontrol"
+
 	imagev1 "github.com/openshift/api/image/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
@@ -187,6 +189,9 @@ type defaultInClusterInitter struct {
 }
 
 func (g *defaultInClusterInitter) init(h *Handler, restconfig *restclient.Config) {
+	if restconfig.RateLimiter == nil {
+		restconfig.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(50.0, 50)
+	}
 	h.restconfig = restconfig
 	tempclient, err := getTemplateClient(restconfig)
 	if err != nil {
