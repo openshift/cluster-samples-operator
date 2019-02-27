@@ -36,3 +36,15 @@ spec:
     from:
       kind: DockerImage
       name: docker.io/openshift/origin-tests:v4.0
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
+  name: must-gather
+spec:
+  tags:
+    - name: latest
+      from:
+        kind: DockerImage
+        name: docker.io/openshift/ose-must-gather:v4.0
