@@ -192,9 +192,7 @@ func verifyClusterOperatorConditionsComplete(t *testing.T) {
 			t.Logf("%v", err)
 			return false, nil
 		}
-		availableOK := false
-		progressingOK := false
-		failingOK := false
+		availableOK, progressingOK, failingOK, versionOK := false, false, false, false
 		for _, condition := range state.Status.Conditions {
 			switch condition.Type {
 			case configv1.OperatorAvailable:
@@ -211,7 +209,11 @@ func verifyClusterOperatorConditionsComplete(t *testing.T) {
 				}
 			}
 		}
-		if availableOK && progressingOK && failingOK {
+		if len(state.Status.Versions) > 0 && state.Status.Versions[0].Name == "operator" && len(state.Status.Versions[0].Version) > 0 {
+			versionOK = true
+		}
+
+		if availableOK && progressingOK && failingOK && versionOK {
 			return true, nil
 		}
 		return false, nil
@@ -327,7 +329,7 @@ func getSamplesNames(dir string, files []os.FileInfo, t *testing.T) map[string]m
 }
 
 func verifyImageStreamsPresent(t *testing.T, content map[string]bool, timeToCompare *kapis.Time) {
-	for key, _ := range content {
+	for key := range content {
 		var is *imageapiv1.ImageStream
 		var err error
 
@@ -372,7 +374,7 @@ func verifyImageStreamsGone(t *testing.T) {
 	time.Sleep(30 * time.Second)
 	content := getSamplesNames(getContentDir(t), nil, t)
 	streams, _ := content[imagestreamsKey]
-	for key, _ := range streams {
+	for key := range streams {
 		_, err := imageClient.ImageV1().ImageStreams("openshift").Get(key, metav1.GetOptions{})
 		if err == nil {
 			dumpPod(t)
@@ -383,7 +385,7 @@ func verifyImageStreamsGone(t *testing.T) {
 }
 
 func verifyTemplatesPresent(t *testing.T, content map[string]bool, timeToCompare *kapis.Time) {
-	for key, _ := range content {
+	for key := range content {
 		var template *templatev1.Template
 		var err error
 
@@ -412,7 +414,7 @@ func verifyTemplatesGone(t *testing.T) {
 	time.Sleep(30 * time.Second)
 	content := getSamplesNames(getContentDir(t), nil, t)
 	templates, _ := content[templatesKey]
-	for key, _ := range templates {
+	for key := range templates {
 		_, err := templateClient.TemplateV1().Templates("openshift").Get(key, metav1.GetOptions{})
 		if err == nil {
 			dumpPod(t)

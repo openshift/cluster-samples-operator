@@ -195,7 +195,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 		imagestreamInOperatorImage.Annotations = make(map[string]string)
 	}
 	imagestreamInOperatorImage.Labels[v1.SamplesManagedLabel] = "true"
-	imagestreamInOperatorImage.Annotations[v1.SamplesVersionAnnotation] = v1.GitVersionString()
+	imagestreamInOperatorImage.Annotations[v1.SamplesVersionAnnotation] = h.version
 
 	if imagestreamInCluster == nil {
 		_, err := h.imageclientwrapper.Create("openshift", imagestreamInOperatorImage)

@@ -2,6 +2,7 @@ package v1
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -9,7 +10,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/pkg/version"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -61,22 +61,6 @@ const (
 	// in the openshift namespace.
 	SamplesRecreateCredentialAnnotation = GroupName + "/recreate"
 )
-
-func GitVersionString() string {
-	vinfo := version.Get()
-	versionString := "4.0.0-alpha1-"
-	switch {
-	case len(vinfo.GitVersion) > 0:
-		versionString = string(vinfo.GitVersion) + "-"
-		fallthrough
-	case len(vinfo.GitCommit) > 0:
-		c := string(vinfo.GitCommit)[0:9]
-		versionString = versionString + c
-	default:
-		versionString = "4.0.0-was-not-built-properly"
-	}
-	return versionString
-}
 
 type ConfigSpec struct {
 	// ManagementState is top level on/off type of switch for all operators.
@@ -145,7 +129,7 @@ type ConfigStatus struct {
 	// listed here.
 	SkippedTemplates []string `json:"skippedTemplates,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,7,rep,name=skippedTemplates"`
 
-	// Version is the value of the operator's git based version indicator when it was last successfully processed
+	// Version is the value of the operator's payload based version indicator when it was last successfully processed
 	Version string `json:"version,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,8,rep,name=version"`
 }
 
@@ -354,7 +338,7 @@ func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionSt
 		// enough along that we report this version to the cluster operator
 		// we still don't set the version on Config until images in progress
 		// flushes out
-		versionToNote = GitVersionString()
+		versionToNote = os.Getenv("RELEASE_VERSION")
 	}
 	return configv1.ConditionTrue, fmt.Sprintf(installed, versionToNote) //s.Status.Version)
 
@@ -376,12 +360,12 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 	if s.ConditionFalse(ConfigurationValid) {
 		return trueRC,
 			"invalid configuration",
-			fmt.Sprintf(noInstallDetailed, GitVersionString(), s.Condition(ConfigurationValid).Message)
+			fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), s.Condition(ConfigurationValid).Message)
 	}
 	if s.ClusterNeedsCreds() {
 		return trueRC,
 			"image pull credentials needed",
-			fmt.Sprintf(noInstallDetailed, GitVersionString(), s.Condition(ImportCredentialsExist).Message)
+			fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), s.Condition(ImportCredentialsExist).Message)
 	}
 	/*if s.ConditionTrue(ImportImageErrorsExist) {
 		return trueRC,
@@ -410,10 +394,10 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 // 2) string is the message to set on the condition
 func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, available configv1.ConditionStatus) (configv1.ConditionStatus, string) {
 	if len(failingState) > 0 {
-		return configv1.ConditionTrue, fmt.Sprintf(noInstallDetailed, GitVersionString(), failingState)
+		return configv1.ConditionTrue, fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), failingState)
 	}
 	if s.ConditionTrue(ImageChangesInProgress) {
-		return configv1.ConditionTrue, fmt.Sprintf(moving, GitVersionString())
+		return configv1.ConditionTrue, fmt.Sprintf(moving, os.Getenv("RELEASE_VERSION"))
 	}
 	if available == configv1.ConditionTrue {
 		return configv1.ConditionFalse, fmt.Sprintf(installed, s.Status.Version)
