@@ -29,7 +29,7 @@ The samples resource offers the following configuration fields:
 - ManagementState
 -- Managed: the operator will update the samples as the configuration dictates
 -- Unmanaged: the operator will ignore updates to the samples resource object and any imagestreams or templates in the openshift namespace
--- Removed: the operator will remove the set of managed imagestreams and templates in the openshift namespace. It will ignore new samples created by the cluster admin or any samples in the skipped lists.  After the removals are complete, the operator will work like it is in the 'Unmanaged' state and ignore any watch events on the sample resources, imagestreams, or templates.  It will operate on secrets to facilitate the 'centos' to 'rhel' switch.  There are some caveats around concurrent creates and removal (see Change behaviors section).
+-- Removed: the operator will remove the set of managed imagestreams and templates in the openshift namespace. It will ignore new samples created by the cluster admin or any samples in the skipped lists.  After the removals are complete, the operator will work like it is in the 'Unmanaged' state and ignore any watch events on the sample resources, imagestreams, or templates.  There are some caveats around concurrent creates and removal (see Config behaviors section).
 - Samples Registry
 -- Override the registry that images are imported from
 - Architecture

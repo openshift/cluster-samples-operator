@@ -424,6 +424,9 @@ func (s *Config) ClusterNeedsCreds() bool {
 		s.Spec.ManagementState == operatorv1.Unmanaged {
 		return false
 	}
+	if s.Status.Conditions == nil {
+		return true
+	}
 	return s.ConditionFalse(ImportCredentialsExist) && (s.Spec.SamplesRegistry == "" || s.Spec.SamplesRegistry == "registry.redhat.io")
 }
 
