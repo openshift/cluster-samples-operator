@@ -67,7 +67,7 @@ func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *tem
 		templateInOperatorImage.Annotations = map[string]string{}
 	}
 	templateInOperatorImage.Labels[v1.SamplesManagedLabel] = "true"
-	templateInOperatorImage.Annotations[v1.SamplesVersionAnnotation] = v1.GitVersionString()
+	templateInOperatorImage.Annotations[v1.SamplesVersionAnnotation] = h.version
 
 	if templateInCluster == nil {
 		_, err := h.templateclientwrapper.Create("openshift", templateInOperatorImage)

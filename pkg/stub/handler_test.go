@@ -26,6 +26,10 @@ import (
 	templatev1 "github.com/openshift/api/template/v1"
 )
 
+const (
+	TestVersion = "1.0-test"
+)
+
 var (
 	conditions = []v1.ConfigConditionType{v1.SamplesExist,
 		v1.ImportCredentialsExist,
@@ -336,7 +340,7 @@ func TestImageStreamEvent(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "foo",
 			Annotations: map[string]string{
-				v1.SamplesVersionAnnotation: v1.GitVersionString(),
+				v1.SamplesVersionAnnotation: h.version,
 			},
 		},
 		Spec: imagev1.ImageStreamSpec{
@@ -384,7 +388,7 @@ func TestImageStreamEvent(t *testing.T) {
 
 	// with the update above, now process both of the imagestreams and see the in progress condition
 	// go false
-	is.Annotations[v1.SamplesVersionAnnotation] = v1.GitVersionString()
+	is.Annotations[v1.SamplesVersionAnnotation] = h.version
 	h.processImageStreamWatchEvent(is, false)
 	validate(true, err, "", cfg, conditions, statuses, t)
 	statuses[3] = corev1.ConditionFalse
@@ -392,7 +396,7 @@ func TestImageStreamEvent(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "bar",
 			Annotations: map[string]string{
-				v1.SamplesVersionAnnotation: v1.GitVersionString(),
+				v1.SamplesVersionAnnotation: h.version,
 			},
 		},
 		Spec: imagev1.ImageStreamSpec{
@@ -456,7 +460,7 @@ func TestCreateDeleteSecretBeforeCR(t *testing.T) {
 			Name:      v1.SamplesRegistryCredentials,
 			Namespace: "openshift",
 			Annotations: map[string]string{
-				v1.SamplesVersionAnnotation: v1.GitVersionString(),
+				v1.SamplesVersionAnnotation: h.version,
 			},
 			ResourceVersion: "a",
 		},
@@ -539,7 +543,7 @@ func processCred(h *Handler, cfg *v1.Config, t *testing.T) {
 			Name:      v1.SamplesRegistryCredentials,
 			Namespace: "openshift",
 			Annotations: map[string]string{
-				v1.SamplesVersionAnnotation: v1.GitVersionString(),
+				v1.SamplesVersionAnnotation: h.version,
 			},
 			ResourceVersion: "a",
 		},
@@ -616,20 +620,20 @@ func TestImageStreamImportError(t *testing.T) {
 	two := int64(2)
 	one := int64(1)
 	streams := []*imagev1.ImageStream{
-		&imagev1.ImageStream{
+		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "foo",
 				Annotations: map[string]string{
-					v1.SamplesVersionAnnotation: v1.GitVersionString(),
+					v1.SamplesVersionAnnotation: TestVersion,
 				},
 			},
 			Spec: imagev1.ImageStreamSpec{
 				Tags: []imagev1.TagReference{
-					imagev1.TagReference{
+					{
 						Name:       "1",
 						Generation: &two,
 					},
-					imagev1.TagReference{
+					{
 						Name:       "2",
 						Generation: &one,
 					},
@@ -637,18 +641,18 @@ func TestImageStreamImportError(t *testing.T) {
 			},
 			Status: imagev1.ImageStreamStatus{
 				Tags: []imagev1.NamedTagEventList{
-					imagev1.NamedTagEventList{
+					{
 						Tag: "1",
 						Items: []imagev1.TagEvent{
-							imagev1.TagEvent{
+							{
 								Generation: two,
 							},
 						},
 					},
-					imagev1.NamedTagEventList{
+					{
 						Tag: "2",
 						Conditions: []imagev1.TagEventCondition{
-							imagev1.TagEventCondition{
+							{
 								Generation: two,
 								Status:     corev1.ConditionFalse,
 								Message:    "Internal error occurred: unknown: Not Found",
@@ -660,20 +664,20 @@ func TestImageStreamImportError(t *testing.T) {
 				},
 			},
 		},
-		&imagev1.ImageStream{
+		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "foo",
 				Annotations: map[string]string{
-					v1.SamplesVersionAnnotation: v1.GitVersionString(),
+					v1.SamplesVersionAnnotation: TestVersion,
 				},
 			},
 			Spec: imagev1.ImageStreamSpec{
 				Tags: []imagev1.TagReference{
-					imagev1.TagReference{
+					{
 						Name:       "1",
 						Generation: &two,
 					},
-					imagev1.TagReference{
+					{
 						Name:       "2",
 						Generation: &one,
 					},
@@ -681,10 +685,10 @@ func TestImageStreamImportError(t *testing.T) {
 			},
 			Status: imagev1.ImageStreamStatus{
 				Tags: []imagev1.NamedTagEventList{
-					imagev1.NamedTagEventList{
+					{
 						Tag: "1",
 						Conditions: []imagev1.TagEventCondition{
-							imagev1.TagEventCondition{
+							{
 								Generation: two,
 								Status:     corev1.ConditionFalse,
 								Message:    "Internal error occurred: unknown: Not Found",
@@ -693,10 +697,10 @@ func TestImageStreamImportError(t *testing.T) {
 							},
 						},
 					},
-					imagev1.NamedTagEventList{
+					{
 						Tag: "2",
 						Conditions: []imagev1.TagEventCondition{
-							imagev1.TagEventCondition{
+							{
 								Generation: two,
 								Status:     corev1.ConditionFalse,
 								Message:    "Internal error occurred: unknown: Not Found",
@@ -708,24 +712,24 @@ func TestImageStreamImportError(t *testing.T) {
 				},
 			},
 		},
-		&imagev1.ImageStream{
+		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "foo",
 				Annotations: map[string]string{
-					v1.SamplesVersionAnnotation: v1.GitVersionString(),
+					v1.SamplesVersionAnnotation: TestVersion,
 				},
 			},
 			Spec: imagev1.ImageStreamSpec{
 				Tags: []imagev1.TagReference{
-					imagev1.TagReference{
+					{
 						Name:       "1",
 						Generation: &two,
 					},
-					imagev1.TagReference{
+					{
 						Name:       "2",
 						Generation: &one,
 					},
-					imagev1.TagReference{
+					{
 						Name:       "3",
 						Generation: &one,
 					},
@@ -733,10 +737,10 @@ func TestImageStreamImportError(t *testing.T) {
 			},
 			Status: imagev1.ImageStreamStatus{
 				Tags: []imagev1.NamedTagEventList{
-					imagev1.NamedTagEventList{
+					{
 						Tag: "1",
 						Conditions: []imagev1.TagEventCondition{
-							imagev1.TagEventCondition{
+							{
 								Generation: two,
 								Status:     corev1.ConditionFalse,
 								Message:    "Internal error occurred: unknown: Not Found",
@@ -745,10 +749,10 @@ func TestImageStreamImportError(t *testing.T) {
 							},
 						},
 					},
-					imagev1.NamedTagEventList{
+					{
 						Tag: "2",
 						Conditions: []imagev1.TagEventCondition{
-							imagev1.TagEventCondition{
+							{
 								Generation: two,
 								Status:     corev1.ConditionFalse,
 								Message:    "Internal error occurred: unknown: Not Found",
@@ -793,16 +797,16 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "foo",
 			Annotations: map[string]string{
-				v1.SamplesVersionAnnotation: v1.GitVersionString(),
+				v1.SamplesVersionAnnotation: TestVersion,
 			},
 		},
 		Spec: imagev1.ImageStreamSpec{
 			Tags: []imagev1.TagReference{
-				imagev1.TagReference{
+				{
 					Name:       "1",
 					Generation: &two,
 				},
-				imagev1.TagReference{
+				{
 					Name:       "2",
 					Generation: &one,
 				},
@@ -810,18 +814,18 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 		},
 		Status: imagev1.ImageStreamStatus{
 			Tags: []imagev1.NamedTagEventList{
-				imagev1.NamedTagEventList{
+				{
 					Tag: "1",
 					Items: []imagev1.TagEvent{
-						imagev1.TagEvent{
+						{
 							Generation: two,
 						},
 					},
 				},
-				imagev1.NamedTagEventList{
+				{
 					Tag: "2",
 					Items: []imagev1.TagEvent{
-						imagev1.TagEvent{
+						{
 							Generation: two,
 						},
 					},
@@ -858,12 +862,12 @@ func TestImageImportRequestCreation(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "foo",
 			Annotations: map[string]string{
-				v1.SamplesVersionAnnotation: v1.GitVersionString(),
+				v1.SamplesVersionAnnotation: TestVersion,
 			},
 		},
 		Spec: imagev1.ImageStreamSpec{
 			Tags: []imagev1.TagReference{
-				imagev1.TagReference{
+				{
 					Name: "1",
 					From: &corev1.ObjectReference{
 						Name: "myreg.myrepo.myname:latest",
@@ -875,10 +879,10 @@ func TestImageImportRequestCreation(t *testing.T) {
 		},
 		Status: imagev1.ImageStreamStatus{
 			Tags: []imagev1.NamedTagEventList{
-				imagev1.NamedTagEventList{
+				{
 					Tag: "1",
 					Items: []imagev1.TagEvent{
-						imagev1.TagEvent{
+						{
 							Generation: one,
 						},
 					},
@@ -1175,6 +1179,7 @@ func NewTestHandler() Handler {
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
+	h.version = TestVersion
 
 	return h
 }

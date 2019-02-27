@@ -2,6 +2,7 @@ package operator
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/sirupsen/logrus"
 
@@ -58,18 +59,19 @@ type ClusterOperatorWrapper interface {
 }
 
 func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
-
 	var err error
-	failing, stateForPending, msgForFailing := cfg.ClusterOperatorStatusFailingCondition()
+	failing, msgForProgressing, msgForFailing := cfg.ClusterOperatorStatusFailingCondition()
 	err = o.setOperatorStatus(configv1.OperatorFailing,
 		failing,
 		msgForFailing,
-		v1.GitVersionString())
+		"")
 	if err != nil {
 		return err
 	}
 
 	available, msgForAvailable := cfg.ClusterOperatorStatusAvailableCondition()
+	// if we're setting the operator status to available, also set the operator version
+	// to the current version.
 	err = o.setOperatorStatus(configv1.OperatorAvailable,
 		available,
 		msgForAvailable,
@@ -78,11 +80,11 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
 		return err
 	}
 
-	progressing, msgForProgressing := cfg.ClusterOperatorStatusProgressingCondition(stateForPending, available)
+	progressing, msgForProgressing := cfg.ClusterOperatorStatusProgressingCondition(msgForProgressing, available)
 	err = o.setOperatorStatus(configv1.OperatorProgressing,
 		progressing,
 		msgForProgressing,
-		cfg.Status.Version)
+		"")
 	if err != nil {
 		return nil
 	}
@@ -90,7 +92,7 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
 }
 
 func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStatusConditionType, status configv1.ConditionStatus, msg, currentVersion string) error {
-	logrus.Debugf("setting clusteroperator status condition %s to %s", condtype, status)
+	logrus.Debugf("setting clusteroperator status condition %s to %s with version %s", condtype, status, currentVersion)
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		state, err := o.ClusterOperatorWrapper.Get(ClusterOperatorName)
 		if err != nil {
@@ -98,6 +100,7 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 				return fmt.Errorf("failed to get cluster operator resource %s/%s: %s", state.ObjectMeta.Namespace, state.ObjectMeta.Name, err)
 			}
 
+			state = &configv1.ClusterOperator{}
 			state.Name = ClusterOperatorName
 
 			state.Status.Conditions = []configv1.ClusterOperatorStatusCondition{
@@ -118,6 +121,15 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 				},
 			}
 
+			if len(currentVersion) > 0 {
+				state.Status.Versions = []configv1.OperandVersion{
+					{
+						Name:    "operator",
+						Version: currentVersion,
+					},
+				}
+			}
+
 			o.updateOperatorCondition(state, &configv1.ClusterOperatorStatusCondition{
 				Type:               condtype,
 				Status:             status,
@@ -133,18 +145,25 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 			Message:            msg,
 			LastTransitionTime: metaapi.Now(),
 		})
-		if !modified && len(state.Status.Versions) > 0 && state.Status.Versions[0].Version == currentVersion {
+
+		// set a new current version when it is provided
+		if len(currentVersion) > 0 {
+			oldVersions := state.Status.Versions
+			state.Status.Versions = []configv1.OperandVersion{
+				{
+					Name:    "operator",
+					Version: currentVersion,
+				},
+			}
+			if !reflect.DeepEqual(state.Status.Versions, oldVersions) {
+				modified = true
+			}
+		}
+
+		if !modified {
 			return nil
 		}
-		// set a new current version when it is provided
-		if len(state.Status.Versions) == 0 {
-			state.Status.Versions = append(state.Status.Versions, configv1.OperandVersion{
-				Name:    "operator",
-				Version: currentVersion,
-			})
-		} else {
-			state.Status.Versions[0].Version = currentVersion
-		}
+
 		return o.ClusterOperatorWrapper.UpdateStatus(state)
 	})
 }
