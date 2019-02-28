@@ -30,3 +30,7 @@ spec:
     from:
       kind: DockerImage
       name: docker.io/openshift/origin-tests:v4.0
+  - name: must-gather
+    from:
+      kind: DockerImage
+      name: docker.io/openshift/ose-must-gather:v4.0
