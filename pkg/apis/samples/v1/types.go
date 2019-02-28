@@ -365,6 +365,10 @@ func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionSt
 // 2) the first string is the succinct text to apply to the Progressing condition on failure
 // 3) the second string is the fully detailed text to apply the the Failing condition
 func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStatus, string, string) {
+	if len(s.Status.Conditions) == 0 {
+		// first event, have not processed default config yet
+		return configv1.ConditionFalse, "", ""
+	}
 	// the ordering here is not random; an invalid config will be caught first;
 	// the lack of credenitials will be caught second; any hiccups manipulating API objects
 	// will be potentially anywhere in the process
@@ -420,6 +424,11 @@ func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, 
 // ClusterNeedsCreds checks the conditions that drive whether the operator complains about
 // needing credentials to import RHEL content
 func (s *Config) ClusterNeedsCreds() bool {
+	if strings.TrimSpace(s.Spec.SamplesRegistry) != "" &&
+		strings.TrimSpace(s.Spec.SamplesRegistry) != "registry.redhat.io" {
+		return false
+	}
+
 	if s.Spec.ManagementState == operatorv1.Removed ||
 		s.Spec.ManagementState == operatorv1.Unmanaged {
 		return false
@@ -427,7 +436,21 @@ func (s *Config) ClusterNeedsCreds() bool {
 	if s.Status.Conditions == nil {
 		return true
 	}
-	return s.ConditionFalse(ImportCredentialsExist) && (s.Spec.SamplesRegistry == "" || s.Spec.SamplesRegistry == "registry.redhat.io")
+
+	// some timing paths can lead to only the  config valid condition existing,
+	// so explicitly check it the import creds condition is even there yet
+	foundImportCred := false
+	for _, rc := range s.Status.Conditions {
+		if rc.Type == ImportCredentialsExist {
+			foundImportCred = true
+			break
+		}
+	}
+	if !foundImportCred {
+		return true
+	}
+
+	return s.ConditionFalse(ImportCredentialsExist)
 }
 
 type Event struct {
