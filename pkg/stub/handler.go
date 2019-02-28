@@ -617,12 +617,12 @@ func (h *Handler) Handle(event v1.Event) error {
 			logrus.Println("CRDUPDATE upd status version")
 			return h.crdwrapper.UpdateStatus(cfg)
 			/*if cfg.ConditionFalse(v1.ImportImageErrorsExist) {
-				cfg.Status.Version = v1.GitVersionString()
+				cfg.Status.Version = h.version
 				logrus.Printf("The samples are now at version %s", cfg.Status.Version)
 				logrus.Println("CRDUPDATE upd status version")
 				return h.crdwrapper.UpdateStatus(cfg)
 			}
-			logrus.Printf("An image import error occurred applying the latest configuration on version %s, problem resolution needed", v1.GitVersionString())
+			logrus.Printf("An image import error occurred applying the latest configuration on version %s, problem resolution needed", h.version
 			return nil
 
 			*/

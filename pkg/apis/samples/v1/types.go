@@ -370,7 +370,7 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 	/*if s.ConditionTrue(ImportImageErrorsExist) {
 		return trueRC,
 			"image import problem",
-			fmt.Sprintf(noInstallDetailed, GitVersionString(), s.Condition(ImportImageErrorsExist).Message)
+			fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VESION"), s.Condition(ImportImageErrorsExist).Message)
 	}*/
 	// right now, any condition being unknown is indicative of a failure
 	// condition, either api server interaction or file system interaction;
