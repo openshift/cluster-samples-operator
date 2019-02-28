@@ -93,8 +93,11 @@ func dumpPod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error list pods %v", err)
 	}
+	t.Logf("dumpPods have %d items in list", len(podList.Items))
 	for _, pod := range podList.Items {
-		if strings.HasPrefix(pod.Name, "cluster-samples-operator") {
+		t.Logf("dumpPods looking at pod %s in phase %s", pod.Name, pod.Status.Phase)
+		if strings.HasPrefix(pod.Name, "cluster-samples-operator") &&
+			pod.Status.Phase == corev1.PodRunning {
 			req := podClient.GetLogs(pod.Name, &corev1.PodLogOptions{})
 			readCloser, err := req.Stream()
 			if err != nil {
@@ -329,6 +332,7 @@ func getSamplesNames(dir string, files []os.FileInfo, t *testing.T) map[string]m
 }
 
 func verifyImageStreamsPresent(t *testing.T, content map[string]bool, timeToCompare *kapis.Time) {
+	version := verifyOperatorUp(t).Status.Version
 	for key := range content {
 		var is *imageapiv1.ImageStream
 		var err error
@@ -343,6 +347,15 @@ func verifyImageStreamsPresent(t *testing.T, content map[string]bool, timeToComp
 				errstr := fmt.Sprintf("imagestream %s was created at %#v which is still created before time to compare %#v", is.Name, is.CreationTimestamp, timeToCompare)
 				t.Log(errstr)
 				return false, fmt.Errorf(errstr)
+			}
+			isv, ok := is.Annotations[samplesapi.SamplesVersionAnnotation]
+			if !ok {
+				t.Logf("imagestrem %s does not have version annotation", is.Name)
+				return false, nil
+			}
+			if len(version) > 0 && isv != version {
+				t.Logf("imagestream %s is at version %s but we expect it to be version %s", is.Name, isv, version)
+				return false, nil
 			}
 			return true, nil
 		})
@@ -385,6 +398,7 @@ func verifyImageStreamsGone(t *testing.T) {
 }
 
 func verifyTemplatesPresent(t *testing.T, content map[string]bool, timeToCompare *kapis.Time) {
+	version := verifyOperatorUp(t).Status.Version
 	for key := range content {
 		var template *templatev1.Template
 		var err error
@@ -399,6 +413,15 @@ func verifyTemplatesPresent(t *testing.T, content map[string]bool, timeToCompare
 				errstr := fmt.Sprintf("template %s was created at %#v which is still created before time to compare %#v", template.Name, template.CreationTimestamp, timeToCompare)
 				t.Log(errstr)
 				return false, fmt.Errorf(errstr)
+			}
+			tv, ok := template.Annotations[samplesapi.SamplesVersionAnnotation]
+			if !ok {
+				t.Logf("template %s does not have version annotation", template.Name)
+				return false, nil
+			}
+			if len(version) > 0 && tv != version {
+				t.Logf("template %s is at version %s but we expect it to be at version %s", template.Name, tv, version)
+				return false, nil
 			}
 			return true, nil
 		})
@@ -939,4 +962,93 @@ func TestRecreateDeletedManagedSample(t *testing.T) {
 	verifyDeletedImageStreamRecreated(t)
 	verifyDeletedTemplatesRecreated(t)
 	t.Logf("Config after TestRecreateDeletedManagedSample: %#v", verifyOperatorUp(t))
+}
+
+func TestUpgrade(t *testing.T) {
+	cfg := verifyOperatorUp(t)
+	err := verifyConditionsCompleteSamplesAdded(t)
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("samples not stable at start of upgrade test %#v", verifyOperatorUp(t))
+	}
+
+	newVersion := kapis.Now().String()
+	t.Logf("current version %s version for upgrade %s", cfg.Status.Version, newVersion)
+
+	// update env to trigger upgrade
+	depClient := kubeClient.AppsV1().Deployments("openshift-cluster-samples-operator")
+	err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+		dep, err := depClient.Get("cluster-samples-operator", metav1.GetOptions{})
+		if err != nil {
+			t.Logf("error waiting for operator deployment to exist: %v\n", err)
+			return false, nil
+		}
+		t.Logf("found operator deployment")
+		for i, env := range dep.Spec.Template.Spec.Containers[0].Env {
+			t.Logf("looking at env %s", env.Name)
+			if strings.TrimSpace(env.Name) == "RELEASE_VERSION" {
+				t.Log("updating RELEASE_VERSION env")
+				dep.Spec.Template.Spec.Containers[0].Env[i].Value = newVersion
+				_, err := depClient.Update(dep)
+				if err == nil {
+					return true, nil
+				}
+				t.Logf("%v", err)
+				if kerrors.IsConflict(err) {
+					return false, nil
+				}
+				if stub.IsRetryableAPIError(err) {
+					return false, nil
+				}
+				return false, err
+			}
+
+		}
+		return false, nil
+	})
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("problem updating deployment env")
+	}
+
+	err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+		cfg := verifyOperatorUp(t)
+		if cfg.ConditionTrue(samplesapi.MigrationInProgress) {
+			return true, nil
+		}
+		return false, nil
+	})
+
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("did not enter migration mode in time %#v", verifyOperatorUp(t))
+	}
+
+	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
+		cfg := verifyOperatorUp(t)
+		if cfg.Status.Version == newVersion {
+			return true, nil
+		}
+		return false, nil
+	})
+
+	verifyClusterOperatorConditionsComplete(t)
+
+	err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+		state, err := operatorClient.ClusterOperators().Get(operator.ClusterOperatorName, metav1.GetOptions{})
+		if err != nil {
+			t.Logf("%v", err)
+			return false, nil
+		}
+		if len(state.Status.Versions) > 0 && state.Status.Versions[0].Name == "operator" && state.Status.Versions[0].Version == newVersion {
+			return true, nil
+		}
+		t.Logf("CVO is %#v", state)
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("cvo version not correct after upgrade %#v", verifyOperatorUp(t))
+	}
+
+	validateContent(t, nil)
 }
