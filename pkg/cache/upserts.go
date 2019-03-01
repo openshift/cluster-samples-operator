@@ -45,6 +45,7 @@ func AllUpsertEventsArrived() bool {
 				logrus.Printf("have not received an upsert event for %s in 5 minutes so cache is skipping this one", key)
 				continue
 			}
+			logrus.Printf("have not received an upsert event for imagestream %s", key)
 			return false
 		}
 	}
