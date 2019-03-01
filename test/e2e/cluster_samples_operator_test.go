@@ -177,8 +177,7 @@ func verifyConditionsCompleteSamplesRemoved(t *testing.T) error {
 			return false, nil
 		}
 		if cfg.ConditionFalse(samplesapi.SamplesExist) &&
-			cfg.ConditionFalse(samplesapi.ImageChangesInProgress) &&
-			cfg.ConditionFalse(samplesapi.ImportCredentialsExist) {
+			cfg.ConditionFalse(samplesapi.ImageChangesInProgress) {
 			return true, nil
 		}
 

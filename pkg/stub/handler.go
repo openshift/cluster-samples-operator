@@ -384,16 +384,8 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 		}
 	}
 
-	if cfg.ConditionTrue(v1.ImportCredentialsExist) {
-		logrus.Println("Operator is deleting the credential in the openshift namespace that was previously created.")
-		logrus.Println("If you are Removing content as part of switching from 'centos' to 'rhel', the credential will be recreated in the openshift namespace when you move back to 'Managed' state.")
-
-	}
-	err = h.secretclientwrapper.Delete("openshift", v1.SamplesRegistryCredentials, &metav1.DeleteOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
-		logrus.Warnf("Problem deleting openshift secret %s on Config delete: %#v", v1.SamplesRegistryCredentials, err)
-		return err
-	}
+	// FYI we no longer delete the credential because the payload imagestreams like cli, must-gather that
+	// this operator initially installs via its manifest, but does not manage, needs the pull image secret
 
 	return nil
 }

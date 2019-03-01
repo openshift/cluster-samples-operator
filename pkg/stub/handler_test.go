@@ -259,20 +259,21 @@ func TestProcessed(t *testing.T) {
 	tkeys := getTKeys()
 
 	mimic(&h, x86OCPContentRootDir)
+	processCred(&h, cfg, t)
 
 	err := h.Handle(event)
 	validate(true, err, "", cfg,
 		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
 		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
 		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	for _, key := range iskeys {
@@ -313,7 +314,7 @@ func TestProcessed(t *testing.T) {
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
 		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 	is, _ = fakeisclient.Get("", "foo", metav1.GetOptions{})
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
@@ -507,20 +508,16 @@ func TestCreateDeleteSecretAfterCR(t *testing.T) {
 
 	h.secretRetryCount = 3 // bypass retry on CR update race
 	cfg.Spec.ManagementState = operatorsv1api.Removed
-	statuses[1] = corev1.ConditionFalse
+	statuses[1] = corev1.ConditionTrue
 	err = h.Handle(event)
-	// import cred should be false if from removed, since we don't recreate
+	// import cred should be true if from removed, since we don't delete on removed
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	cfg.Spec.ManagementState = operatorsv1api.Managed
 	h.secretRetryCount = 3
 	err = h.Handle(event)
-	// even though we recreate the secret, we wait for the event to come in
-	// to set import cred to true
-	validate(true, err, "", cfg, conditions, statuses, t)
-	// mimic event from recreate that should have occurred
-	processCred(&h, cfg, t)
-	statuses[1] = corev1.ConditionTrue
+	statuses[3] = corev1.ConditionTrue
+	// with secret still present, we should start import images
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 }
@@ -529,6 +526,8 @@ func setup() (Handler, *v1.Config, v1.Event) {
 	h := NewTestHandler()
 	cfg, _ := h.CreateDefaultResourceIfNeeded(nil)
 	cfg = h.initConditions(cfg)
+	fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
+	fakesecretclient.err = kerrors.NewNotFound(schema.GroupResource{}, v1.SamplesRegistryCredentials)
 	h.crdwrapper.(*fakeCRDWrapper).cfg = cfg
 	cache.ClearUpsertsCache()
 	return h, cfg, v1.Event{Object: cfg}
@@ -538,6 +537,7 @@ func processCred(h *Handler, cfg *v1.Config, t *testing.T) {
 	if !cfg.ConditionFalse(v1.ImportCredentialsExist) {
 		t.Fatalf("import cred exists unexpectedly true: %#v", cfg)
 	}
+	h.secretclientwrapper.(*fakeSecretClientWrapper).err = nil
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      v1.SamplesRegistryCredentials,
