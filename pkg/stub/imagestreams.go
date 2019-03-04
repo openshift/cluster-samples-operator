@@ -79,7 +79,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 				(beforeProgressReason != afterProgressReason || beforeErrorReason != afterErrorReason) {
 				if len(strings.TrimSpace(afterProgressReason)) == 0 {
 					h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
-					logrus.Println("The last in progress imagestream has completed")
+					logrus.Println("The last in progress imagestream has completed (imagestream event, no update needed)")
 				}
 				logrus.Printf("CRDUPDATE updating progress/error condition after results for %s", is.Name)
 				err = h.crdwrapper.UpdateStatus(cfg)
@@ -195,7 +195,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 		imagestreamInOperatorImage.Annotations = make(map[string]string)
 	}
 	imagestreamInOperatorImage.Labels[v1.SamplesManagedLabel] = "true"
-	imagestreamInOperatorImage.Annotations[v1.SamplesVersionAnnotation] = v1.GitVersionString()
+	imagestreamInOperatorImage.Annotations[v1.SamplesVersionAnnotation] = h.version
 
 	if imagestreamInCluster == nil {
 		_, err := h.imageclientwrapper.Create("openshift", imagestreamInOperatorImage)
@@ -442,7 +442,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 				processing.Reason = cfg.ClearNameInReason(processing.Reason, is.Name)
 				logrus.Debugf("processing reason now %s", processing.Reason)
 				if len(strings.TrimSpace(processing.Reason)) == 0 && processing.Status != corev1.ConditionFalse {
-					logrus.Println("The last in progress imagestream has completed")
+					logrus.Println("The last in progress imagestream has completed (import status check)")
 					processing.Status = corev1.ConditionFalse
 					processing.Reason = ""
 				}

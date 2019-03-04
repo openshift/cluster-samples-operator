@@ -3,6 +3,7 @@ package stub
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -77,6 +78,7 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config) (*Handler, error) 
 	h.templateFile = make(map[string]string)
 
 	h.mapsMutex = sync.Mutex{}
+	h.version = os.Getenv("RELEASE_VERSION")
 
 	return h, nil
 }
@@ -110,6 +112,7 @@ type Handler struct {
 	mapsMutex sync.Mutex
 
 	secretRetryCount int8
+	version          string
 }
 
 // prepSamplesWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
@@ -176,11 +179,19 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return cfg, filePath, true, nil
 	}
 
+	if cfg.ConditionFalse(v1.ImageChangesInProgress) &&
+		(cfg.ConditionTrue(v1.MigrationInProgress) || h.version != cfg.Status.Version) {
+		// we have gotten events for items early in the migration list but we have not
+		// finished processing the list
+		// avoid (re)upsert, but check import status
+		logrus.Printf("watch event for %s/%s while migration in progress, image in progress is false; will not update sample because of this event", kind, name)
+		return cfg, "", false, nil
+	}
+
 	if annotations != nil {
-		gitVersion := v1.GitVersionString()
 		isv, ok := annotations[v1.SamplesVersionAnnotation]
-		logrus.Debugf("Comparing %s/%s version %s ok %v with git version %s", kind, name, isv, ok, gitVersion)
-		if ok && isv == gitVersion {
+		logrus.Debugf("Comparing %s/%s version %s ok %v with git version %s", kind, name, isv, ok, h.version)
+		if ok && isv == h.version {
 			logrus.Debugf("Not upserting %s/%s cause operator version matches", kind, name)
 			// but return cfg to potentially toggle pending condition
 			return cfg, "", false, nil
@@ -546,15 +557,22 @@ func (h *Handler) Handle(event v1.Event) error {
 				configChangeRequiresImportErrorUpdate,
 				cfg.ConditionTrue(v1.SamplesExist),
 				cfg.ConditionFalse(v1.ImageChangesInProgress),
-				v1.GitVersionString(),
+				h.version,
 				cfg.Status.Version)
 			// so ignore if config does not change and the samples exist and
 			// we are not in progress and at the right level
 			if !configChanged &&
 				cfg.ConditionTrue(v1.SamplesExist) &&
 				cfg.ConditionFalse(v1.ImageChangesInProgress) &&
-				v1.GitVersionString() == cfg.Status.Version {
+				h.version == cfg.Status.Version {
 				logrus.Debugf("At steady state: config the same and exists is true, in progress false, and version correct")
+
+				// once the status version is in sync, we can turn off the migration condition
+				if cfg.ConditionTrue(v1.MigrationInProgress) {
+					h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.MigrationInProgress)
+					logrus.Println("CRDUPDATE turn migration off")
+					return h.crdwrapper.UpdateStatus(cfg)
+				}
 
 				// in case this is a bring up after initial install, we take a pass
 				// and see if any samples were deleted while samples operator was down
@@ -595,8 +613,8 @@ func (h *Handler) Handle(event v1.Event) error {
 
 		if cfg.ConditionFalse(v1.MigrationInProgress) &&
 			len(cfg.Status.Version) > 0 &&
-			v1.GitVersionString() != cfg.Status.Version {
-			logrus.Printf("Undergoing migration from %s to %s", cfg.Status.Version, v1.GitVersionString())
+			h.version != cfg.Status.Version {
+			logrus.Printf("Undergoing migration from %s to %s", cfg.Status.Version, h.version)
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.MigrationInProgress)
 			logrus.Println("CRDUPDATE turn migration on")
 			return h.crdwrapper.UpdateStatus(cfg)
@@ -606,32 +624,24 @@ func (h *Handler) Handle(event v1.Event) error {
 			cfg.ConditionTrue(v1.SamplesExist) &&
 			cfg.ConditionFalse(v1.ImageChangesInProgress) &&
 			cfg.Condition(v1.MigrationInProgress).LastUpdateTime.Before(&cfg.Condition(v1.ImageChangesInProgress).LastUpdateTime) &&
-			v1.GitVersionString() != cfg.Status.Version {
+			h.version != cfg.Status.Version {
 			if cfg.ConditionTrue(v1.ImportImageErrorsExist) {
-				logrus.Printf("An image import error occurred applying the latest configuration on version %s; this operator will periodically retry the import, or an administrator can investigate and remedy manually", v1.GitVersionString())
+				logrus.Printf("An image import error occurred applying the latest configuration on version %s; this operator will periodically retry the import, or an administrator can investigate and remedy manually", h.version)
 			}
-			cfg.Status.Version = v1.GitVersionString()
+			cfg.Status.Version = h.version
 			logrus.Printf("The samples are now at version %s", cfg.Status.Version)
 			logrus.Println("CRDUPDATE upd status version")
 			return h.crdwrapper.UpdateStatus(cfg)
 			/*if cfg.ConditionFalse(v1.ImportImageErrorsExist) {
-				cfg.Status.Version = v1.GitVersionString()
+				cfg.Status.Version = h.version
 				logrus.Printf("The samples are now at version %s", cfg.Status.Version)
 				logrus.Println("CRDUPDATE upd status version")
 				return h.crdwrapper.UpdateStatus(cfg)
 			}
-			logrus.Printf("An image import error occurred applying the latest configuration on version %s, problem resolution needed", v1.GitVersionString())
+			logrus.Printf("An image import error occurred applying the latest configuration on version %s, problem resolution needed", h.version
 			return nil
 
 			*/
-		}
-
-		// once the status version is in sync, we can turn off the migration condition
-		if cfg.ConditionTrue(v1.MigrationInProgress) &&
-			v1.GitVersionString() == cfg.Status.Version {
-			h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.MigrationInProgress)
-			logrus.Println("CRDUPDATE turn migration off")
-			return h.crdwrapper.UpdateStatus(cfg)
 		}
 
 		if len(cfg.Spec.Architectures) == 0 {
@@ -743,7 +753,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			}
 			if len(strings.TrimSpace(cfg.Condition(v1.ImageChangesInProgress).Reason)) == 0 {
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
-				logrus.Println("The last in progress imagestream has completed")
+				logrus.Println("The last in progress imagestream has completed (config event loop)")
 			}
 			if cfg.ConditionFalse(v1.ImageChangesInProgress) {
 				logrus.Printf("CRDUPDATE setting in progress to false after examining cached imagestream events")

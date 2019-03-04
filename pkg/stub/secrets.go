@@ -36,7 +36,7 @@ func (h *Handler) copyDefaultClusterPullSecret(secret *corev1.Secret) error {
 	secretToCreate.ResourceVersion = ""
 	secretToCreate.UID = ""
 	secretToCreate.Annotations = make(map[string]string)
-	secretToCreate.Annotations[v1.SamplesVersionAnnotation] = v1.GitVersionString()
+	secretToCreate.Annotations[v1.SamplesVersionAnnotation] = h.version
 	_, err = h.secretclientwrapper.Create("openshift", &secretToCreate)
 	if kerrors.IsAlreadyExists(err) {
 		_, err = h.secretclientwrapper.Update("openshift", &secretToCreate)
