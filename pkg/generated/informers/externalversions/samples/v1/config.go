@@ -5,11 +5,11 @@ package v1
 import (
 	time "time"
 
-	samples_v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	samplesv1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 	versioned "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
 	internalinterfaces "github.com/openshift/cluster-samples-operator/pkg/generated/informers/externalversions/internalinterfaces"
 	v1 "github.com/openshift/cluster-samples-operator/pkg/generated/listers/samples/v1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	cache "k8s.io/client-go/tools/cache"
@@ -40,20 +40,20 @@ func NewConfigInformer(client versioned.Interface, resyncPeriod time.Duration, i
 func NewFilteredConfigInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
-			ListFunc: func(options meta_v1.ListOptions) (runtime.Object, error) {
+			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
 				return client.SamplesV1().Configs().List(options)
 			},
-			WatchFunc: func(options meta_v1.ListOptions) (watch.Interface, error) {
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
 				return client.SamplesV1().Configs().Watch(options)
 			},
 		},
-		&samples_v1.Config{},
+		&samplesv1.Config{},
 		resyncPeriod,
 		indexers,
 	)
@@ -64,7 +64,7 @@ func (f *configInformer) defaultInformer(client versioned.Interface, resyncPerio
 }
 
 func (f *configInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&samples_v1.Config{}, f.defaultInformer)
+	return f.factory.InformerFor(&samplesv1.Config{}, f.defaultInformer)
 }
 
 func (f *configInformer) Lister() v1.ConfigLister {

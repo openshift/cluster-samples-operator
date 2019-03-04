@@ -3,7 +3,7 @@
 package fake
 
 import (
-	samples_v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	samplesv1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -22,19 +22,19 @@ var configsResource = schema.GroupVersionResource{Group: "samples.operator.opens
 var configsKind = schema.GroupVersionKind{Group: "samples.operator.openshift.io", Version: "v1", Kind: "Config"}
 
 // Get takes name of the config, and returns the corresponding config object, and an error if there is any.
-func (c *FakeConfigs) Get(name string, options v1.GetOptions) (result *samples_v1.Config, err error) {
+func (c *FakeConfigs) Get(name string, options v1.GetOptions) (result *samplesv1.Config, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(configsResource, name), &samples_v1.Config{})
+		Invokes(testing.NewRootGetAction(configsResource, name), &samplesv1.Config{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*samples_v1.Config), err
+	return obj.(*samplesv1.Config), err
 }
 
 // List takes label and field selectors, and returns the list of Configs that match those selectors.
-func (c *FakeConfigs) List(opts v1.ListOptions) (result *samples_v1.ConfigList, err error) {
+func (c *FakeConfigs) List(opts v1.ListOptions) (result *samplesv1.ConfigList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(configsResource, configsKind, opts), &samples_v1.ConfigList{})
+		Invokes(testing.NewRootListAction(configsResource, configsKind, opts), &samplesv1.ConfigList{})
 	if obj == nil {
 		return nil, err
 	}
@@ -43,8 +43,8 @@ func (c *FakeConfigs) List(opts v1.ListOptions) (result *samples_v1.ConfigList, 
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &samples_v1.ConfigList{ListMeta: obj.(*samples_v1.ConfigList).ListMeta}
-	for _, item := range obj.(*samples_v1.ConfigList).Items {
+	list := &samplesv1.ConfigList{ListMeta: obj.(*samplesv1.ConfigList).ListMeta}
+	for _, item := range obj.(*samplesv1.ConfigList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
 		}
@@ -59,40 +59,40 @@ func (c *FakeConfigs) Watch(opts v1.ListOptions) (watch.Interface, error) {
 }
 
 // Create takes the representation of a config and creates it.  Returns the server's representation of the config, and an error, if there is any.
-func (c *FakeConfigs) Create(config *samples_v1.Config) (result *samples_v1.Config, err error) {
+func (c *FakeConfigs) Create(config *samplesv1.Config) (result *samplesv1.Config, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(configsResource, config), &samples_v1.Config{})
+		Invokes(testing.NewRootCreateAction(configsResource, config), &samplesv1.Config{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*samples_v1.Config), err
+	return obj.(*samplesv1.Config), err
 }
 
 // Update takes the representation of a config and updates it. Returns the server's representation of the config, and an error, if there is any.
-func (c *FakeConfigs) Update(config *samples_v1.Config) (result *samples_v1.Config, err error) {
+func (c *FakeConfigs) Update(config *samplesv1.Config) (result *samplesv1.Config, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(configsResource, config), &samples_v1.Config{})
+		Invokes(testing.NewRootUpdateAction(configsResource, config), &samplesv1.Config{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*samples_v1.Config), err
+	return obj.(*samplesv1.Config), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeConfigs) UpdateStatus(config *samples_v1.Config) (*samples_v1.Config, error) {
+func (c *FakeConfigs) UpdateStatus(config *samplesv1.Config) (*samplesv1.Config, error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(configsResource, "status", config), &samples_v1.Config{})
+		Invokes(testing.NewRootUpdateSubresourceAction(configsResource, "status", config), &samplesv1.Config{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*samples_v1.Config), err
+	return obj.(*samplesv1.Config), err
 }
 
 // Delete takes name of the config and deletes it. Returns an error if one occurs.
 func (c *FakeConfigs) Delete(name string, options *v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(configsResource, name), &samples_v1.Config{})
+		Invokes(testing.NewRootDeleteAction(configsResource, name), &samplesv1.Config{})
 	return err
 }
 
@@ -100,16 +100,16 @@ func (c *FakeConfigs) Delete(name string, options *v1.DeleteOptions) error {
 func (c *FakeConfigs) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
 	action := testing.NewRootDeleteCollectionAction(configsResource, listOptions)
 
-	_, err := c.Fake.Invokes(action, &samples_v1.ConfigList{})
+	_, err := c.Fake.Invokes(action, &samplesv1.ConfigList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched config.
-func (c *FakeConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *samples_v1.Config, err error) {
+func (c *FakeConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *samplesv1.Config, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(configsResource, name, data, subresources...), &samples_v1.Config{})
+		Invokes(testing.NewRootPatchSubresourceAction(configsResource, name, data, subresources...), &samplesv1.Config{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*samples_v1.Config), err
+	return obj.(*samplesv1.Config), err
 }
