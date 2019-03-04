@@ -179,6 +179,15 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return cfg, filePath, true, nil
 	}
 
+	if cfg.ConditionFalse(v1.ImageChangesInProgress) &&
+		(cfg.ConditionTrue(v1.MigrationInProgress) || h.version != cfg.Status.Version) {
+		// we have gotten events for items early in the migration list but we have not
+		// finished processing the list
+		// avoid (re)upsert, but check import status
+		logrus.Printf("watch event for %s/%s while migration in progress, image in progress is false; will not update sample because of this event", kind, name)
+		return cfg, "", false, nil
+	}
+
 	if annotations != nil {
 		isv, ok := annotations[v1.SamplesVersionAnnotation]
 		logrus.Debugf("Comparing %s/%s version %s ok %v with git version %s", kind, name, isv, ok, h.version)
@@ -558,6 +567,13 @@ func (h *Handler) Handle(event v1.Event) error {
 				h.version == cfg.Status.Version {
 				logrus.Debugf("At steady state: config the same and exists is true, in progress false, and version correct")
 
+				// once the status version is in sync, we can turn off the migration condition
+				if cfg.ConditionTrue(v1.MigrationInProgress) {
+					h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.MigrationInProgress)
+					logrus.Println("CRDUPDATE turn migration off")
+					return h.crdwrapper.UpdateStatus(cfg)
+				}
+
 				// in case this is a bring up after initial install, we take a pass
 				// and see if any samples were deleted while samples operator was down
 				h.buildFileMaps(cfg, false)
@@ -626,14 +642,6 @@ func (h *Handler) Handle(event v1.Event) error {
 			return nil
 
 			*/
-		}
-
-		// once the status version is in sync, we can turn off the migration condition
-		if cfg.ConditionTrue(v1.MigrationInProgress) &&
-			h.version == cfg.Status.Version {
-			h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.MigrationInProgress)
-			logrus.Println("CRDUPDATE turn migration off")
-			return h.crdwrapper.UpdateStatus(cfg)
 		}
 
 		if len(cfg.Spec.Architectures) == 0 {
@@ -745,7 +753,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			}
 			if len(strings.TrimSpace(cfg.Condition(v1.ImageChangesInProgress).Reason)) == 0 {
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
-				logrus.Println("The last in progress imagestream has completed")
+				logrus.Println("The last in progress imagestream has completed (config event loop)")
 			}
 			if cfg.ConditionFalse(v1.ImageChangesInProgress) {
 				logrus.Printf("CRDUPDATE setting in progress to false after examining cached imagestream events")
