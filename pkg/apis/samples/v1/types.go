@@ -73,9 +73,9 @@ type ConfigSpec struct {
 	ManagementState operatorv1.ManagementState `json:"managementState,omitempty" protobuf:"bytes,1,opt,name=managementState"`
 
 	// SamplesRegistry allows for the specification of which registry is accessed
-	// by the ImageStreams for their image content.  Defaults depend on the InstallType.
-	// An InstallType of 'rhel' defaults to registry.redhat.io, and an InstallType of
-	// 'centos' defaults to docker.io.
+	// by the ImageStreams for their image content.  Defaults on the content in https://github.com/openshift/library
+	// that are pulled into this github repository, but based on our pulling only ocp content it typically
+	// defaults to registry.redhat.io.
 	SamplesRegistry string `json:"samplesRegistry,omitempty" protobuf:"bytes,2,opt,name=samplesRegistry"`
 
 	// Architectures determine which hardware architecture(s) to install, where x86_64 and ppc64le are the
@@ -106,9 +106,9 @@ type ConfigStatus struct {
 	Conditions []ConfigCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,2,rep,name=conditions"`
 
 	// SamplesRegistry allows for the specification of which registry is accessed
-	// by the ImageStreams for their image content.  Defaults depend on the InstallType.
-	// An InstallType of 'rhel' defaults to registry.redhat.io, and an InstallType of
-	// 'centos' defaults to docker.io.
+	// by the ImageStreams for their image content.  Defaults on the content in https://github.com/openshift/library
+	// that are pulled into this github repository, but based on our pulling only ocp content it typically
+	// defaults to registry.redhat.io.
 	SamplesRegistry string `json:"samplesRegistry,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,3,rep,name=samplesRegistry"`
 
 	// Architectures determine which hardware architecture(s) to install, where x86_64 and ppc64le are the
@@ -174,6 +174,9 @@ const (
 	// change cycle as complete in both ClusterOperator and Config; retry on import will
 	// occur by the next relist interval if it was an intermittent issue;
 	ImportImageErrorsExist ConfigConditionType = "ImportImageErrorsExist"
+	// numConfigConditionType is a helper constant that captures the number possible conditions
+	// defined above in this const block
+	numconfigConditionType = 7
 )
 
 // ConfigCondition captures various conditions of the Config
@@ -349,8 +352,9 @@ func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionSt
 // 2) the first string is the succinct text to apply to the Progressing condition on failure
 // 3) the second string is the fully detailed text to apply the the Failing condition
 func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStatus, string, string) {
-	if len(s.Status.Conditions) == 0 {
-		// first event, have not processed default config yet
+	// do not start checking for bad config and needed cred until we've iterated through
+	// the credential / config processing to actually processed a config
+	if len(s.Status.Conditions) < numconfigConditionType {
 		return configv1.ConditionFalse, "", ""
 	}
 	// the ordering here is not random; an invalid config will be caught first;

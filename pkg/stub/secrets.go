@@ -104,7 +104,10 @@ func (h *Handler) WaitingForCredential(cfg *v1.Config) (bool, bool) {
 	// if trying to do rhel to the default registry.redhat.io registry requires the secret
 	// be in place since registry.redhat.io requires auth to pull; since it is not ready
 	// log error state
-	if cfg.ClusterNeedsCreds() {
+	// we check for actual existence vs. condition because in delete/recreate scenario, the condition can't
+	// be added out of the gate
+	_, err := h.secretclientwrapper.Get("openshift", v1.SamplesRegistryCredentials)
+	if err != nil {
 		cred := cfg.Condition(v1.ImportCredentialsExist)
 		// - if import cred is false, and the message is empty, that means we have NOT registered the error, and need to do so
 		// - if cred is false, and the message is there, we can just return nil to the sdk, which "true" for the boolean return value indicates;
@@ -117,8 +120,11 @@ func (h *Handler) WaitingForCredential(cfg *v1.Config) (bool, bool) {
 		h.processError(cfg, v1.ImportCredentialsExist, corev1.ConditionFalse, err, "%v")
 		return true, true
 	}
+	if !cfg.ConditionTrue(v1.ImportCredentialsExist) {
+		h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.ImportCredentialsExist)
+	}
 
-	// this is either centos, or the cluster admin is using their own registry for rhel content, so we do not
+	// the credentials are already in place, or the cluster admin is using their own registry for rhel content, so we do not
 	// enforce the need for the credential
 	return false, false
 }
@@ -136,16 +142,9 @@ func (h *Handler) processSecretEvent(cfg *v1.Config, dockercfgSecret *corev1.Sec
 	removedState := false
 	switch cfg.Spec.ManagementState {
 	case operatorsv1api.Removed:
-		// so our current recipe to switch to rhel is to
-		// - mark mgmt state removed
-		// - after that complete, edit again, mark install type to rhel and mgmt state to managed
-		// but what about the secret needed for rhel ... do we force the user to create the secret
-		// while still in managed/centos state?  Even with that, the "removed" action removes the
-		// secret the operator creates in the openshift namespace since it was owned/created by
-		// the operator
 		// So we allow the processing of the secret event while in removed state to
-		// facilitate the switch from centos to rhel, as necessitating use of removed as the means for
-		// changing from centos to rhel since  we allow changing the distribution once the samples have initially been created
+		// facilitate the imagestreams like cli, must-gather, that are installed from the
+		// payload via this operator's manifest, but are not managed by this operator
 		logrus.Printf("processing secret watch event while in Removed state; deletion event: %v", event.Deleted)
 		removedState = true
 	case operatorsv1api.Unmanaged:

@@ -20,7 +20,9 @@ import (
 	"testing"
 	"time"
 
+	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
+	"github.com/openshift/cluster-samples-operator/test/framework"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeset "k8s.io/client-go/kubernetes"
@@ -46,6 +48,17 @@ func TestMain(m *testing.M) {
 		fmt.Println("failed waiting for operator to start")
 		os.Exit(1)
 	}
+	opClient, err := configv1client.NewForConfig(kubeconfig)
+	if err != nil {
+		fmt.Printf("problem getting operator client %#v", err)
+		os.Exit(1)
+	}
+	err = framework.DisableCVOForOperator(opClient)
+	if err != nil {
+		fmt.Printf("problem disabling operator deployment in CVO %#v", err)
+		os.Exit(1)
+	}
+
 	os.Exit(m.Run())
 }
 

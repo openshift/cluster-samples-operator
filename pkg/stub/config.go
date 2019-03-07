@@ -274,11 +274,6 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionFalse
 			cfg.ConditionUpdate(condition)
-			cred := cfg.Condition(v1.ImportCredentialsExist)
-			cred.LastTransitionTime = now
-			cred.LastUpdateTime = now
-			cred.Status = corev1.ConditionFalse
-			cfg.ConditionUpdate(cred)
 			cfg.Status.ManagementState = operatorsv1api.Removed
 			cfg.Status.Version = ""
 			h.ClearStatusConfigForRemoved(cfg)
