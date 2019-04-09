@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	coreosPullSecretNamespace = "kube-system"
-	coreosPullSecretName      = "coreos-pull-secret"
+	coreosPullSecretNamespace = "openshift-config"
+	coreosPullSecretName      = "pull-secret"
 )
 
 func (h *Handler) copyDefaultClusterPullSecret(secret *corev1.Secret) error {
@@ -74,7 +74,7 @@ func (h *Handler) manageDockerCfgSecret(deleted bool, cfg *v1.Config, secret *co
 		}
 
 	case coreosPullSecretName:
-		// if kube-system deleted, we'll delete ours
+		// if openshift-config deleted, we'll delete ours
 		if deleted {
 			err := h.secretclientwrapper.Delete("openshift", v1.SamplesRegistryCredentials, &metav1.DeleteOptions{})
 			if err != nil && !kerrors.IsNotFound(err) {

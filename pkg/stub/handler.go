@@ -416,7 +416,7 @@ func (h *Handler) Handle(event v1.Event) error {
 
 		// if we miss a delete event in the openshift namespace (since we cannot
 		// add a finalizer in our namespace secret), we our watch
-		// on the kube-system coreos pull secret should still repopulate;
+		// on the openshift-config pull secret should still repopulate;
 		// if that gets deleted, the whole cluster is hosed; plus, there is talk
 		// of moving data like that to a special config namespace that is somehow
 		// protected

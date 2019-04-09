@@ -84,7 +84,7 @@ func NewController() (*Controller, error) {
 		cvowrapper:     operatorstatus.NewClusterOperatorHandler(operatorClient),
 		crWorkqueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "samplesconfig-changes"),
 		osSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openshift-secret-changes"),
-		opSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "kube-system-namespace-secret-changes"),
+		opSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openshift-config-namespace-secret-changes"),
 		isWorkqueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "imagestream-changes"),
 		tWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "template-changes"),
 		listers:        listers,
@@ -119,7 +119,7 @@ func NewController() (*Controller, error) {
 	}
 
 	c.kubeOSNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, "openshift", nil)
-	c.kubeOPNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, "kube-system", nil)
+	c.kubeOPNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, "openshift-config", nil)
 	//TODO - eventually a k8s go-client deps bump will lead to the form below, similar to the image registry operator's kubeinformer initialization,
 	// and similar to what is available with the openshift go-client for imagestreams and templates
 	//kubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncDuration, kubeinformers.WithNamespace("kube-system"))
@@ -133,7 +133,7 @@ func NewController() (*Controller, error) {
 
 	c.opSecInformer = c.kubeOPNSInformerFactory.Core().V1().Secrets().Informer()
 	c.opSecInformer.AddEventHandler(c.opSecretInformerEventHandler())
-	c.listers.OperatorNamespaceSecrets = c.kubeOPNSInformerFactory.Core().V1().Secrets().Lister().Secrets("kube-system")
+	c.listers.OperatorNamespaceSecrets = c.kubeOPNSInformerFactory.Core().V1().Secrets().Lister().Secrets("openshift-config")
 
 	c.isInformer = c.imageInformerFactory.Image().V1().ImageStreams().Informer()
 	c.isInformer.AddEventHandler(c.imagestreamInformerEventHandler())
