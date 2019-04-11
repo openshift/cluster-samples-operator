@@ -5,15 +5,23 @@ spec:
   - name: cli
     from:
       kind: DockerImage
-      name: docker.io/openshift/origin-cli:v4.0
+      name: quay.io/openshift/origin-cli:v4.0
+  - name: cli-artifacts
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-cli-artifacts:v4.0
   - name: cluster-samples-operator
     from:
       kind: DockerImage
-      name: docker.io/openshift/origin-cluster-samples-operator:latest
+      name: quay.io/openshift/origin-cluster-samples-operator:latest
   - name: installer
     from:
       kind: DockerImage
-      name: docker.io/openshift/origin-installer:v4.0
+      name: quay.io/openshift/origin-installer:v4.0
+  - name: installer-artifacts
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-installer-artifacts:v4.0
   - name: jenkins
     from:
       kind: DockerImage
@@ -29,8 +37,8 @@ spec:
   - name: tests
     from:
       kind: DockerImage
-      name: docker.io/openshift/origin-tests:v4.0
+      name: quay.io/openshift/origin-tests:v4.0
   - name: must-gather
     from:
       kind: DockerImage
-      name: docker.io/openshift/ose-must-gather:v4.0
+      name: quay.io/openshift/origin-must-gather:v4.0
