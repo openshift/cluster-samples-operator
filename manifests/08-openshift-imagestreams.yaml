@@ -11,7 +11,19 @@ spec:
   - name: latest
     from:
       kind: DockerImage
-      name: docker.io/openshift/origin-cli:v4.0
+      name: quay.io/openshift/origin-cli:v4.0
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
+  name: cli-artifacts
+spec:
+  tags:
+  - name: latest
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-cli-artifacts:v4.0
 ---
 kind: ImageStream
 apiVersion: image.openshift.io/v1
@@ -23,7 +35,19 @@ spec:
   - name: latest
     from:
       kind: DockerImage
-      name: docker.io/openshift/origin-installer:v4.0
+      name: quay.io/openshift/origin-installer:v4.0
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
+  name: installer-artifacts
+spec:
+  tags:
+  - name: latest
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-installer-artifacts:v4.0
 ---
 kind: ImageStream
 apiVersion: image.openshift.io/v1
@@ -35,7 +59,7 @@ spec:
   - name: latest
     from:
       kind: DockerImage
-      name: docker.io/openshift/origin-tests:v4.0
+      name: quay.io/openshift/origin-tests:v4.0
 ---
 kind: ImageStream
 apiVersion: image.openshift.io/v1
@@ -47,4 +71,4 @@ spec:
     - name: latest
       from:
         kind: DockerImage
-        name: docker.io/openshift/ose-must-gather:v4.0
+        name: quay.io/openshift/origin-must-gather:v4.0
