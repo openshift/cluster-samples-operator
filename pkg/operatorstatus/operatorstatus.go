@@ -14,7 +14,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
-	"github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 )
 
 const (
@@ -61,7 +61,9 @@ type ClusterOperatorWrapper interface {
 func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
 	var err error
 	failing, msgForProgressing, msgForFailing := cfg.ClusterOperatorStatusFailingCondition()
-	err = o.setOperatorStatus(configv1.OperatorFailing,
+	//TODO until we want to take on the golang 1.11 and k8s 1.13 bumps to pick up Degraded from
+	// openshift/api, using our our "Degraded" setting
+	err = o.setOperatorStatus(configv1.ClusterStatusConditionType("Degraded"),
 		failing,
 		msgForFailing,
 		"")
@@ -121,7 +123,9 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 					LastTransitionTime: metaapi.Now(),
 				},
 				{
-					Type:               configv1.OperatorFailing,
+					//TODO until we want to take on the golang 1.11 and k8s 1.13 bumps to pick up Degraded from
+					// openshift/api, using our our "Degraded" setting
+					Type:               configv1.ClusterStatusConditionType("Degraded"),
 					Status:             configv1.ConditionUnknown,
 					LastTransitionTime: metaapi.Now(),
 				},
