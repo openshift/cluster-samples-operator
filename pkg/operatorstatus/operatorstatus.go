@@ -14,7 +14,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
-	"github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 )
 
 const (
@@ -61,7 +61,7 @@ type ClusterOperatorWrapper interface {
 func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
 	var err error
 	failing, msgForProgressing, msgForFailing := cfg.ClusterOperatorStatusFailingCondition()
-	err = o.setOperatorStatus(configv1.OperatorFailing,
+	err = o.setOperatorStatus(configv1.OperatorDegraded,
 		failing,
 		msgForFailing,
 		"")
@@ -121,7 +121,7 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 					LastTransitionTime: metaapi.Now(),
 				},
 				{
-					Type:               configv1.OperatorFailing,
+					Type:               configv1.OperatorDegraded,
 					Status:             configv1.ConditionUnknown,
 					LastTransitionTime: metaapi.Now(),
 				},

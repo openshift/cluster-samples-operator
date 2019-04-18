@@ -28,7 +28,7 @@ import (
 	samplesapi "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
+	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/stub"
 	kubeset "k8s.io/client-go/kubernetes"
 )
@@ -201,7 +201,7 @@ func verifyClusterOperatorConditionsComplete(t *testing.T) {
 				if condition.Status == configv1.ConditionTrue {
 					availableOK = true
 				}
-			case configv1.OperatorFailing:
+			case configv1.OperatorDegraded:
 				if condition.Status == configv1.ConditionFalse {
 					failingOK = true
 				}
