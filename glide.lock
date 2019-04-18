@@ -1,5 +1,5 @@
 hash: dbb874cc3761ffe3fad94ff3f4e823790275fa9c5e8e5bd4030bca0d27f06a64
-updated: 2019-01-29T17:05:49.924945029-05:00
+updated: 2019-04-18T15:11:29.572335059-04:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -54,7 +54,7 @@ imports:
 - name: github.com/modern-go/reflect2
   version: 05fbef0ca5da472bbf96c9322b84a53edc03c9fd
 - name: github.com/openshift/api
-  version: 31ed61683850951801cddda5b075fcb24a500532
+  version: 18b9f9885fc4be44c8a0bafeef918d33f6e6a0b5
   subpackages:
   - config/v1
   - image/docker10
@@ -64,7 +64,7 @@ imports:
   - pkg/serialization
   - template/v1
 - name: github.com/openshift/client-go
-  version: 1540772775fa910515f0ff094d83ef41735d470b
+  version: 0255926f53935175fe90b8e7672c4c06c17d79e6
   subpackages:
   - config/clientset/versioned/scheme
   - config/clientset/versioned/typed/config/v1
@@ -91,7 +91,7 @@ imports:
 - name: github.com/spf13/pflag
   version: 583c0c0531f06d5278b7d917446061adc344b5cd
 - name: golang.org/x/crypto
-  version: 49796115aa4b964c318aad4f3084fdb41e9aa067
+  version: df01cb2cc480549d72034218dd98bf97671450ac
   subpackages:
   - ssh/terminal
 - name: golang.org/x/net
@@ -127,7 +127,7 @@ imports:
   subpackages:
   - rate
 - name: google.golang.org/appengine
-  version: 12d5545dc1cfa6047a286d5e853841b6471f4c19
+  version: 54a98f90d1c46b7731eb8fb305d2a321c30ef610
   subpackages:
   - internal
   - internal/app_identity
@@ -178,10 +178,10 @@ imports:
   - storage/v1alpha1
   - storage/v1beta1
 - name: k8s.io/apiextensions-apiserver
-  version: 853f76028711219c2fc251fd5184f23fd44a7aa0
+  version: 36be1826c980fa7ca82d91645e06e3157f159322
   repo: https://github.com/openshift/kubernetes-apiextensions-apiserver.git
 - name: k8s.io/apimachinery
-  version: cc581476df18d1280d23106cf104193e80d3ec73
+  version: 9fdc0b79e8fc9fa93648c5d98b49089026122bb6
   repo: https://github.com/openshift/kubernetes-apimachinery.git
   subpackages:
   - pkg/api/errors
@@ -227,7 +227,7 @@ imports:
   - third_party/forked/golang/json
   - third_party/forked/golang/reflect
 - name: k8s.io/client-go
-  version: 53edf803904dc0f511a99ac0e193960fd7ad2b74
+  version: a6658b4c2ca255291938f67d3f7f17019d30a79c
   repo: https://github.com/openshift/kubernetes-client-go.git
   subpackages:
   - discovery
@@ -366,7 +366,7 @@ imports:
   - util/retry
   - util/workqueue
 - name: k8s.io/code-generator
-  version: aef8d122b95ddd821e3bd35d4013593b1e5eda16
+  version: 13d81ee386d3d039027dd42e7b3d1d30d8d788f2
   repo: https://github.com/openshift/kubernetes-code-generator.git
 - name: k8s.io/gengo
   version: fdcf9f9480fdd5bf2b3c3df9bf4ecd22b25b87e2
