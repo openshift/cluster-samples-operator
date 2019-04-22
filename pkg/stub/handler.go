@@ -30,7 +30,7 @@ import (
 	templatev1client "github.com/openshift/client-go/template/clientset/versioned/typed/template/v1"
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
-	"github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/cache"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 
@@ -726,6 +726,8 @@ func (h *Handler) Handle(event v1.Event) error {
 		// cycle through them here now
 		if cache.AllUpsertEventsArrived() && cfg.ConditionTrue(v1.ImageChangesInProgress) {
 			keysToClear := []string{}
+			anyChange := false
+			ac := false
 			for key, is := range cache.GetUpsertImageStreams() {
 				if is == nil {
 					// never got update, refetch
@@ -736,7 +738,8 @@ func (h *Handler) Handle(event v1.Event) error {
 						continue
 					}
 				}
-				cfg, _ = h.processImportStatus(is, cfg)
+				cfg, _, ac = h.processImportStatus(is, cfg)
+				anyChange = anyChange || ac
 			}
 			for _, key := range keysToClear {
 				cache.RemoveUpsert(key)
@@ -747,10 +750,10 @@ func (h *Handler) Handle(event v1.Event) error {
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
 				logrus.Println("The last in progress imagestream has completed (config event loop)")
 			}
-			if cfg.ConditionFalse(v1.ImageChangesInProgress) {
-				logrus.Printf("CRDUPDATE setting in progress to false after examining cached imagestream events")
+			if anyChange {
+				logrus.Printf("CRDUPDATE updating in progress after examining cached imagestream events")
 				err = h.crdwrapper.UpdateStatus(cfg)
-				if err == nil {
+				if err == nil && cfg.ConditionFalse(v1.ImageChangesInProgress) {
 					// only clear out cache if we got the update through
 					cache.ClearUpsertsCache()
 				}
