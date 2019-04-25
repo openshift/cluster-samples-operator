@@ -134,11 +134,6 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		h.crdwrapper.UpdateStatus(cfg)
 		return err
 	}
-	// refetch cfg to narrow conflict window
-	s, err := h.crdwrapper.Get(v1.ConfigName)
-	if err == nil {
-		cfg = s
-	}
 	// now update progressing condition
 	progressing := cfg.Condition(v1.ImageChangesInProgress)
 	now := kapis.Now()
