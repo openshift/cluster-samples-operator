@@ -6,12 +6,14 @@ import (
 	"os"
 	"time"
 
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	controllercache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/flowcontrol"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
-	"github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samples/v1"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
@@ -230,6 +232,7 @@ type CRDWrapper interface {
 
 type generatedCRDWrapper struct {
 	client sampleclientv1.ConfigInterface
+	store  controllercache.Store
 }
 
 func (g *generatedCRDWrapper) UpdateStatus(sr *v1.Config) error {
@@ -274,21 +277,13 @@ func (g *generatedCRDWrapper) Create(sr *v1.Config) error {
 }
 
 func (g *generatedCRDWrapper) Get(name string) (*v1.Config, error) {
-	sr := &v1.Config{}
-	var err error
-	err = wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
-		sr, err = g.client.Get(name, metav1.GetOptions{})
-		if err == nil {
-			return true, nil
-		}
-		if !IsRetryableAPIError(err) {
-			return false, err
-		}
-		return false, nil
-	})
+	item, exists, err := g.store.GetByKey(name)
 	if err != nil {
 		return nil, err
 	}
+	if !exists {
+		return nil, kerrors.NewNotFound(v1.Resource("config"), name)
+	}
+	sr, _ := item.(*v1.Config)
 	return sr, nil
-
 }
