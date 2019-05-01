@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	restclient "k8s.io/client-go/rest"
+	controllercache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 
 	imagev1 "github.com/openshift/api/image/v1"
@@ -45,7 +46,7 @@ const (
 	skippedtempskey      = "keyForSkippedTemplatesField"
 )
 
-func NewSamplesOperatorHandler(kubeconfig *restclient.Config) (*Handler, error) {
+func NewSamplesOperatorHandler(kubeconfig *restclient.Config, cachestore controllercache.Store) (*Handler, error) {
 	h := &Handler{}
 
 	h.initter = &defaultInClusterInitter{}
@@ -57,8 +58,11 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config) (*Handler, error) 
 		return nil, err
 	}
 	crdWrapper.client = client.Configs()
+	crdWrapper.store = cachestore
 
 	h.crdwrapper = crdWrapper
+
+	h.crdstore = cachestore
 
 	h.Fileimagegetter = &DefaultImageStreamFromFileGetter{}
 	h.Filetemplategetter = &DefaultTemplateFromFileGetter{}
@@ -98,6 +102,8 @@ type Handler struct {
 	imageclientwrapper    ImageStreamClientWrapper
 	templateclientwrapper TemplateClientWrapper
 	secretclientwrapper   SecretClientWrapper
+
+	crdstore controllercache.Store
 
 	Fileimagegetter    ImageStreamFromFileGetter
 	Filetemplategetter TemplateFromFileGetter

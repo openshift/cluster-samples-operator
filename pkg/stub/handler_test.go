@@ -10,8 +10,8 @@ import (
 
 	"testing"
 
-	"github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
-	"github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
+	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -1075,8 +1075,8 @@ func mimic(h *Handler, topdir string) {
 	fakeisgetter.streams = map[string]*imagev1.ImageStream{
 		topdir + "/imagestreams/foo": foo,
 		topdir + "/imagestreams/bar": bar,
-		"foo": foo,
-		"bar": bar,
+		"foo":                        foo,
+		"bar":                        bar,
 	}
 	faketempgetter := h.Filetemplategetter.(*fakeTemplateFromFileGetter)
 	bo := &templatev1.Template{
@@ -1094,8 +1094,8 @@ func mimic(h *Handler, topdir string) {
 	faketempgetter.templates = map[string]*templatev1.Template{
 		topdir + "/templates/bo": bo,
 		topdir + "/templates/go": gogo,
-		"bo": bo,
-		"go": gogo,
+		"bo":                     bo,
+		"go":                     gogo,
 	}
 
 }

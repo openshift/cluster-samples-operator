@@ -90,11 +90,6 @@ func NewController() (*Controller, error) {
 		listers:        listers,
 	}
 
-	c.handlerStub, err = stub.NewSamplesOperatorHandler(kubeconfig)
-	if err != nil {
-		return nil, err
-	}
-
 	// Initial event to bootstrap CR if it doesn't exist.
 	c.crWorkqueue.AddRateLimited(sampopapi.ConfigName)
 
@@ -146,6 +141,13 @@ func NewController() (*Controller, error) {
 	c.crInformer = c.sampopInformerFactory.Samples().V1().Configs().Informer()
 	c.crInformer.AddEventHandler(c.crInformerEventHandler())
 	c.listers.Config = c.sampopInformerFactory.Samples().V1().Configs().Lister()
+
+	crStore := c.crInformer.GetStore()
+
+	c.handlerStub, err = stub.NewSamplesOperatorHandler(kubeconfig, crStore)
+	if err != nil {
+		return nil, err
+	}
 
 	return c, nil
 }
