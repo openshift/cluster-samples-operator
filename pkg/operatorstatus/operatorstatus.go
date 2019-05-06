@@ -103,12 +103,6 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 			state = &configv1.ClusterOperator{}
 			state.Name = ClusterOperatorName
 
-			state.Status.RelatedObjects = []configv1.ObjectReference{
-				{Group: v1.GroupName, Resource: "configs", Name: "cluster"},
-				{Resource: "namespaces", Name: "openshift-cluster-samples-operator"},
-				{Resource: "namespaces", Name: "openshift"},
-			}
-
 			state.Status.Conditions = []configv1.ClusterOperatorStatusCondition{
 				{
 					Type:               configv1.OperatorAvailable,
@@ -168,6 +162,12 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 
 		if !modified {
 			return nil
+		}
+
+		state.Status.RelatedObjects = []configv1.ObjectReference{
+			{Group: v1.GroupName, Resource: "configs", Name: "cluster"},
+			{Resource: "namespaces", Name: "openshift-cluster-samples-operator"},
+			{Resource: "namespaces", Name: "openshift"},
 		}
 
 		return o.ClusterOperatorWrapper.UpdateStatus(state)
