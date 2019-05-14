@@ -77,15 +77,19 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			if anyChange {
 				logrus.Printf("CRDUPDATE updating progress/error condition (within caching block) after results for %s", is.Name)
 				err = h.crdwrapper.UpdateStatus(cfg)
-				if err == nil {
-					// only clear out the cache if our update got through
-					cache.ClearUpsertsCache()
-				}
+				// we used to not clear the cache until we confirmed the update occurred; but for
+				// whatever reason, we started seeing more conflicts here on the k8s 1.13 rebase;
+				// and it turns out, after the `cache.UpsertsAmount() > 0` check above it is tricky
+				// to discern a retry because of an err here vs. our not having finished upserts yet;
+				// so since we have decided the condition, most likely we are done; so clear the cache
+				// and fall into our steady state process imagestream event individually
+				cache.ClearUpsertsCache()
 			}
 			return err
 		}
 		// otherwise, if someone else changed it in such a way that we don't want to
-		// upsert it again, or we missed an event and this is a relist, update conditions
+		// upsert it again, or we missed an event and this is a relist, or we had an update conflict
+		// after completing cache process, update conditions as needed
 		// as needed
 		cfg, _, anyChange = h.processImportStatus(is, cfg)
 		if anyChange {
