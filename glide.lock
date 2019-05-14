@@ -1,5 +1,5 @@
-hash: 1e1ee6a3aa8ec0615b68d3a128f26b387ababaffbe2143ec3c907e11d8ba43eb
-updated: 2019-05-08T17:33:31.332776239-04:00
+hash: 9a2d475ca465bbfe25ff7b9f88ce3d77c7d9501f6cf3fa75f4619de92b72c629
+updated: 2019-05-14T16:39:16.317751398-04:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -12,6 +12,10 @@ imports:
   - spew
 - name: github.com/evanphx/json-patch
   version: 5858425f75500d40c52783dce87d085a483ce135
+- name: github.com/ghodss/yaml
+  version: c7ce16629ff4cd059ed96ed06419dd3856fd3577
+- name: github.com/gobuffalo/envy
+  version: 043cb4b8af871b49563291e32c66bb84378a60ac
 - name: github.com/gogo/protobuf
   version: c0656edd0d9eab7c66d1eb0c568f9039345796f7
   subpackages:
@@ -45,14 +49,18 @@ imports:
   - simplelru
 - name: github.com/imdario/mergo
   version: 9316a62528ac99aaecb4e47eadd6dc8aa6533d58
+- name: github.com/joho/godotenv
+  version: 5c0e6c6ab1a0a9ef0a8822cba3a05d62f7dad941
 - name: github.com/json-iterator/go
   version: ab8a2e0c74be9d3be70b3184d9acc634935ded82
+- name: github.com/markbates/inflect
+  version: d582c680dc4d29c2279628ae00e743005bfcd4fe
 - name: github.com/modern-go/concurrent
   version: bacd9c7ef1dd9b15be4a9909b8ac7a4e313eec94
 - name: github.com/modern-go/reflect2
   version: 05fbef0ca5da472bbf96c9322b84a53edc03c9fd
 - name: github.com/openshift/api
-  version: f41c2eb082b482e0134267e8842e376d005f8842
+  version: 81d064c11ff2d62705dbb09ed9ac200ef9557716
   subpackages:
   - config/v1
   - image/docker10
@@ -82,14 +90,22 @@ imports:
   - template/informers/externalversions/template
   - template/informers/externalversions/template/v1
   - template/listers/template/v1
+- name: github.com/openshift/library-go
+  version: 174f3b6f6711a5024b9487ddc06858a09f655682
 - name: github.com/peterbourgon/diskv
   version: 5f041e8faa004a95c88a202771f4cc3e991971e6
+- name: github.com/pkg/errors
+  version: 645ef00459ed84a119197bfb8d8205042c6df63d
+- name: github.com/rogpeppe/go-internal
+  version: 438578804ca6f31be148c27683afc419ce47c06e
 - name: github.com/sirupsen/logrus
   version: 89742aefa4b206dcf400792f3bd35b542998eb3b
+- name: github.com/spf13/afero
+  version: 588a75ec4f32903aa5e39a2619ba6a4631e28424
 - name: github.com/spf13/pflag
   version: 583c0c0531f06d5278b7d917446061adc344b5cd
 - name: golang.org/x/crypto
-  version: e1dfcc566284e143ba8f9afbb3fa563f2a0d212b
+  version: 22d7a77e9e5f409e934ed268692e56707cd169e5
   subpackages:
   - ssh/terminal
 - name: golang.org/x/net
@@ -127,7 +143,7 @@ imports:
 - name: golang.org/x/tools
   version: 2382e3994d48b1d22acc2c86bcad0a2aff028e32
 - name: google.golang.org/appengine
-  version: 54a98f90d1c46b7731eb8fb305d2a321c30ef610
+  version: 4c25cacc810c02874000e4f7071286a8e96b2515
   subpackages:
   - internal
   - internal/app_identity
@@ -381,6 +397,9 @@ imports:
   version: 0cf8f7e6ed1d2e3d47d02e3b6e559369af24d803
   subpackages:
   - pkg/util/proto
+- name: sigs.k8s.io/controller-tools
+  version: 72ae52c08b9dd626cfb64ebef0fbf40ce667939b
+  repo: https://github.com/openshift/kubernetes-sigs-controller-tools
 - name: sigs.k8s.io/yaml
   version: addf6dad74cae7b93c6972d69364952bb6239c05
 testImports: []
