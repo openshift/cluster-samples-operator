@@ -284,11 +284,11 @@ func TestProcessed(t *testing.T) {
 			t.Fatalf("is did not reach client %s: %#v", key, h)
 		}
 	}
-	is, _ := fakeisclient.Get("", "foo", metav1.GetOptions{})
+	is, _ := fakeisclient.Get("foo")
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
 	}
-	is, _ = fakeisclient.Get("", "bar", metav1.GetOptions{})
+	is, _ = fakeisclient.Get("bar")
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
 	}
@@ -315,11 +315,11 @@ func TestProcessed(t *testing.T) {
 	validate(true, err, "", cfg,
 		conditions,
 		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-	is, _ = fakeisclient.Get("", "foo", metav1.GetOptions{})
+	is, _ = fakeisclient.Get("foo")
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
 	}
-	is, _ = fakeisclient.Get("", "bar", metav1.GetOptions{})
+	is, _ = fakeisclient.Get("bar")
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
 	}
@@ -1276,7 +1276,7 @@ type fakeImageStreamClientWrapper struct {
 	listerrors   map[string]error
 }
 
-func (f *fakeImageStreamClientWrapper) Get(namespace, name string, opts metav1.GetOptions) (*imagev1.ImageStream, error) {
+func (f *fakeImageStreamClientWrapper) Get(name string) (*imagev1.ImageStream, error) {
 	err, _ := f.geterrors[name]
 	if err != nil {
 		return nil, err
@@ -1285,8 +1285,8 @@ func (f *fakeImageStreamClientWrapper) Get(namespace, name string, opts metav1.G
 	return is, nil
 }
 
-func (f *fakeImageStreamClientWrapper) List(namespace string, opts metav1.ListOptions) (*imagev1.ImageStreamList, error) {
-	err, _ := f.geterrors[namespace]
+func (f *fakeImageStreamClientWrapper) List(opts metav1.ListOptions) (*imagev1.ImageStreamList, error) {
+	err, _ := f.geterrors["openshift"]
 	if err != nil {
 		return nil, err
 	}
@@ -1297,7 +1297,7 @@ func (f *fakeImageStreamClientWrapper) List(namespace string, opts metav1.ListOp
 	return list, nil
 }
 
-func (f *fakeImageStreamClientWrapper) Create(namespace string, stream *imagev1.ImageStream) (*imagev1.ImageStream, error) {
+func (f *fakeImageStreamClientWrapper) Create(stream *imagev1.ImageStream) (*imagev1.ImageStream, error) {
 	if stream == nil {
 		return nil, nil
 	}
@@ -1310,15 +1310,15 @@ func (f *fakeImageStreamClientWrapper) Create(namespace string, stream *imagev1.
 	return stream, nil
 }
 
-func (f *fakeImageStreamClientWrapper) Update(namespace string, stream *imagev1.ImageStream) (*imagev1.ImageStream, error) {
-	return f.Create(namespace, stream)
+func (f *fakeImageStreamClientWrapper) Update(stream *imagev1.ImageStream) (*imagev1.ImageStream, error) {
+	return f.Create(stream)
 }
 
-func (f *fakeImageStreamClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
+func (f *fakeImageStreamClientWrapper) Delete(name string, opts *metav1.DeleteOptions) error {
 	return nil
 }
 
-func (f *fakeImageStreamClientWrapper) Watch(namespace string) (watch.Interface, error) {
+func (f *fakeImageStreamClientWrapper) Watch() (watch.Interface, error) {
 	return nil, nil
 }
 
@@ -1330,7 +1330,7 @@ type fakeTemplateClientWrapper struct {
 	listerrors   map[string]error
 }
 
-func (f *fakeTemplateClientWrapper) Get(namespace, name string, opts metav1.GetOptions) (*templatev1.Template, error) {
+func (f *fakeTemplateClientWrapper) Get(name string) (*templatev1.Template, error) {
 	err, _ := f.geterrors[name]
 	if err != nil {
 		return nil, err
@@ -1339,8 +1339,8 @@ func (f *fakeTemplateClientWrapper) Get(namespace, name string, opts metav1.GetO
 	return is, nil
 }
 
-func (f *fakeTemplateClientWrapper) List(namespace string, opts metav1.ListOptions) (*templatev1.TemplateList, error) {
-	err, _ := f.geterrors[namespace]
+func (f *fakeTemplateClientWrapper) List(opts metav1.ListOptions) (*templatev1.TemplateList, error) {
+	err, _ := f.geterrors["openshift"]
 	if err != nil {
 		return nil, err
 	}
@@ -1351,7 +1351,7 @@ func (f *fakeTemplateClientWrapper) List(namespace string, opts metav1.ListOptio
 	return list, nil
 }
 
-func (f *fakeTemplateClientWrapper) Create(namespace string, t *templatev1.Template) (*templatev1.Template, error) {
+func (f *fakeTemplateClientWrapper) Create(t *templatev1.Template) (*templatev1.Template, error) {
 	if t == nil {
 		return nil, nil
 	}
@@ -1364,15 +1364,15 @@ func (f *fakeTemplateClientWrapper) Create(namespace string, t *templatev1.Templ
 	return t, nil
 }
 
-func (f *fakeTemplateClientWrapper) Update(namespace string, t *templatev1.Template) (*templatev1.Template, error) {
-	return f.Create(namespace, t)
+func (f *fakeTemplateClientWrapper) Update(t *templatev1.Template) (*templatev1.Template, error) {
+	return f.Create(t)
 }
 
-func (f *fakeTemplateClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
+func (f *fakeTemplateClientWrapper) Delete(name string, opts *metav1.DeleteOptions) error {
 	return nil
 }
 
-func (f *fakeTemplateClientWrapper) Watch(namespace string) (watch.Interface, error) {
+func (f *fakeTemplateClientWrapper) Watch() (watch.Interface, error) {
 	return nil, nil
 }
 
@@ -1414,7 +1414,7 @@ type fakeCRDWrapper struct {
 	cfg       *v1.Config
 }
 
-func (f *fakeCRDWrapper) UpdateStatus(opcfg *v1.Config) error { return f.updateerr }
+func (f *fakeCRDWrapper) UpdateStatus(opcfg *v1.Config, dbg string) error { return f.updateerr }
 
 func (f *fakeCRDWrapper) Update(opcfg *v1.Config) error { return f.updateerr }
 

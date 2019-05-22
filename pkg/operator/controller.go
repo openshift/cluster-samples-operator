@@ -142,9 +142,12 @@ func NewController() (*Controller, error) {
 	c.crInformer.AddEventHandler(c.crInformerEventHandler())
 	c.listers.Config = c.sampopInformerFactory.Samples().V1().Configs().Lister()
 
-	crStore := c.crInformer.GetStore()
-
-	c.handlerStub, err = stub.NewSamplesOperatorHandler(kubeconfig, crStore)
+	c.handlerStub, err = stub.NewSamplesOperatorHandler(kubeconfig,
+		c.listers.Config,
+		c.listers.ImageStreams,
+		c.listers.Templates,
+		c.listers.OpenShiftNamespaceSecrets,
+		c.listers.OperatorNamespaceSecrets)
 	if err != nil {
 		return nil, err
 	}
@@ -402,11 +405,11 @@ func (c *Controller) commonInformerEventHandler(keygen queueKeyGen, wq workqueue
 				logrus.Printf("one time ignoring of delete event for template %s as part of a group delete", object.GetName())
 				return
 			}
-			key := keygen.Key(o)
+			key := keygen.Key(object)
 			logrus.Debugf("add event to workqueue due to %#v (delete) via %#v", key, keygen)
 			// but we pass in the actual object on delete so it can be leveraged by the
 			// event handling (objs without finalizers won't be accessible via get)
-			wq.Add(o)
+			wq.Add(object)
 
 		},
 	}

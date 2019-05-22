@@ -14,8 +14,6 @@ import (
 )
 
 func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted bool) error {
-	// our pattern is the top most caller locks the mutex
-
 	cfg, filePath, doUpsert, err := h.prepSamplesWatchEvent("imagestream", is.Name, is.Annotations, deleted)
 	if cfg != nil && cfg.ConditionTrue(v1.ImageChangesInProgress) {
 		logrus.Printf("Imagestream %s watch event do upsert %v; no errors in prep %v,  possibly update operator conditions %v", is.Name, doUpsert, err == nil, cfg != nil)
@@ -45,11 +43,12 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			}
 			streams := cache.GetUpsertImageStreams()
 			keysToClear := []string{}
+			cfg = h.refetchCfgMinimizeConflicts(cfg)
 			for key, is := range streams {
 				if is == nil {
 					// never got update, refetch
 					var e error
-					is, e = h.imageclientwrapper.Get("openshift", key, kapis.GetOptions{})
+					is, e = h.imageclientwrapper.Get(key)
 					if e != nil {
 						keysToClear = append(keysToClear, key)
 						anyChange = true
@@ -75,8 +74,9 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			// unless we were unable to fetch any of the imagestreams
 			// and if necessary processImportStatus would have set in progress to false as needed;
 			if anyChange {
-				logrus.Printf("CRDUPDATE updating progress/error condition (within caching block) after results for %s", is.Name)
-				err = h.crdwrapper.UpdateStatus(cfg)
+				dbg := fmt.Sprintf("updating progress/error condition (within caching block) after results for %s", is.Name)
+				logrus.Printf("CRDUPDATE %s", dbg)
+				err = h.crdwrapper.UpdateStatus(cfg, dbg)
 				// we used to not clear the cache until we confirmed the update occurred; but for
 				// whatever reason, we started seeing more conflicts here on the k8s 1.13 rebase;
 				// and it turns out, after the `cache.UpsertsAmount() > 0` check above it is tricky
@@ -91,10 +91,12 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		// upsert it again, or we missed an event and this is a relist, or we had an update conflict
 		// after completing cache process, update conditions as needed
 		// as needed
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		cfg, _, anyChange = h.processImportStatus(is, cfg)
 		if anyChange {
-			logrus.Printf("CRDUPDATE updating progress/error condition after results for %s", is.Name)
-			return h.crdwrapper.UpdateStatus(cfg)
+			dbg := fmt.Sprintf("updating progress/error condition after results for %s", is.Name)
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 		return nil
 
@@ -113,9 +115,11 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 	imagestream, err := h.Fileimagegetter.Get(filePath)
 	if err != nil {
 		// still attempt to report error in status
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
-		logrus.Printf("CRDUPDATE event img update err bad fs read %s", filePath)
-		h.crdwrapper.UpdateStatus(cfg)
+		dbg := fmt.Sprintf("event img update err bad fs read %s", filePath)
+		logrus.Printf("CRDUPDATE %s", dbg)
+		h.crdwrapper.UpdateStatus(cfg, dbg)
 		// if we get this, don't bother retrying
 		return nil
 	}
@@ -133,12 +137,14 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			// it the main loop created, we will let it set the image change reason field
 			return nil
 		}
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing imagestream %s", imagestream.Name)
-		logrus.Printf("CRDUPDATE event img update err bad api obj update %s", imagestream.Name)
-		h.crdwrapper.UpdateStatus(cfg)
-		return err
+		dbg := fmt.Sprintf("CRDUPDATE event img update err bad api obj update %s", imagestream.Name)
+		logrus.Printf("CRDUPDATE %s", dbg)
+		return h.crdwrapper.UpdateStatus(cfg, dbg)
 	}
 	// now update progressing condition
+	cfg = h.refetchCfgMinimizeConflicts(cfg)
 	progressing := cfg.Condition(v1.ImageChangesInProgress)
 	now := kapis.Now()
 	progressing.LastUpdateTime = now
@@ -149,8 +155,9 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		progressing.Reason = progressing.Reason + imagestream.Name + " "
 	}
 	cfg.ConditionUpdate(progressing)
-	logrus.Printf("CRDUPDATE progressing true update for imagestream %s", imagestream.Name)
-	return h.crdwrapper.UpdateStatus(cfg)
+	dbg := fmt.Sprintf("progressing true update for imagestream %s", imagestream.Name)
+	logrus.Printf("CRDUPDATE %s", dbg)
+	return h.crdwrapper.UpdateStatus(cfg, dbg)
 
 }
 
@@ -169,7 +176,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 				imagestreamInCluster.Labels = make(map[string]string)
 			}
 			imagestreamInCluster.Labels[v1.SamplesManagedLabel] = "false"
-			h.imageclientwrapper.Update("openshift", imagestreamInCluster)
+			h.imageclientwrapper.Update(imagestreamInCluster)
 			// if we get an error, we'll just try to remove the label next
 			// time; and we'll examine the skipped lists on delete
 		}
@@ -188,7 +195,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 	imagestreamInOperatorImage.Annotations[v1.SamplesVersionAnnotation] = h.version
 
 	if imagestreamInCluster == nil {
-		_, err := h.imageclientwrapper.Create("openshift", imagestreamInOperatorImage)
+		_, err := h.imageclientwrapper.Create(imagestreamInOperatorImage)
 		if err != nil {
 			if kerrors.IsAlreadyExists(err) {
 				logrus.Printf("imagestream %s recreated since delete event", imagestreamInOperatorImage.Name)
@@ -202,7 +209,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 	}
 
 	imagestreamInOperatorImage.ResourceVersion = imagestreamInCluster.ResourceVersion
-	_, err := h.imageclientwrapper.Update("openshift", imagestreamInOperatorImage)
+	_, err := h.imageclientwrapper.Update(imagestreamInOperatorImage)
 	if err != nil {
 		return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "imagestream update error: %v")
 	}

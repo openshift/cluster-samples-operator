@@ -12,6 +12,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	corev1lister "k8s.io/client-go/listers/core/v1"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,7 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	restclient "k8s.io/client-go/rest"
-	controllercache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 
 	imagev1 "github.com/openshift/api/image/v1"
@@ -28,7 +28,10 @@ import (
 
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
+	imagev1lister "github.com/openshift/client-go/image/listers/image/v1"
 	templatev1client "github.com/openshift/client-go/template/clientset/versioned/typed/template/v1"
+	templatev1lister "github.com/openshift/client-go/template/listers/template/v1"
+	configv1lister "github.com/openshift/cluster-samples-operator/pkg/generated/listers/samples/v1"
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
 	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
@@ -46,7 +49,12 @@ const (
 	skippedtempskey      = "keyForSkippedTemplatesField"
 )
 
-func NewSamplesOperatorHandler(kubeconfig *restclient.Config, cachestore controllercache.Store) (*Handler, error) {
+func NewSamplesOperatorHandler(kubeconfig *restclient.Config,
+	configLister configv1lister.ConfigLister,
+	streamLister imagev1lister.ImageStreamNamespaceLister,
+	templateLister templatev1lister.TemplateNamespaceLister,
+	openshiftNamespaceSecretLister corev1lister.SecretNamespaceLister,
+	configNamespaceSecretLister corev1lister.SecretNamespaceLister) (*Handler, error) {
 	h := &Handler{}
 
 	h.initter = &defaultInClusterInitter{}
@@ -58,19 +66,23 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config, cachestore control
 		return nil, err
 	}
 	crdWrapper.client = client.Configs()
-	crdWrapper.store = cachestore
+	crdWrapper.lister = configLister
 
 	h.crdwrapper = crdWrapper
 
-	h.crdstore = cachestore
+	h.crdlister = configLister
+	h.streamlister = streamLister
+	h.tplstore = templateLister
+	h.opshiftsecretlister = openshiftNamespaceSecretLister
+	h.cfgsecretlister = configNamespaceSecretLister
 
 	h.Fileimagegetter = &DefaultImageStreamFromFileGetter{}
 	h.Filetemplategetter = &DefaultTemplateFromFileGetter{}
 	h.Filefinder = &DefaultResourceFileLister{}
 
-	h.imageclientwrapper = &defaultImageStreamClientWrapper{h: h}
-	h.templateclientwrapper = &defaultTemplateClientWrapper{h: h}
-	h.secretclientwrapper = &defaultSecretClientWrapper{coreclient: h.coreclient}
+	h.imageclientwrapper = &defaultImageStreamClientWrapper{h: h, lister: streamLister}
+	h.templateclientwrapper = &defaultTemplateClientWrapper{h: h, lister: templateLister}
+	h.secretclientwrapper = &defaultSecretClientWrapper{coreclient: h.coreclient, opnshftlister: openshiftNamespaceSecretLister, cfglister: configNamespaceSecretLister}
 	h.cvowrapper = operatorstatus.NewClusterOperatorHandler(h.configclient)
 
 	h.skippedImagestreams = make(map[string]bool)
@@ -103,7 +115,11 @@ type Handler struct {
 	templateclientwrapper TemplateClientWrapper
 	secretclientwrapper   SecretClientWrapper
 
-	crdstore controllercache.Store
+	crdlister           configv1lister.ConfigLister
+	streamlister        imagev1lister.ImageStreamNamespaceLister
+	tplstore            templatev1lister.TemplateNamespaceLister
+	opshiftsecretlister corev1lister.SecretNamespaceLister
+	cfgsecretlister     corev1lister.SecretNamespaceLister
 
 	Fileimagegetter    ImageStreamFromFileGetter
 	Filetemplategetter TemplateFromFileGetter
@@ -342,7 +358,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 
 	iopts := metav1.ListOptions{LabelSelector: v1.SamplesManagedLabel + "=true"}
 
-	streamList, err := h.imageclientwrapper.List("openshift", iopts)
+	streamList, err := h.imageclientwrapper.List(iopts)
 	if err != nil && !kerrors.IsNotFound(err) {
 		logrus.Warnf("Problem listing openshift imagestreams on Config delete: %#v", err)
 		return err
@@ -355,7 +371,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 				if !ok || strings.TrimSpace(manage) != "true" {
 					continue
 				}
-				err = h.imageclientwrapper.Delete("openshift", stream.Name, &metav1.DeleteOptions{})
+				err = h.imageclientwrapper.Delete(stream.Name, &metav1.DeleteOptions{})
 				if err != nil && !kerrors.IsNotFound(err) {
 					logrus.Warnf("Problem deleting openshift imagestream %s on Config delete: %#v", stream.Name, err)
 					return err
@@ -367,7 +383,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 
 	cache.ClearUpsertsCache()
 
-	tempList, err := h.templateclientwrapper.List("openshift", iopts)
+	tempList, err := h.templateclientwrapper.List(iopts)
 	if err != nil && !kerrors.IsNotFound(err) {
 		logrus.Warnf("Problem listing openshift templates on Config delete: %#v", err)
 		return err
@@ -380,7 +396,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 				if !ok || strings.TrimSpace(manage) != "true" {
 					continue
 				}
-				err = h.templateclientwrapper.Delete("openshift", temp.Name, &metav1.DeleteOptions{})
+				err = h.templateclientwrapper.Delete(temp.Name, &metav1.DeleteOptions{})
 				if err != nil && !kerrors.IsNotFound(err) {
 					logrus.Warnf("Problem deleting openshift template %s on Config delete: %#v", temp.Name, err)
 					return err
@@ -474,8 +490,9 @@ func (h *Handler) Handle(event v1.Event) error {
 					return err
 				}
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.SamplesExist)
-				logrus.Printf("CRDUPDATE exist false update")
-				err = h.crdwrapper.UpdateStatus(cfg)
+				dbg := "exist false update"
+				logrus.Printf("CRDUPDATE %s", dbg)
+				err = h.crdwrapper.UpdateStatus(cfg, dbg)
 				if err != nil {
 					logrus.Printf("error on Config update after setting exists condition to false (returning error to retry): %v", err)
 					return err
@@ -483,7 +500,8 @@ func (h *Handler) Handle(event v1.Event) error {
 			} else {
 				logrus.Println("Initiating finalizer processing for a SampleResource delete attempt")
 				h.RemoveFinalizer(cfg)
-				logrus.Printf("CRDUPDATE remove finalizer update")
+				dbg := "remove finalizer update"
+				logrus.Printf("CRDUPDATE %s", dbg)
 				// not updating the status, but the metadata annotation
 				err := h.crdwrapper.Update(cfg)
 				if err != nil {
@@ -497,47 +515,56 @@ func (h *Handler) Handle(event v1.Event) error {
 			return nil
 		}
 
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		if cfg.ConditionUnknown(v1.ImportCredentialsExist) {
 			// retry the default cred copy if it failed previously
 			err := h.copyDefaultClusterPullSecret(nil)
 			if err == nil {
+				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.ImportCredentialsExist)
-				logrus.Println("CRDUPDATE cleared import cred unknown")
-				return h.crdwrapper.UpdateStatus(cfg)
+				dbg := "cleared import cred unknown"
+				logrus.Printf("CRDUPDATE %s", dbg)
+				return h.crdwrapper.UpdateStatus(cfg, dbg)
 			}
 		}
 
 		// Every time we see a change to the Config object, update the ClusterOperator status
 		// based on the current conditions of the Config.
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		err := h.cvowrapper.UpdateOperatorStatus(cfg)
 		if err != nil {
 			logrus.Errorf("error updating cluster operator status: %v", err)
 			return err
 		}
 
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		doit, cfgUpdate, err := h.ProcessManagementField(cfg)
 		if !doit || err != nil {
 			if err != nil || cfgUpdate {
 				// flush status update
-				logrus.Printf("CRDUPDATE process mgmt update")
-				h.crdwrapper.UpdateStatus(cfg)
+				dbg := "process mgmt update"
+				logrus.Printf("CRDUPDATE %s", dbg)
+				return h.crdwrapper.UpdateStatus(cfg, dbg)
 			}
 			return err
 		}
 
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		existingValidStatus := cfg.Condition(v1.ConfigurationValid).Status
 		err = h.SpecValidation(cfg)
 		if err != nil {
 			// flush status update
-			logrus.Printf("CRDUPDATE bad spec validation update")
+			dbg := "bad spec validation update"
+			logrus.Printf("CRDUPDATE %s", dbg)
 			// only retry on error updating the Config; do not return
 			// the error from SpecValidation which denotes a bad config
-			return h.crdwrapper.UpdateStatus(cfg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 		// if a bad config was corrected, update and return
 		if existingValidStatus != cfg.Condition(v1.ConfigurationValid).Status {
-			logrus.Printf("CRDUPDATE spec corrected")
-			return h.crdwrapper.UpdateStatus(cfg)
+			dbg := "spec corrected"
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
 		h.buildSkipFilters(cfg)
@@ -548,6 +575,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		unskippedStreams := map[string]bool{}
 		unskippedTemplates := map[string]bool{}
 		if cfg.Spec.ManagementState == cfg.Status.ManagementState {
+			cfg = h.refetchCfgMinimizeConflicts(cfg)
 			configChanged, configChangeRequiresUpsert, configChangeRequiresImportErrorUpdate, registryChanged, unskippedStreams, unskippedTemplates = h.VariableConfigChanged(cfg)
 			logrus.Debugf("config changed %v upsert needed %v import error upd needed %v exists/true %v progressing/false %v op version %s status version %s",
 				configChanged,
@@ -568,8 +596,9 @@ func (h *Handler) Handle(event v1.Event) error {
 				// once the status version is in sync, we can turn off the migration condition
 				if cfg.ConditionTrue(v1.MigrationInProgress) {
 					h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.MigrationInProgress)
-					logrus.Println("CRDUPDATE turn migration off")
-					return h.crdwrapper.UpdateStatus(cfg)
+					dbg := " turn migration off"
+					logrus.Printf("CRDUPDATE %s", dbg)
+					return h.crdwrapper.UpdateStatus(cfg, dbg)
 				}
 
 				// in case this is a bring up after initial install, we take a pass
@@ -585,8 +614,9 @@ func (h *Handler) Handle(event v1.Event) error {
 			if configChangeRequiresUpsert &&
 				cfg.ConditionTrue(v1.ImageChangesInProgress) {
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
-				logrus.Printf("CRDUPDATE change in progress from true to false for config change")
-				return h.crdwrapper.UpdateStatus(cfg)
+				dbg := "change in progress from true to false for config change"
+				logrus.Printf("CRDUPDATE %s", dbg)
+				return h.crdwrapper.UpdateStatus(cfg, dbg)
 			}
 		}
 
@@ -595,29 +625,34 @@ func (h *Handler) Handle(event v1.Event) error {
 		// if trying to do rhel to the default registry.redhat.io registry requires the secret
 		// be in place since registry.redhat.io requires auth to pull; if it is not ready
 		// error state will be logged by WaitingForCredential
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		stillWaitingForSecret, callSDKToUpdate := h.WaitingForCredential(cfg)
 		if callSDKToUpdate {
 			// flush status update ... the only error generated by WaitingForCredential, not
 			// by api obj access
-			logrus.Println("CRDUPDATE Config update ignored since need the RHEL credential")
+			dbg := "Config update ignored since need the RHEL credential"
+			logrus.Printf("CRDUPDATE %s", dbg)
 			// if update to set import cred condition to false fails, return that error
 			// to requeue
-			return h.crdwrapper.UpdateStatus(cfg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 		if stillWaitingForSecret {
 			// means we previously udpated cfg but nothing has changed wrt the secret's presence
 			return nil
 		}
 
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		if cfg.ConditionFalse(v1.MigrationInProgress) &&
 			len(cfg.Status.Version) > 0 &&
 			h.version != cfg.Status.Version {
 			logrus.Printf("Undergoing migration from %s to %s", cfg.Status.Version, h.version)
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.MigrationInProgress)
-			logrus.Println("CRDUPDATE turn migration on")
-			return h.crdwrapper.UpdateStatus(cfg)
+			dbg := "turn migration on"
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		if !configChanged &&
 			cfg.ConditionTrue(v1.SamplesExist) &&
 			cfg.ConditionFalse(v1.ImageChangesInProgress) &&
@@ -628,8 +663,9 @@ func (h *Handler) Handle(event v1.Event) error {
 			}
 			cfg.Status.Version = h.version
 			logrus.Printf("The samples are now at version %s", cfg.Status.Version)
-			logrus.Println("CRDUPDATE upd status version")
-			return h.crdwrapper.UpdateStatus(cfg)
+			dbg := "upd status version"
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
 			/*if cfg.ConditionFalse(v1.ImportImageErrorsExist) {
 				cfg.Status.Version = h.version
 				logrus.Printf("The samples are now at version %s", cfg.Status.Version)
@@ -660,13 +696,15 @@ func (h *Handler) Handle(event v1.Event) error {
 		// this boolean is driven by VariableConfigChanged based on comparing spec/status skip lists and
 		// cross referencing with any image import errors
 		if configChangeRequiresImportErrorUpdate && !configChangeRequiresUpsert {
-			logrus.Printf("CRDUPDATE config change did not require upsert but did change import errors")
-			return h.crdwrapper.UpdateStatus(cfg)
+			dbg := "config change did not require upsert but did change import errors"
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
 		if configChanged && !configChangeRequiresUpsert && cfg.ConditionTrue(v1.SamplesExist) {
-			logrus.Printf("CRDUPDATE bypassing upserts for non invasive config change after initial create")
-			return h.crdwrapper.UpdateStatus(cfg)
+			dbg := "bypassing upserts for non invasive config change after initial create"
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
 		if !cfg.ConditionTrue(v1.ImageChangesInProgress) {
@@ -679,15 +717,18 @@ func (h *Handler) Handle(event v1.Event) error {
 
 			err = h.createSamples(cfg, true, registryChanged, unskippedStreams, unskippedTemplates)
 			if err != nil {
+				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				h.processError(cfg, v1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
-				logrus.Printf("CRDUPDATE setting in progress to unknown")
-				e := h.crdwrapper.UpdateStatus(cfg)
+				dbg := "setting in progress to unknown"
+				logrus.Printf("CRDUPDATE %s", dbg)
+				e := h.crdwrapper.UpdateStatus(cfg, dbg)
 				if e != nil {
 					return e
 				}
 				return err
 			}
 			now := kapis.Now()
+			cfg = h.refetchCfgMinimizeConflicts(cfg)
 			progressing := cfg.Condition(v1.ImageChangesInProgress)
 			progressing.LastUpdateTime = now
 			progressing.LastTransitionTime = now
@@ -712,18 +753,17 @@ func (h *Handler) Handle(event v1.Event) error {
 			// of the "make a change" flow in our state machine
 			cfg = h.initConditions(cfg)
 
-			logrus.Printf("CRDUPDATE progressing true update")
-			err = h.crdwrapper.UpdateStatus(cfg)
-			if err != nil {
-				return err
-			}
-			return nil
+			dbg := "progressing true update"
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
 		if !cfg.ConditionTrue(v1.SamplesExist) {
+			cfg = h.refetchCfgMinimizeConflicts(cfg)
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
-			logrus.Printf("CRDUPDATE exist true update")
-			return h.crdwrapper.UpdateStatus(cfg)
+			dbg := "exist true update"
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
 		// it is possible that all the cached imagestream events show that
@@ -734,11 +774,12 @@ func (h *Handler) Handle(event v1.Event) error {
 			keysToClear := []string{}
 			anyChange := false
 			ac := false
+			cfg = h.refetchCfgMinimizeConflicts(cfg)
 			for key, is := range cache.GetUpsertImageStreams() {
 				if is == nil {
 					// never got update, refetch
 					var e error
-					is, e = h.imageclientwrapper.Get("openshift", key, metav1.GetOptions{})
+					is, e = h.imageclientwrapper.Get(key)
 					if e != nil {
 						keysToClear = append(keysToClear, key)
 						continue
@@ -757,8 +798,9 @@ func (h *Handler) Handle(event v1.Event) error {
 				logrus.Println("The last in progress imagestream has completed (config event loop)")
 			}
 			if anyChange {
-				logrus.Printf("CRDUPDATE updating in progress after examining cached imagestream events")
-				err = h.crdwrapper.UpdateStatus(cfg)
+				dbg := "updating in progress after examining cached imagestream events"
+				logrus.Printf("CRDUPDATE %s", dbg)
+				err = h.crdwrapper.UpdateStatus(cfg, dbg)
 				if err == nil && cfg.ConditionFalse(v1.ImageChangesInProgress) {
 					// only clear out cache if we got the update through
 					cache.ClearUpsertsCache()
@@ -776,12 +818,12 @@ func (h *Handler) setSampleManagedLabelToFalse(kind, name string) error {
 	case "imagestream":
 		var stream *imagev1.ImageStream
 		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			stream, err = h.imageclientwrapper.Get("openshift", name, metav1.GetOptions{})
+			stream, err = h.imageclientwrapper.Get(name)
 			if err == nil && stream != nil && stream.Labels != nil {
 				label, _ := stream.Labels[v1.SamplesManagedLabel]
 				if label == "true" {
 					stream.Labels[v1.SamplesManagedLabel] = "false"
-					_, err = h.imageclientwrapper.Update("openshift", stream)
+					_, err = h.imageclientwrapper.Update(stream)
 				}
 			}
 			return err
@@ -789,12 +831,12 @@ func (h *Handler) setSampleManagedLabelToFalse(kind, name string) error {
 	case "template":
 		var tpl *templatev1.Template
 		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			tpl, err = h.templateclientwrapper.Get("openshift", name, metav1.GetOptions{})
+			tpl, err = h.templateclientwrapper.Get(name)
 			if err == nil && tpl != nil && tpl.Labels != nil {
 				label, _ := tpl.Labels[v1.SamplesManagedLabel]
 				if label == "true" {
 					tpl.Labels[v1.SamplesManagedLabel] = "false"
-					_, err = h.templateclientwrapper.Update("openshift", tpl)
+					_, err = h.templateclientwrapper.Update(tpl)
 				}
 			}
 			return err
@@ -830,7 +872,7 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 
 	}
 	for _, imagestream := range imagestreams {
-		is, err := h.imageclientwrapper.Get("openshift", imagestream.Name, metav1.GetOptions{})
+		is, err := h.imageclientwrapper.Get(imagestream.Name)
 		if err != nil && !kerrors.IsNotFound(err) {
 			return err
 		}
@@ -872,7 +914,7 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 			}
 		}
 
-		t, err := h.templateclientwrapper.Get("openshift", template.Name, metav1.GetOptions{})
+		t, err := h.templateclientwrapper.Get(template.Name)
 		if err != nil && !kerrors.IsNotFound(err) {
 			return err
 		}
@@ -891,6 +933,17 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 		}
 	}
 	return nil
+}
+
+// refetchCfgMinimizeConflicts is a best effort attempt to get a later version of the config object
+// just prior to updating the status; if there are any issues retrieving (unlikely since we are accessing
+// the informer's lister) we'll just use the current copy we got from the event or prior fetch
+func (h *Handler) refetchCfgMinimizeConflicts(cfg *v1.Config) *v1.Config {
+	c, e := h.crdwrapper.Get(cfg.Name)
+	if e == nil {
+		return c
+	}
+	return cfg
 }
 
 func getTemplateClient(restconfig *restclient.Config) (*templatev1client.TemplateV1Client, error) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
-	"github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -178,16 +178,20 @@ func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 			dir := h.GetBaseDir(arch, cfg)
 			files, err := h.Filefinder.List(dir)
 			if err != nil {
+				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				err = h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
-				logrus.Printf("CRDUPDATE file list err update")
-				h.crdwrapper.UpdateStatus(cfg)
+				dbg := "file list err update"
+				logrus.Printf("CRDUPDATE %s", dbg)
+				h.crdwrapper.UpdateStatus(cfg, dbg)
 				return err
 			}
 			err = h.processFiles(dir, files, cfg)
 			if err != nil {
+				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				err = h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error processing content : %v")
-				logrus.Printf("CRDUPDATE proc file err update")
-				h.crdwrapper.UpdateStatus(cfg)
+				dbg := "proc file err update"
+				logrus.Printf("CRDUPDATE %s", dbg)
+				h.crdwrapper.UpdateStatus(cfg, dbg)
 				return err
 			}
 		}
