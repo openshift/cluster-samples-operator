@@ -24,11 +24,17 @@ type ConfigList struct {
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+// Config contains the configuration and detailed condition status for the Samples Operator.
 type Config struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
-	Spec              ConfigSpec   `json:"spec"`
-	Status            ConfigStatus `json:"status,omitempty"`
+	// Spec contains the desired configuration and state for the Samples Operator, controlling
+	// various behavior around the imagestreams and templates it creates/updates in the
+	// openshift namespace.
+	Spec ConfigSpec `json:"spec"`
+	// Status contains the actual configuration in effect, as well as various details
+	// that describe the state of the Samples Operator.
+	Status ConfigStatus `json:"status,omitempty"`
 }
 
 const (
@@ -78,8 +84,8 @@ type ConfigSpec struct {
 	// defaults to registry.redhat.io.
 	SamplesRegistry string `json:"samplesRegistry,omitempty" protobuf:"bytes,2,opt,name=samplesRegistry"`
 
-	// Architectures determine which hardware architecture(s) to install, where x86_64 and ppc64le are the
-	// supported choices.
+	// Architectures determine which hardware architecture(s) to install, where x86_64 is the only
+	// supported choice currently.
 	Architectures []string `json:"architectures,omitempty" protobuf:"bytes,4,opt,name=architectures"`
 
 	// SkippedImagestreams specifies names of image streams that should NOT be
