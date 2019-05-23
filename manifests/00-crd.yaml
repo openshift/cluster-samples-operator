@@ -29,10 +29,13 @@ spec:
         metadata:
           type: object
         spec:
+          description: Spec contains the desired configuration and state for the Samples
+            Operator, controlling various behavior around the imagestreams and templates
+            it creates/updates in the openshift namespace.
           properties:
             architectures:
               description: Architectures determine which hardware architecture(s)
-                to install, where x86_64 and ppc64le are the supported choices.
+                to install, where x86_64 is the only supported choice currently.
               items:
                 type: string
               type: array
@@ -74,6 +77,8 @@ spec:
               type: array
           type: object
         status:
+          description: Status contains the actual configuration in effect, as well
+            as various details that describe the state of the Samples Operator.
           properties:
             architectures:
               description: Architectures determine which hardware architecture(s)
