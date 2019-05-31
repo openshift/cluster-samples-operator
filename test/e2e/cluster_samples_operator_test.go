@@ -118,7 +118,7 @@ func verifyOperatorUp(t *testing.T) *samplesapi.Config {
 	var cfg *samplesapi.Config
 	var err error
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -152,7 +152,7 @@ func verifySecretPresent(t *testing.T) {
 
 func verifyConditionsCompleteSamplesAdded(t *testing.T) error {
 	return wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		cfg, err := crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err := crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -171,7 +171,7 @@ func verifyConditionsCompleteSamplesAdded(t *testing.T) error {
 
 func verifyConditionsCompleteSamplesRemoved(t *testing.T) error {
 	return wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		cfg, err := crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err := crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -370,7 +370,7 @@ func verifyImageChangesInProgress(t *testing.T) {
 	var cfg *samplesapi.Config
 	var err error
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -457,7 +457,7 @@ func validateContent(t *testing.T, timeToCompare *kapis.Time) {
 
 func verifyConfigurationValid(t *testing.T, status corev1.ConditionStatus) {
 	err := wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, e := crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, e := crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if e != nil {
 			t.Logf("%v", e)
 			return false, nil
@@ -657,14 +657,14 @@ func TestRecreateConfigAfterDelete(t *testing.T) {
 	oldTime := cfg.CreationTimestamp
 	now := kapis.Now()
 
-	err := crClient.Samples().Configs().Delete(samplesapi.ConfigName, &metav1.DeleteOptions{})
+	err := crClient.SamplesV1().Configs().Delete(samplesapi.ConfigName, &metav1.DeleteOptions{})
 	if err != nil {
 		dumpPod(t)
 		t.Fatalf("error deleting Config %v", err)
 	}
 
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			return false, nil
 		}
@@ -697,7 +697,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cfg := verifyOperatorUp(t)
 		cfg.Spec.ManagementState = operatorsv1api.Removed
-		cfg, err := crClient.Samples().Configs().Update(cfg)
+		cfg, err := crClient.SamplesV1().Configs().Update(cfg)
 		return err
 	})
 	if err != nil {
@@ -705,7 +705,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		t.Fatalf("error updating Config %v and %#v", err, verifyOperatorUp(t))
 	}
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -728,7 +728,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	}
 
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -750,7 +750,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cfg = verifyOperatorUp(t)
 		cfg.Spec.ManagementState = operatorsv1api.Managed
-		cfg, err = crClient.Samples().Configs().Update(cfg)
+		cfg, err = crClient.SamplesV1().Configs().Update(cfg)
 		return err
 	})
 	if err != nil {
@@ -758,7 +758,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -785,7 +785,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cfg = verifyOperatorUp(t)
 		cfg.Spec.ManagementState = operatorsv1api.Unmanaged
-		cfg, err = crClient.Samples().Configs().Update(cfg)
+		cfg, err = crClient.SamplesV1().Configs().Update(cfg)
 		return err
 	})
 	if err != nil {
@@ -793,7 +793,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		t.Fatalf("error updating Config %v", err)
 	}
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -817,7 +817,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		// and confirm all the default samples content exists
 		cfg = verifyOperatorUp(t)
 		cfg.Spec.ManagementState = operatorsv1api.Managed
-		cfg, err = crClient.Samples().Configs().Update(cfg)
+		cfg, err = crClient.SamplesV1().Configs().Update(cfg)
 		return err
 	})
 	if err != nil {
@@ -825,7 +825,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -842,7 +842,7 @@ func TestSpecManagementStateField(t *testing.T) {
 
 	// wait for it to get into pending
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -879,7 +879,7 @@ func TestSkippedProcessing(t *testing.T) {
 		cfg := verifyOperatorUp(t)
 		cfg.Spec.SkippedImagestreams = append(cfg.Spec.SkippedImagestreams, "jenkins")
 		cfg.Spec.SkippedTemplates = append(cfg.Spec.SkippedTemplates, "jenkins-ephemeral")
-		cfg, err := crClient.Samples().Configs().Update(cfg)
+		cfg, err := crClient.SamplesV1().Configs().Update(cfg)
 		return err
 	})
 	if err != nil {
@@ -909,7 +909,7 @@ func TestSkippedProcessing(t *testing.T) {
 		cfg := verifyOperatorUp(t)
 		cfg.Spec.SkippedImagestreams = []string{}
 		cfg.Spec.SkippedTemplates = []string{}
-		cfg, err = crClient.Samples().Configs().Update(cfg)
+		cfg, err = crClient.SamplesV1().Configs().Update(cfg)
 		return err
 	})
 	if err != nil {
@@ -918,7 +918,7 @@ func TestSkippedProcessing(t *testing.T) {
 	}
 	// verify status skipped has been reset
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err := crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err := crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
