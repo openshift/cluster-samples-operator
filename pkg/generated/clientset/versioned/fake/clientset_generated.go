@@ -59,8 +59,3 @@ var _ clientset.Interface = &Clientset{}
 func (c *Clientset) SamplesV1() samplesv1.SamplesV1Interface {
 	return &fakesamplesv1.FakeSamplesV1{Fake: &c.Fake}
 }
-
-// Samples retrieves the SamplesV1Client
-func (c *Clientset) Samples() samplesv1.SamplesV1Interface {
-	return &fakesamplesv1.FakeSamplesV1{Fake: &c.Fake}
-}
