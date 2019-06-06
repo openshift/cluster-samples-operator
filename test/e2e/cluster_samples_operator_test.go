@@ -747,6 +747,8 @@ func TestSpecManagementStateField(t *testing.T) {
 	verifyImageStreamsGone(t)
 	verifyTemplatesGone(t)
 
+	verifyClusterOperatorConditionsComplete(t)
+
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cfg = verifyOperatorUp(t)
 		cfg.Spec.ManagementState = operatorsv1api.Managed
@@ -810,6 +812,8 @@ func TestSpecManagementStateField(t *testing.T) {
 
 	verifyDeletedImageStreamNotRecreated(t)
 	verifyDeletedTemplatesNotRecreated(t)
+	verifyClusterOperatorConditionsComplete(t)
+
 	// get timestamp to check against in progress condition
 	now = kapis.Now()
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
