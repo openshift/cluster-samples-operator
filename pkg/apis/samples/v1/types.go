@@ -327,6 +327,13 @@ func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionSt
 
 	falseRC := configv1.ConditionFalse
 
+	// after online starter upgrade attempts while this operator was not set to managed,
+	// group arch discussion has decided that we report the Available=true if removed/unmanaged
+	if s.Status.ManagementState == operatorv1.Removed ||
+		s.Status.ManagementState == operatorv1.Unmanaged {
+		return configv1.ConditionTrue, fmt.Sprintf(installed, s.Status.Version)
+	}
+
 	// REMINDER: the intital config is always valid, as this operator generates it;
 	// only config changes after by a human cluster admin after
 	// the initial install result in ConfigurationValid == CondtitionFalse
