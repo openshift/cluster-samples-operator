@@ -161,15 +161,16 @@ const (
 	// in the Reason field of the condition.  The Reason field being empty corresponds
 	// with this condition being marked true.
 	ImageChangesInProgress ConfigConditionType = "ImageChangesInProgress"
-	// RemovePending represents whether the Config ManagementState
-	// has been set to Removed while a samples creation/update cycle is still in progress.  In other
-	// words, when ImageChangesInProgress is True.  We
-	// do not want to the create/updates and deletes of the samples to be occurring in parallel.
+	// RemovePending represents whether the Config Spec ManagementState
+	// has been set to Removed, but we have not completed the deletion of the
+	// samples, pull secret, etc. and set the Config Spec ManagementState to Removed.
+	// Also note, while a samples creation/update cycle is still in progress, and ImageChagesInProgress
+	// is True, the operator will not initiate the deletions, as we
+	// do not want the create/updates and deletes of the samples to be occurring in parallel.
 	// So the actual Removed processing will be initated only after ImageChangesInProgress is set
-	// to false.  NOTE:  the optimistic update contention between the imagestream watch trying to
-	// update ImageChangesInProgress and the sampleresource watch simply returning an error an initiating
-	// a retry when ManagementState was set to Removed lead to a prolonged, sometimes seemingly unresolved,
-	// period of circular contention
+	// to false.  Once the deletions are done, and the Status ManagementState is Removed, this
+	// condition is set back to False.  Lastly, when this condition is set to True, the
+	// ClusterOperator Progressing condition will be set to True.
 	RemovePending ConfigConditionType = "RemovePending"
 	// MigrationInProgress represents the special case where the operator is running off of
 	// a new version of its image, and samples are deployed of a previous version.  This condition
@@ -317,6 +318,7 @@ const (
 	noInstallDetailed = "Samples installation in error at %s: %s"
 	installed         = "Samples installation successful at %s"
 	moving            = "Samples processing to %s"
+	removing          = "Deleting samples at %s"
 )
 
 // ClusterOperatorStatusAvailableCondition return values are as follows:
@@ -415,6 +417,9 @@ func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, 
 	}
 	if s.ConditionTrue(ImageChangesInProgress) {
 		return configv1.ConditionTrue, fmt.Sprintf(moving, os.Getenv("RELEASE_VERSION"))
+	}
+	if s.ConditionTrue(RemovePending) {
+		return configv1.ConditionTrue, fmt.Sprintf(removing, s.Status.Version)
 	}
 	if available == configv1.ConditionTrue {
 		return configv1.ConditionFalse, fmt.Sprintf(installed, s.Status.Version)

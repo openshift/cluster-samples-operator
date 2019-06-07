@@ -163,24 +163,43 @@ func TestManagementState(t *testing.T) {
 		}
 	}
 
-	// mimic a remove attempt occuring while we are progressing and the remove on hold getting set to true
-	progressing := cfg.Condition(v1.ImageChangesInProgress)
-	progressing.Status = corev1.ConditionTrue
-	cfg.ConditionUpdate(progressing)
+	// mimic a remove attempt ... in progress, index 3, already true
 	cfg.ResourceVersion = "3"
 	cfg.Spec.ManagementState = operatorsv1api.Removed
 	err = h.Handle(event)
 	statuses[4] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
+	if cfg.Status.ManagementState == operatorsv1api.Removed {
+		t.Fatalf("cfg status set to removed too early %#v", cfg)
+	}
 
-	// mimic samples events completing such that in progress set to false
-	// then analyze resulting Config event ... remove on hold should
-	// also be false
+	// verify while we are image in progress and the remove on hold setting is still set to true
+	// if another event comes in
+	cfg.ResourceVersion = "4"
+	err = h.Handle(event)
+	validate(true, err, "", cfg, conditions, statuses, t)
+	if cfg.Status.ManagementState == operatorsv1api.Removed {
+		t.Fatalf("cfg status set to removed too early %#v", cfg)
+	}
+
+	// mimic when in progress set to false by imagestream watch
+	// then analyze resulting Config event
+	progressing := cfg.Condition(v1.ImageChangesInProgress)
 	progressing.Status = corev1.ConditionFalse
 	progressing.Reason = ""
 	cfg.ConditionUpdate(progressing)
-	cfg.ResourceVersion = "4"
+	cfg.ResourceVersion = "5"
+	err = h.Handle(event)
+	// index 0 samples exist should be false
+	statuses[0] = corev1.ConditionFalse
+	// in progress should be false
 	statuses[3] = corev1.ConditionFalse
+	validate(true, err, "", cfg, conditions, statuses, t)
+	if cfg.Status.ManagementState != operatorsv1api.Removed {
+		t.Fatalf("cfg status not set to removed %#v", cfg)
+	}
+	cfg.ResourceVersion = "6"
+	// remove pending should be false
 	statuses[4] = corev1.ConditionFalse
 	err = h.Handle(event)
 	validate(true, err, "", cfg, conditions, statuses, t)
@@ -509,16 +528,28 @@ func TestCreateDeleteSecretAfterCR(t *testing.T) {
 	h.secretRetryCount = 3 // bypass retry on CR update race
 	cfg.Spec.ManagementState = operatorsv1api.Removed
 	statuses[1] = corev1.ConditionTrue
+	statuses[4] = corev1.ConditionTrue
 	err = h.Handle(event)
-	// import cred should be true if from removed, since we don't delete on removed
+	// import cred should be true if from removed, remove pending true, since we don't delete on removed
 	validate(true, err, "", cfg, conditions, statuses, t)
+	// call again to mimic event after RemovePending updated and to see status changed to Removed
+	err = h.Handle(event)
+	validate(true, err, "", cfg, conditions, statuses, t)
+	if cfg.Status.ManagementState != operatorsv1api.Removed {
+		t.Fatalf("mgmt state status should be removed %#v", cfg)
+	}
 
+	// set back to mgmt
 	cfg.Spec.ManagementState = operatorsv1api.Managed
 	h.secretRetryCount = 3
 	err = h.Handle(event)
 	statuses[3] = corev1.ConditionTrue
+	statuses[4] = corev1.ConditionFalse
 	// with secret still present, we should start import images
 	validate(true, err, "", cfg, conditions, statuses, t)
+	if cfg.Status.ManagementState != operatorsv1api.Managed {
+		t.Fatalf("mgmt state status should be managed %#v", cfg)
+	}
 
 }
 
