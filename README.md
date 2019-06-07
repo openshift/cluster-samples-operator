@@ -72,7 +72,7 @@ The samples resource maintains the following conditions in its status:
 - ConfigurationValid
 -- True or false based on whether any of the restricted changes noted above have been submitted
 - RemovePending
--- Indicator that we have a management state removed setting pending, but are waiting for in progress imagestreams to complete
+-- Indicator that we have a management state removed setting pending, resulting in deletion of all the resources the operator manages.  Note that deletions do not start while are waiting for any in progress imagestreams to complete.  This is set to true just prior to executing the deletions, and set to false when the deletions are completed.  The associated ClusterOperator object for the Samples Operator will have its Progressing condition set to `true` when this Condition is `true` (though typically the deletions occur fairly quickly).
 - ImportImageErrorsExist
 -- Indicator of which imagestreams had errors during the image import phase for one of their tags
 -- True when an error has occurred
