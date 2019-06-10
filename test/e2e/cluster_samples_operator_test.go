@@ -185,7 +185,7 @@ func verifyConditionsCompleteSamplesRemoved(t *testing.T) error {
 	})
 }
 
-func verifyClusterOperatorConditionsComplete(t *testing.T) {
+func verifyClusterOperatorConditionsComplete(t *testing.T, expectedVersion string) {
 	var state *configv1.ClusterOperator
 	var err error
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
@@ -211,7 +211,7 @@ func verifyClusterOperatorConditionsComplete(t *testing.T) {
 				}
 			}
 		}
-		if len(state.Status.Versions) > 0 && state.Status.Versions[0].Name == "operator" && len(state.Status.Versions[0].Version) > 0 {
+		if len(state.Status.Versions) > 0 && state.Status.Versions[0].Name == "operator" && state.Status.Versions[0].Version == expectedVersion {
 			versionOK = true
 		}
 
@@ -223,7 +223,7 @@ func verifyClusterOperatorConditionsComplete(t *testing.T) {
 	if err != nil {
 		dumpPod(t)
 		cfg := verifyOperatorUp(t)
-		t.Fatalf("cluster operator conditions never stabilized, cluster op %#v samples resource %#v", state, cfg)
+		t.Fatalf("cluster operator conditions never stabilized, expected version %s cluster op %#v samples resource %#v", expectedVersion, state, cfg)
 	}
 }
 
@@ -639,7 +639,7 @@ func verifyDeletedTemplatesNotRecreated(t *testing.T) {
 }
 
 func TestImageStreamInOpenshiftNamespace(t *testing.T) {
-	verifyOperatorUp(t)
+	cfg := verifyOperatorUp(t)
 	validateContent(t, nil)
 	err := verifyConditionsCompleteSamplesAdded(t)
 	if err != nil {
@@ -647,7 +647,7 @@ func TestImageStreamInOpenshiftNamespace(t *testing.T) {
 		t.Fatalf("Config did not stabilize on startup %#v", verifyOperatorUp(t))
 	}
 	verifySecretPresent(t)
-	verifyClusterOperatorConditionsComplete(t)
+	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version)
 	t.Logf("Config after TestImageStreamInOpenshiftNamespace: %#v", verifyOperatorUp(t))
 }
 
@@ -686,8 +686,9 @@ func TestRecreateConfigAfterDelete(t *testing.T) {
 	}
 
 	validateContent(t, &now)
-	verifyClusterOperatorConditionsComplete(t)
-	t.Logf("Config after TestRecreateConfigAfterDelete: %#v", verifyOperatorUp(t))
+	cfg = verifyOperatorUp(t)
+	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version)
+	t.Logf("Config after TestRecreateConfigAfterDelete: %#v", cfg)
 }
 
 func TestSpecManagementStateField(t *testing.T) {
@@ -746,6 +747,8 @@ func TestSpecManagementStateField(t *testing.T) {
 
 	verifyImageStreamsGone(t)
 	verifyTemplatesGone(t)
+
+	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cfg = verifyOperatorUp(t)
@@ -810,6 +813,8 @@ func TestSpecManagementStateField(t *testing.T) {
 
 	verifyDeletedImageStreamNotRecreated(t)
 	verifyDeletedTemplatesNotRecreated(t)
+	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version)
+
 	// get timestamp to check against in progress condition
 	now = kapis.Now()
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -865,7 +870,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	}
 
 	validateContent(t, nil)
-	verifyClusterOperatorConditionsComplete(t)
+	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version)
 	t.Logf("Config after TestSpecManagementStateField: %#v", verifyOperatorUp(t))
 }
 
@@ -963,12 +968,15 @@ func TestRecreateDeletedManagedSample(t *testing.T) {
 	t.Logf("Config after TestRecreateDeletedManagedSample: %#v", verifyOperatorUp(t))
 }
 
-func TestUpgrade(t *testing.T) {
+func coreTestUpgrade(t *testing.T) {
 	cfg := verifyOperatorUp(t)
-	err := verifyConditionsCompleteSamplesAdded(t)
-	if err != nil {
-		dumpPod(t)
-		t.Fatalf("samples not stable at start of upgrade test %#v", verifyOperatorUp(t))
+	var err error
+	if cfg.Status.ManagementState == operatorsv1api.Managed {
+		err = verifyConditionsCompleteSamplesAdded(t)
+		if err != nil {
+			dumpPod(t)
+			t.Fatalf("samples not stable at start of upgrade test %#v", verifyOperatorUp(t))
+		}
 	}
 
 	newVersion := kapis.Now().String()
@@ -1010,13 +1018,15 @@ func TestUpgrade(t *testing.T) {
 		t.Fatalf("problem updating deployment env")
 	}
 
-	err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
-		cfg := verifyOperatorUp(t)
-		if cfg.ConditionTrue(samplesapi.MigrationInProgress) {
-			return true, nil
-		}
-		return false, nil
-	})
+	if cfg.Status.ManagementState == operatorsv1api.Managed {
+		err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+			cfg := verifyOperatorUp(t)
+			if cfg.ConditionTrue(samplesapi.MigrationInProgress) {
+				return true, nil
+			}
+			return false, nil
+		})
+	}
 
 	if err != nil {
 		dumpPod(t)
@@ -1031,23 +1041,54 @@ func TestUpgrade(t *testing.T) {
 		return false, nil
 	})
 
-	verifyClusterOperatorConditionsComplete(t)
+	verifyClusterOperatorConditionsComplete(t, newVersion)
 
-	err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
-		state, err := operatorClient.ClusterOperators().Get(operator.ClusterOperatorName, metav1.GetOptions{})
+	if cfg.Status.ManagementState == operatorsv1api.Managed {
+		validateContent(t, nil)
+	}
+
+}
+
+func changeMgmtState(t *testing.T, state operatorsv1api.ManagementState) {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		cfg := verifyOperatorUp(t)
+		cfg.Spec.ManagementState = state
+		cfg, err := crClient.SamplesV1().Configs().Update(cfg)
+		return err
+	})
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("error updating Config %v and %#v", err, verifyOperatorUp(t))
+	}
+	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
+		cfg, err := crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
 		}
-		if len(state.Status.Versions) > 0 && state.Status.Versions[0].Name == "operator" && state.Status.Versions[0].Version == newVersion {
-			return true, nil
+		if cfg.Status.ManagementState != state {
+			return false, nil
 		}
-		t.Logf("CVO is %#v", state)
-		return false, nil
+		return true, nil
 	})
 	if err != nil {
-		t.Fatalf("cvo version not correct after upgrade %#v", verifyOperatorUp(t))
+		dumpPod(t)
+		t.Fatalf("cfg status mgmt never went to %s %#v", string(state), verifyOperatorUp(t))
 	}
 
-	validateContent(t, nil)
+}
+
+func TestUpgradeUnmanaged(t *testing.T) {
+	changeMgmtState(t, operatorsv1api.Unmanaged)
+	coreTestUpgrade(t)
+}
+
+func TestUpgradeRemoved(t *testing.T) {
+	changeMgmtState(t, operatorsv1api.Removed)
+	coreTestUpgrade(t)
+}
+
+func TestUpgradeManaged(t *testing.T) {
+	changeMgmtState(t, operatorsv1api.Managed)
+	coreTestUpgrade(t)
 }

@@ -241,7 +241,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			return false, false, nil
 		}
 
-		if cfg.ConditionTrue(v1.ImageChangesInProgress) && !cfg.ConditionTrue(v1.RemovePending) {
+		if cfg.Status.ManagementState != operatorsv1api.Removed && !cfg.ConditionTrue(v1.RemovePending) {
 			now := kapis.Now()
 			condition := cfg.Condition(v1.RemovePending)
 			condition.LastTransitionTime = now
@@ -251,8 +251,8 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			return false, true, nil
 		}
 
-		// turn off on hold if need be
-		if cfg.ConditionTrue(v1.RemovePending) && cfg.ConditionFalse(v1.ImageChangesInProgress) {
+		// turn off remove pending once status mgmt state says removed
+		if cfg.ConditionTrue(v1.RemovePending) && cfg.Status.ManagementState == operatorsv1api.Removed {
 			now := kapis.Now()
 			condition := cfg.Condition(v1.RemovePending)
 			condition.LastTransitionTime = now
@@ -279,8 +279,17 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			condition.Status = corev1.ConditionFalse
 			cfg.ConditionUpdate(condition)
 			cfg.Status.ManagementState = operatorsv1api.Removed
-			cfg.Status.Version = ""
+			// after online starter upgrade attempts while this operator was not set to managed,
+			// group arch discussion has decided that we report the latest version
+			cfg.Status.Version = h.version
 			h.ClearStatusConfigForRemoved(cfg)
+			return false, true, nil
+		}
+
+		// after online starter upgrade attempts while this operator was not set to managed,
+		// group arch discussion has decided that we report the latest version
+		if cfg.Status.Version != h.version {
+			cfg.Status.Version = h.version
 			return false, true, nil
 		}
 		return false, false, nil
@@ -298,6 +307,24 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState {
 			logrus.Println("management state set to unmanaged")
 			cfg.Status.ManagementState = operatorsv1api.Unmanaged
+			// after online starter upgrade attempts while this operator was not set to managed,
+			// group arch discussion has decided that we report the latest version
+			cfg.Status.Version = h.version
+			if cfg.ConditionTrue(v1.RemovePending) {
+				now := kapis.Now()
+				condition := cfg.Condition(v1.RemovePending)
+				condition.LastTransitionTime = now
+				condition.LastUpdateTime = now
+				condition.Status = corev1.ConditionFalse
+				cfg.ConditionUpdate(condition)
+			}
+			return false, true, nil
+		}
+
+		// after online starter upgrade attempts while this operator was not set to managed,
+		// group arch discussion has decided that we report the latest version
+		if cfg.Status.Version != h.version {
+			cfg.Status.Version = h.version
 			return false, true, nil
 		}
 		return false, false, nil
