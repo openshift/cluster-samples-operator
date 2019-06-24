@@ -591,6 +591,15 @@ func (h *Handler) Handle(event v1.Event) error {
 		}
 
 		cfg.Status.ManagementState = operatorsv1api.Managed
+		// if coming from remove turn off
+		if cfg.ConditionTrue(v1.RemovePending) {
+			now := kapis.Now()
+			condition := cfg.Condition(v1.RemovePending)
+			condition.LastTransitionTime = now
+			condition.LastUpdateTime = now
+			condition.Status = corev1.ConditionFalse
+			cfg.ConditionUpdate(condition)
+		}
 
 		// if trying to do rhel to the default registry.redhat.io registry requires the secret
 		// be in place since registry.redhat.io requires auth to pull; if it is not ready
