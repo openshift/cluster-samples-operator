@@ -328,10 +328,12 @@ func (s *Config) ClearNameInReason(reason, name string) string {
 }
 
 const (
-	noInstallDetailed = "Samples installation in error at %s: %s"
-	installed         = "Samples installation successful at %s"
-	moving            = "Samples processing to %s"
-	removing          = "Deleting samples at %s"
+	noInstallDetailed  = "Samples installation in error at %s: %s"
+	installed          = "Samples installation successful at %s"
+	moving             = "Samples processing to %s"
+	removing           = "Deleting samples at %s"
+	doneImportsFailed  = "Samples installed at %s, with image import failures, see samples operator config object"
+	failedImageImports = "FailedImageImports"
 )
 
 // ClusterOperatorStatusAvailableCondition return values are as follows:
@@ -399,11 +401,6 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 			"image pull credentials needed",
 			fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), s.Condition(ImportCredentialsExist).Message)
 	}
-	/*if s.ConditionTrue(ImportImageErrorsExist) {
-		return trueRC,
-			"image import problem",
-			fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VESION"), s.Condition(ImportImageErrorsExist).Message)
-	}*/
 	// right now, any condition being unknown is indicative of a failure
 	// condition, either api server interaction or file system interaction;
 	// Conversely, those errors result in a ConditionUnknown setting on one
@@ -424,20 +421,27 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 // and the following return values:
 // 1) is the value to set on the ClusterOperator Progressing condition
 // 2) string is the message to set on the condition
-func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, available configv1.ConditionStatus) (configv1.ConditionStatus, string) {
+// 3) string is the reason to set on the condition if needed
+func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, available configv1.ConditionStatus) (configv1.ConditionStatus, string, string) {
 	if len(failingState) > 0 {
-		return configv1.ConditionTrue, fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), failingState)
+		return configv1.ConditionTrue, fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), failingState), ""
 	}
 	if s.ConditionTrue(ImageChangesInProgress) {
-		return configv1.ConditionTrue, fmt.Sprintf(moving, os.Getenv("RELEASE_VERSION"))
+		return configv1.ConditionTrue, fmt.Sprintf(moving, os.Getenv("RELEASE_VERSION")), ""
 	}
 	if s.ConditionTrue(RemovePending) {
-		return configv1.ConditionTrue, fmt.Sprintf(removing, s.Status.Version)
+		return configv1.ConditionTrue, fmt.Sprintf(removing, s.Status.Version), ""
 	}
 	if available == configv1.ConditionTrue {
-		return configv1.ConditionFalse, fmt.Sprintf(installed, s.Status.Version)
+		msg := fmt.Sprintf(installed, s.Status.Version)
+		reason := ""
+		if s.ConditionTrue(ImportImageErrorsExist) {
+			msg = fmt.Sprintf(doneImportsFailed, s.Status.Version)
+			reason = failedImageImports
+		}
+		return configv1.ConditionFalse, msg, reason
 	}
-	return configv1.ConditionFalse, ""
+	return configv1.ConditionFalse, "", ""
 }
 
 // ClusterNeedsCreds checks the conditions that drive whether the operator complains about
