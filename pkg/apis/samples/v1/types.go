@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -30,6 +31,12 @@ type Config struct {
 	Spec              ConfigSpec   `json:"spec"`
 	Status            ConfigStatus `json:"status,omitempty"`
 }
+
+var (
+	// conditionUpsertLock helps us avoid duplicate entries in the condition array when mutliple
+	// events come in concurrently ... most noticeable on the secret watch and ImportCredentialsExists
+	conditionUpsertLock = sync.Mutex{}
+)
 
 const (
 	// SamplesRegistryCredentials is the name for a secret that contains a username+password/token
@@ -253,6 +260,9 @@ func (s *Config) ConditionsMessages() string {
 }
 
 func (s *Config) ConditionUpdate(c *ConfigCondition) {
+	conditionUpsertLock.Lock()
+	defer conditionUpsertLock.Unlock()
+
 	if s.Status.Conditions == nil {
 		return
 	}
@@ -265,6 +275,9 @@ func (s *Config) ConditionUpdate(c *ConfigCondition) {
 }
 
 func (s *Config) Condition(c ConfigConditionType) *ConfigCondition {
+	conditionUpsertLock.Lock()
+	defer conditionUpsertLock.Unlock()
+
 	if s.Status.Conditions != nil {
 		for _, rc := range s.Status.Conditions {
 			if rc.Type == c {
