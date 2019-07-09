@@ -384,7 +384,11 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 		}
 
 		if !anyErrors {
-			if len(is.Spec.Tags) == len(is.Status.Tags) {
+			// it is possible after an upgrade that tags can be removed because of EOL processing;
+			// since we do not delete those EOL images from the imagestream status (so as to not break
+			// existing deployments referencing specific tags), it is possible that a valid configuration
+			// has less tags in the spec than the status (vs. an equal amount being the only valid combination)
+			if len(is.Spec.Tags) <= len(is.Status.Tags) {
 				for _, specTag := range is.Spec.Tags {
 					matched := false
 					for _, statusTag := range is.Status.Tags {
@@ -414,7 +418,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 				}
 			} else {
 				pending = true
-				nonMatchDetail = "the number of status tags does not equal the number of spec tags"
+				nonMatchDetail = "the number of status tags is less than the number of spec tags"
 			}
 		}
 	} else {
