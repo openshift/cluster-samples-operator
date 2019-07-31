@@ -50,6 +50,25 @@ rules:
 
 ---
 
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-cluster-reader: "true"
+  name: system:openshift:cluster-samples-operator:cluster-reader
+rules:
+- apiGroups:
+  - samples.operator.openshift.io
+  resources:
+  - configs
+  - configs/status
+  verbs:
+  - get
+  - list
+  - watch
+
+---
+
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
