@@ -652,41 +652,46 @@ func TestImageStreamInOpenshiftNamespace(t *testing.T) {
 }
 
 func TestRecreateConfigAfterDelete(t *testing.T) {
-	cfg := verifyOperatorUp(t)
-
-	oldTime := cfg.CreationTimestamp
 	now := kapis.Now()
+	// do a few deletes/recreates in rapid succession vs. a single iteration to make
+	// sure we cover the various timing windows when samples creation is in progress
+	for i := 0; i < 3; i++ {
+		cfg := verifyOperatorUp(t)
 
-	err := crClient.Samples().Configs().Delete(samplesapi.ConfigName, &metav1.DeleteOptions{})
-	if err != nil {
-		dumpPod(t)
-		t.Fatalf("error deleting Config %v", err)
-	}
+		oldTime := cfg.CreationTimestamp
 
-	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		err := crClient.Samples().Configs().Delete(samplesapi.ConfigName, &metav1.DeleteOptions{})
 		if err != nil {
-			return false, nil
+			dumpPod(t)
+			t.Fatalf("error deleting Config %v", err)
 		}
-		if cfg.CreationTimestamp == oldTime {
-			return false, nil
+
+		// make sure the cfg object is recreated vs. just finding the one we  tried to delete
+		err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
+			cfg, err = crClient.Samples().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+			if err != nil {
+				return false, nil
+			}
+			if cfg.CreationTimestamp == oldTime {
+				return false, nil
+			}
+			return true, nil
+		})
+		if err != nil {
+			dumpPod(t)
+			t.Fatalf("creation times the same after delete: %v, %v, %#v", oldTime, cfg.CreationTimestamp, cfg)
 		}
-		return true, nil
-	})
-	if err != nil {
-		dumpPod(t)
-		t.Fatalf("creation times the same after delete: %v, %v, %#v", oldTime, cfg.CreationTimestamp, cfg)
 	}
 
-	err = verifyConditionsCompleteSamplesAdded(t)
+	err := verifyConditionsCompleteSamplesAdded(t)
 	if err != nil {
 		dumpPod(t)
-		cfg = verifyOperatorUp(t)
+		cfg := verifyOperatorUp(t)
 		t.Fatalf("samples not re-established after delete %#v", cfg)
 	}
 
 	validateContent(t, &now)
-	cfg = verifyOperatorUp(t)
+	cfg := verifyOperatorUp(t)
 	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version)
 	t.Logf("Config after TestRecreateConfigAfterDelete: %#v", cfg)
 }
