@@ -208,6 +208,27 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 		return nil
 	}
 
+	// with the advent of removing EOL images in 4.2, we cannot just update the imagestream
+	// with client-go/Update as that will replace vs. patch; we need to preserve EOL specs
+	// if the imagestream was created during 4.1 as to allow pullthrough on builds for example
+	// so we manually merge the tags in the existing image stream that do not exist in the one
+	// in the payload
+	tagsToAdd := []imagev1.TagReference{}
+	for _, existingTag := range imagestreamInCluster.Spec.Tags {
+		found := false
+		for _, newTag := range imagestreamInOperatorImage.Spec.Tags {
+			if newTag.Name == existingTag.Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			tagsToAdd = append(tagsToAdd, existingTag)
+		}
+	}
+	for _, tag := range tagsToAdd {
+		imagestreamInOperatorImage.Spec.Tags = append(imagestreamInOperatorImage.Spec.Tags, tag)
+	}
 	imagestreamInOperatorImage.ResourceVersion = imagestreamInCluster.ResourceVersion
 	_, err := h.imageclientwrapper.Update(imagestreamInOperatorImage)
 	if err != nil {
