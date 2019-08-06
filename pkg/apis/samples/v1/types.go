@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -400,6 +401,17 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 		return trueRC,
 			"image pull credentials needed",
 			fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), s.Condition(ImportCredentialsExist).Message)
+	}
+	// report degraded if img import error exists for 2 hrs
+	impErrCon := s.Condition(ImportImageErrorsExist)
+	if impErrCon.Status == corev1.ConditionTrue {
+		now := metav1.Now()
+		twoHrsAgo := now.Time.Add(-2 * time.Hour)
+		if impErrCon.LastTransitionTime.Time.Before(twoHrsAgo) {
+			msg := fmt.Sprintf(doneImportsFailed, s.Status.Version)
+			return trueRC, failedImageImports, msg
+		}
+
 	}
 	// right now, any condition being unknown is indicative of a failure
 	// condition, either api server interaction or file system interaction;
