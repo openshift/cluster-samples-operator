@@ -150,13 +150,15 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return nil, "", false, err
 	}
 
+	if cfg.DeletionTimestamp != nil {
+		// we do no return the cfg in this case because we do not want to bother with any progress tracking
+		logrus.Printf("Received watch event %s but not upserting since deletion of the Config is in progress", kind+"/"+name)
+		// note, the imagestream watch cache gets cleared once the deletion/finalizer processing commences
+		return nil, "", false, nil
+	}
+
 	if cfg.ConditionFalse(v1.ImageChangesInProgress) {
 		// we do no return the cfg in these cases because we do not want to bother with any progress tracking
-
-		if cfg.DeletionTimestamp != nil {
-			logrus.Printf("Received watch event %s but not upserting since deletion of the Config is in progress and image changes are not in progress", kind+"/"+name)
-			return nil, "", false, nil
-		}
 		switch cfg.Spec.ManagementState {
 		case operatorsv1api.Removed:
 			logrus.Debugf("Not upserting %s/%s event because operator is in removed state and image changes are not in progress", kind, name)
@@ -467,9 +469,10 @@ func (h *Handler) Handle(event v1.Event) error {
 		if cfg.DeletionTimestamp != nil {
 			// before we kick off the delete cycle though, we make sure a prior creation
 			// cycle is not still in progress, because we don't want the create adding back
-			// in things we just deleted ... if an upsert is still in progress, return nil
+			// in things we just deleted ... if an upsert is still in progress, return an error;
+			// the creation loop checks for deletion timestamp and aborts when it sees it
 			if cfg.ConditionTrue(v1.ImageChangesInProgress) {
-				return nil
+				return fmt.Errorf("A delete attempt has come in while creating samples; initiating retry; creation loop should abort soon")
 			}
 
 			if h.NeedsFinalizing(cfg) {
@@ -605,7 +608,8 @@ func (h *Handler) Handle(event v1.Event) error {
 				// and see if any samples were deleted while samples operator was down
 				h.buildFileMaps(cfg, false)
 				// passing in false means if the samples is present, we leave it alone
-				return h.createSamples(cfg, false, registryChanged, unskippedStreams, unskippedTemplates)
+				_, err = h.createSamples(cfg, false, registryChanged, unskippedStreams, unskippedTemplates)
+				return err
 			}
 			// if config changed requiring an upsert, but a prior config action is still in progress,
 			// reset in progress to false and return; the next event should drive the actual
@@ -724,7 +728,20 @@ func (h *Handler) Handle(event v1.Event) error {
 				return err
 			}
 
-			err = h.createSamples(cfg, true, registryChanged, unskippedStreams, unskippedTemplates)
+			abortForDelete, err := h.createSamples(cfg, true, registryChanged, unskippedStreams, unskippedTemplates)
+			// we prioritize enabling delete vs. any error processing from createSamples (though at the moment that
+			// method only returns nil error when it returns true for abortForDelete) as a subsequent delete's processing will
+			// immediately remove the cfg obj and cluster operator object that we just posted some error notice in
+			if abortForDelete {
+				// a delete has been initiated; let's revert in progress to false and allow the delete to complete,
+				// including its removal of any sample we might have upserted with the above createSamples call
+				h.GoodConditionUpdate(h.refetchCfgMinimizeConflicts(cfg), corev1.ConditionFalse, v1.ImageChangesInProgress)
+				// note, the imagestream watch cache gets cleared once the deletion/finalizer processing commences
+				dbg := "progressing false because delete has arrived"
+				logrus.Printf("CRDUPDATE %s", dbg)
+				return h.crdwrapper.UpdateStatus(cfg, dbg)
+			}
+
 			if err != nil {
 				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				h.processError(cfg, v1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
@@ -854,14 +871,30 @@ func (h *Handler) setSampleManagedLabelToFalse(kind, name string) error {
 	return nil
 }
 
-func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged bool, unskippedStreams, unskippedTemplates map[string]bool) error {
+// abortForDelete is used in various portions of the control flow to abort upsert or watch processing
+// if a deletion has been initiated and we want to process the config object's finalizer
+func (h *Handler) abortForDelete(cfg *v1.Config) bool {
+	// reminder refetchCfgMinimizeConflicts accesses the lister/watch cache and does not perform API calls
+	cfg = h.refetchCfgMinimizeConflicts(cfg)
+	if cfg.DeletionTimestamp != nil {
+		return true
+	}
+	return false
+}
+
+// rc:  error - any api errors during upserts
+// rc:  bool - if we abort because we detected a delete
+func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged bool, unskippedStreams, unskippedTemplates map[string]bool) (bool, error) {
 	// first, got through the list and prime our upsert cache
 	// prior to any actual upserts
 	imagestreams := []*imagev1.ImageStream{}
 	for _, fileName := range h.imagestreamFile {
+		if h.abortForDelete(cfg) {
+			return true, nil
+		}
 		imagestream, err := h.Fileimagegetter.Get(fileName)
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		// if unskippedStreams has >0 entries, then we are down this path to only upsert the streams
@@ -881,9 +914,12 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 
 	}
 	for _, imagestream := range imagestreams {
+		if h.abortForDelete(cfg) {
+			return true, nil
+		}
 		is, err := h.imageclientwrapper.Get(imagestream.Name)
 		if err != nil && !kerrors.IsNotFound(err) {
-			return err
+			return false, err
 		}
 
 		if err == nil && !updateIfPresent {
@@ -899,20 +935,23 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 			if updateIfPresent {
 				cache.RemoveUpsert(imagestream.Name)
 			}
-			return err
+			return false, err
 		}
 	}
 
 	// if after initial startup, and not migration, the only cfg change was changing the registry, since that does not impact
 	// the templates, we can move on
 	if len(unskippedTemplates) == 0 && registryChanged && cfg.ConditionTrue(v1.SamplesExist) && cfg.ConditionFalse(v1.MigrationInProgress) {
-		return nil
+		return false, nil
 	}
 
 	for _, fileName := range h.templateFile {
+		if h.abortForDelete(cfg) {
+			return true, nil
+		}
 		template, err := h.Filetemplategetter.Get(fileName)
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		// if unskippedTemplates has >0 entries, then we are down this path to only upsert the templates
@@ -925,7 +964,7 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 
 		t, err := h.templateclientwrapper.Get(template.Name)
 		if err != nil && !kerrors.IsNotFound(err) {
-			return err
+			return false, err
 		}
 
 		if err == nil && !updateIfPresent {
@@ -938,10 +977,10 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 
 		err = h.upsertTemplate(template, t, cfg)
 		if err != nil {
-			return err
+			return false, err
 		}
 	}
-	return nil
+	return false, nil
 }
 
 // refetchCfgMinimizeConflicts is a best effort attempt to get a later version of the config object
