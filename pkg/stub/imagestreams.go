@@ -281,6 +281,7 @@ func (h *Handler) clearStreamFromImportError(name string, importError *v1.Config
 	if cfg.NameInReason(importError.Reason, name) {
 		logrus.Printf("clearing imagestream %s from the import image error condition", name)
 	}
+	oldStatus := importError.Status
 	start := strings.Index(importError.Message, "<imagestream/"+name+">")
 	end := strings.LastIndex(importError.Message, "<imagestream/"+name+">")
 	if start >= 0 && end > 0 {
@@ -295,7 +296,9 @@ func (h *Handler) clearStreamFromImportError(name string, importError *v1.Config
 		} else {
 			importError.Status = corev1.ConditionTrue
 		}
-		importError.LastTransitionTime = now
+		if oldStatus != importError.Status {
+			importError.LastTransitionTime = now
+		}
 		importError.LastUpdateTime = now
 		cfg.ConditionUpdate(importError)
 	}
