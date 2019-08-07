@@ -796,6 +796,7 @@ func TestImageStreamImportError(t *testing.T) {
 			},
 		},
 	}
+	turnBackThreeHours := true
 	for _, is := range streams {
 		h, cfg, _ := setup()
 		mimic(&h, x86OCPContentRootDir)
@@ -806,6 +807,9 @@ func TestImageStreamImportError(t *testing.T) {
 		progressing.Status = corev1.ConditionTrue
 		progressing.Reason = is.Name + " "
 		cfg.ConditionUpdate(progressing)
+		needCreds := cfg.Condition(v1.ImportCredentialsExist)
+		needCreds.Status = corev1.ConditionTrue
+		cfg.ConditionUpdate(needCreds)
 		err := h.processImageStreamWatchEvent(is, false)
 		if err != nil {
 			t.Fatalf("processImageStreamWatchEvent error %#v for stream %#v", err, is)
@@ -818,6 +822,17 @@ func TestImageStreamImportError(t *testing.T) {
 		if len(importErr.Reason) == 0 || !cfg.NameInReason(importErr.Reason, is.Name) {
 			t.Fatalf("processImageStreamWatchEvent did not set import error reason field %#v for stream %#v", cfg, is)
 		}
+		if turnBackThreeHours {
+			importErr.LastTransitionTime.Time = metav1.Now().Add(-3 * time.Hour)
+		} else {
+			importErr.LastTransitionTime = metav1.Now()
+		}
+		cfg.ConditionUpdate(importErr)
+		status, _, _ := cfg.ClusterOperatorStatusFailingCondition()
+		if (status != configv1.ConditionTrue && turnBackThreeHours) || (status == configv1.ConditionTrue && !turnBackThreeHours) {
+			t.Fatalf("image import error from %#v not reflected in cluster status %#v", is, cfg)
+		}
+		turnBackThreeHours = !turnBackThreeHours
 	}
 }
 

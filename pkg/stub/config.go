@@ -214,8 +214,10 @@ func (h *Handler) processError(opcfg *v1.Config, ctype v1.ConfigConditionType, c
 	if status.Status != cstatus || status.Message != log {
 		now := kapis.Now()
 		status.LastUpdateTime = now
+		if status.Status != cstatus {
+			status.LastTransitionTime = now
+		}
 		status.Status = cstatus
-		status.LastTransitionTime = now
 		status.Message = log
 		opcfg.ConditionUpdate(status)
 	}

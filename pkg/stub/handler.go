@@ -234,8 +234,10 @@ func (h *Handler) GoodConditionUpdate(cfg *v1.Config, newStatus corev1.Condition
 	if condition.Status != newStatus {
 		now := kapis.Now()
 		condition.LastUpdateTime = now
+		if condition.Status != newStatus {
+			condition.LastTransitionTime = now
+		}
 		condition.Status = newStatus
-		condition.LastTransitionTime = now
 		condition.Message = ""
 		condition.Reason = ""
 		cfg.ConditionUpdate(condition)
