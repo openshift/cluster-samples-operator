@@ -828,9 +828,12 @@ func TestImageStreamImportError(t *testing.T) {
 			importErr.LastTransitionTime = metav1.Now()
 		}
 		cfg.ConditionUpdate(importErr)
-		status, _, _ := cfg.ClusterOperatorStatusFailingCondition()
+		status, reason, detail := cfg.ClusterOperatorStatusFailingCondition()
 		if (status != configv1.ConditionTrue && turnBackThreeHours) || (status == configv1.ConditionTrue && !turnBackThreeHours) {
 			t.Fatalf("image import error from %#v not reflected in cluster status %#v", is, cfg)
+		}
+		if status == configv1.ConditionFalse && turnBackThreeHours && (len(reason) == 0 || len(detail) == 0) {
+			t.Fatalf("image import error from is %#v with cfg %#v had reason %s and detail %s", is, cfg, reason, detail)
 		}
 		turnBackThreeHours = !turnBackThreeHours
 	}
