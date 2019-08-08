@@ -60,12 +60,12 @@ type ClusterOperatorWrapper interface {
 
 func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
 	var err error
-	failing, msgForProgressing, msgForFailing := cfg.ClusterOperatorStatusFailingCondition()
+	failing, failingReason, failingDetail := cfg.ClusterOperatorStatusFailingCondition()
 	err = o.setOperatorStatus(configv1.OperatorDegraded,
 		failing,
-		msgForFailing,
+		failingDetail,
 		"",
-		"")
+		failingReason)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
 		return err
 	}
 
-	progressing, msgForProgressing, reasonForProgressing := cfg.ClusterOperatorStatusProgressingCondition(msgForProgressing, available)
+	progressing, msgForProgressing, reasonForProgressing := cfg.ClusterOperatorStatusProgressingCondition(failingReason, available)
 	err = o.setOperatorStatus(configv1.OperatorProgressing,
 		progressing,
 		msgForProgressing,
