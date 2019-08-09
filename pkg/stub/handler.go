@@ -133,6 +133,7 @@ type Handler struct {
 
 	mapsMutex sync.Mutex
 
+	upsertInProgress bool
 	secretRetryCount int8
 	version          string
 }
@@ -472,8 +473,12 @@ func (h *Handler) Handle(event v1.Event) error {
 			// before we kick off the delete cycle though, we make sure a prior creation
 			// cycle is not still in progress, because we don't want the create adding back
 			// in things we just deleted ... if an upsert is still in progress, return an error;
-			// the creation loop checks for deletion timestamp and aborts when it sees it
-			if cfg.ConditionTrue(v1.ImageChangesInProgress) {
+			// the creation loop checks for deletion timestamp and aborts when it sees it;
+			// but we don't use in progress condition here, as the upsert cycle might also be complete;
+			// but ImageInProess is still true, so we use a local variable which is only set while upserts are happening; otherwise
+			// here, we get started with the delete, which will ultimately reset the conditions
+			// and samples, when it is false again, regardless of whether the imagestream imports are done
+			if h.upsertInProgress {
 				return fmt.Errorf("A delete attempt has come in while creating samples; initiating retry; creation loop should abort soon")
 			}
 
@@ -730,6 +735,9 @@ func (h *Handler) Handle(event v1.Event) error {
 				return err
 			}
 
+			h.upsertInProgress = true
+			turnFlagOff := func(h *Handler) { h.upsertInProgress = false }
+			defer turnFlagOff(h)
 			abortForDelete, err := h.createSamples(cfg, true, registryChanged, unskippedStreams, unskippedTemplates)
 			// we prioritize enabling delete vs. any error processing from createSamples (though at the moment that
 			// method only returns nil error when it returns true for abortForDelete) as a subsequent delete's processing will
