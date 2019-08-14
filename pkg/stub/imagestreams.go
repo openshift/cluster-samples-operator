@@ -183,7 +183,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 		return nil
 	}
 
-	h.updateDockerPullSpec([]string{"docker.io", "registry.redhat.io", "registry.access.redhat.com", "quay.io"}, imagestreamInOperatorImage, opcfg)
+	h.updateDockerPullSpec([]string{"docker.io", "registry.redhat.io", "registry.access.redhat.com", "quay.io", "registry.svc.ci.openshift.org"}, imagestreamInOperatorImage, opcfg)
 
 	if imagestreamInOperatorImage.Labels == nil {
 		imagestreamInOperatorImage.Labels = make(map[string]string)
