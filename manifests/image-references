@@ -14,6 +14,10 @@ spec:
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-cluster-samples-operator:latest
+  - name: baremetal-installer
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-baremetal-installer:v4.2
   - name: installer
     from:
       kind: DockerImage
