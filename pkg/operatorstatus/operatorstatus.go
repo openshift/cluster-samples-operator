@@ -60,11 +60,12 @@ type ClusterOperatorWrapper interface {
 
 func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
 	var err error
-	failing, msgForProgressing, msgForFailing := cfg.ClusterOperatorStatusFailingCondition()
+	failing, failingReason, failingDetail := cfg.ClusterOperatorStatusFailingCondition()
 	err = o.setOperatorStatus(configv1.OperatorDegraded,
 		failing,
-		msgForFailing,
-		"")
+		failingDetail,
+		"",
+		failingReason)
 	if err != nil {
 		return err
 	}
@@ -75,23 +76,25 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
 	err = o.setOperatorStatus(configv1.OperatorAvailable,
 		available,
 		msgForAvailable,
-		cfg.Status.Version)
+		cfg.Status.Version,
+		"")
 	if err != nil {
 		return err
 	}
 
-	progressing, msgForProgressing := cfg.ClusterOperatorStatusProgressingCondition(msgForProgressing, available)
+	progressing, msgForProgressing, reasonForProgressing := cfg.ClusterOperatorStatusProgressingCondition(failingReason, available)
 	err = o.setOperatorStatus(configv1.OperatorProgressing,
 		progressing,
 		msgForProgressing,
-		"")
+		"",
+		reasonForProgressing)
 	if err != nil {
 		return nil
 	}
 	return nil
 }
 
-func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStatusConditionType, status configv1.ConditionStatus, msg, currentVersion string) error {
+func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStatusConditionType, status configv1.ConditionStatus, msg, currentVersion, reason string) error {
 	logrus.Debugf("setting clusteroperator status condition %s to %s with version %s", condtype, status, currentVersion)
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		state, err := o.ClusterOperatorWrapper.Get(ClusterOperatorName)
@@ -134,6 +137,7 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 				Type:               condtype,
 				Status:             status,
 				Message:            msg,
+				Reason:             reason,
 				LastTransitionTime: metaapi.Now(),
 			})
 
@@ -143,6 +147,7 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 			Type:               condtype,
 			Status:             status,
 			Message:            msg,
+			Reason:             reason,
 			LastTransitionTime: metaapi.Now(),
 		})
 
