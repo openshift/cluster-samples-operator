@@ -239,16 +239,6 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 }
 
 func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.ImageStream, opcfg *v1.Config) {
-	// we always want to leave the jenkins images as using the payload set to the IMAGE* env's;
-	switch imagestream.Name {
-	case "jenkins":
-		return
-	case "jenkins-agent-nodejs":
-		return
-	case "jenkins-agent-maven":
-		return
-	}
-
 	if len(opcfg.Spec.SamplesRegistry) == 0 {
 		return
 	}
