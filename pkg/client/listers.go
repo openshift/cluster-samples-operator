@@ -11,7 +11,7 @@ import (
 
 type Listers struct {
 	OpenShiftNamespaceSecrets corelisters.SecretNamespaceLister
-	OperatorNamespaceSecrets  corelisters.SecretNamespaceLister
+	ConfigNamespaceSecrets    corelisters.SecretNamespaceLister
 	ImageStreams              imagelisters.ImageStreamNamespaceLister
 	Templates                 templatelisters.TemplateNamespaceLister
 	Config                    sampoplisters.ConfigLister

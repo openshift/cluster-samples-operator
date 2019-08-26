@@ -144,6 +144,7 @@ func (h *Handler) processSecretEvent(cfg *v1.Config, dockercfgSecret *corev1.Sec
 	}
 
 	removedState := false
+	deleted := event.Deleted
 	switch cfg.Spec.ManagementState {
 	case operatorsv1api.Removed:
 		// So we allow the processing of the secret event while in removed state to
@@ -159,7 +160,6 @@ func (h *Handler) processSecretEvent(cfg *v1.Config, dockercfgSecret *corev1.Sec
 	default:
 		logrus.Printf("processing secret watch event like we are in Managed state, even though it is set to %v; deletion event %v", cfg.Spec.ManagementState, event.Deleted)
 	}
-	deleted := event.Deleted
 	if dockercfgSecret.Namespace == "openshift" {
 		if !deleted {
 			if dockercfgSecret.Annotations != nil {

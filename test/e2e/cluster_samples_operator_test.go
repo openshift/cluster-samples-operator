@@ -88,7 +88,7 @@ func setupClients(t *testing.T) {
 }
 
 func dumpPod(t *testing.T) {
-	podClient := kubeClient.CoreV1().Pods("openshift-cluster-samples-operator")
+	podClient := kubeClient.CoreV1().Pods(samplesapi.OperatorNamespace)
 	podList, err := podClient.List(metav1.ListOptions{})
 	if err != nil {
 		t.Fatalf("error list pods %v", err)
@@ -98,17 +98,20 @@ func dumpPod(t *testing.T) {
 		t.Logf("dumpPods looking at pod %s in phase %s", pod.Name, pod.Status.Phase)
 		if strings.HasPrefix(pod.Name, "cluster-samples-operator") &&
 			pod.Status.Phase == corev1.PodRunning {
-			req := podClient.GetLogs(pod.Name, &corev1.PodLogOptions{})
-			readCloser, err := req.Stream()
-			if err != nil {
-				t.Fatalf("error getting pod logs %v", err)
+			for _, container := range pod.Spec.Containers {
+				req := podClient.GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name})
+				readCloser, err := req.Stream()
+				if err != nil {
+					t.Fatalf("error getting pod logs for container %s: %s", container.Name, err.Error())
+				}
+				b, err := ioutil.ReadAll(readCloser)
+				if err != nil {
+					t.Fatalf("error reading pod stream %s", err.Error())
+				}
+				podLog := string(b)
+				t.Logf("pod logs for container %s:  %s", container.Name, podLog)
+
 			}
-			b, err := ioutil.ReadAll(readCloser)
-			if err != nil {
-				t.Fatalf("error reading pod stream %v", err)
-			}
-			podLog := string(b)
-			t.Logf("pod logs:  %s", podLog)
 		}
 	}
 }
@@ -1001,7 +1004,7 @@ func coreTestUpgrade(t *testing.T) {
 	t.Logf("current version %s version for upgrade %s", cfg.Status.Version, newVersion)
 
 	// update env to trigger upgrade
-	depClient := kubeClient.AppsV1().Deployments("openshift-cluster-samples-operator")
+	depClient := kubeClient.AppsV1().Deployments(samplesapi.OperatorNamespace)
 	err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
 		dep, err := depClient.Get("cluster-samples-operator", metav1.GetOptions{})
 		if err != nil {

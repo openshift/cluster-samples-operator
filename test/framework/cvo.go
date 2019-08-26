@@ -5,6 +5,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	samplesapi "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 )
 
 const (
@@ -35,7 +36,7 @@ func DisableCVOForOperator(operatorClient *configv1client.ConfigV1Client) error 
 	var changed bool
 	cv.Spec.Overrides, changed = addCompomentOverride(cv.Spec.Overrides, configv1.ComponentOverride{
 		Kind:      "Deployment",
-		Namespace: "openshift-cluster-samples-operator",
+		Namespace: samplesapi.OperatorNamespace,
 		Name:      "cluster-samples-operator",
 		Unmanaged: true,
 	})

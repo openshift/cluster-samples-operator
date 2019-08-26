@@ -1,0 +1,18 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: samples-operator-tls
+  labels:
+    name: cluster-samples-operator
+  name: metrics
+  namespace: openshift-cluster-samples-operator
+spec:
+  clusterIP: None
+  ports:
+  - port: 60000
+    protocol: TCP
+    targetPort: 60000
+  selector:
+    name: cluster-samples-operator

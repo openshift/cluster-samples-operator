@@ -74,6 +74,8 @@ const (
 	// in the openshift namespace does not exist.  This will initiate creation of the credential
 	// in the openshift namespace.
 	SamplesRecreateCredentialAnnotation = GroupName + "/recreate"
+	// OperatorNamespace is the namespace the operator runs in.
+	OperatorNamespace = "openshift-cluster-samples-operator"
 )
 
 type ConfigSpec struct {

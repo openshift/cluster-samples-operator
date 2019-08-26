@@ -5,13 +5,13 @@ import (
 	"strings"
 
 	"github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 )
 
 // mutex for h.imagestreamFiles and h.templateFiles managed by caller h.buildFileMaps
 func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1.Config) error {
-
 	for _, file := range files {
 		if file.IsDir() {
 			logrus.Printf("processing subdir %s from dir %s", file.Name(), dir)
@@ -35,6 +35,7 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1.Config
 				return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", path)
 			}
 			h.imagestreamFile[imagestream.Name] = path
+			metrics.AddStream(imagestream.Name)
 			continue
 		}
 
