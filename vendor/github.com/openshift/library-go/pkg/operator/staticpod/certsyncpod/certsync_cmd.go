@@ -62,14 +62,14 @@ func (o *CertSyncControllerOptions) Run() error {
 		return err
 	}
 
-	initialContent, _ := ioutil.ReadFile(o.KubeConfigFile)
-	observer.AddReactor(fileobserver.ExitOnChangeReactor, map[string][]byte{o.KubeConfigFile: initialContent}, o.KubeConfigFile)
-
 	stopCh := make(chan struct{})
-	go observer.Run(stopCh)
+
+	initialContent, _ := ioutil.ReadFile(o.KubeConfigFile)
+	observer.AddReactor(fileobserver.TerminateOnChangeReactor(func() {
+		close(stopCh)
+	}), map[string][]byte{o.KubeConfigFile: initialContent}, o.KubeConfigFile)
 
 	kubeInformers := informers.NewSharedInformerFactoryWithOptions(o.kubeClient, 10*time.Minute, informers.WithNamespace(o.Namespace))
-	go kubeInformers.Start(stopCh)
 
 	eventRecorder := events.NewKubeRecorder(o.kubeClient.CoreV1().Events(o.Namespace), "cert-syncer",
 		&corev1.ObjectReference{
@@ -84,13 +84,18 @@ func (o *CertSyncControllerOptions) Run() error {
 		o.Namespace,
 		o.configMaps,
 		o.secrets,
+		o.kubeClient,
 		kubeInformers,
 		eventRecorder,
 	)
 	if err != nil {
 		return err
 	}
+
+	// start everything. Informers start after they have been requested.
 	go controller.Run(1, stopCh)
+	go observer.Run(stopCh)
+	go kubeInformers.Start(stopCh)
 
 	<-stopCh
 	klog.Infof("Shutting down certificate syncer")

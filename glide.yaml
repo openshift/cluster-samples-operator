@@ -21,35 +21,13 @@ import:
 
 # openshift second
 - package: github.com/openshift/api
-  version: master
+  version: release-4.2
 - package: github.com/openshift/client-go
-  version: master
+  version: release-4.2
 - package: github.com/openshift/library-go
-  version: master
+  version: release-4.2
 
 # external third
-# copied version from library-go glide.yaml
-- package: k8s.io/gengo
-  version: e17681d19d3ac4837a019ece36c2a0ec31ffe985
-- package: github.com/sirupsen/logrus
-  version: 89742aefa4b206dcf400792f3bd35b542998eb3b
-# the following copied version from library-go glide.lock
-- package: golang.org/x/tools
-  version: 2382e3994d48b1d22acc2c86bcad0a2aff028e32
-- package: golang.org/x/text
-  version: b19bf474d317b857955b12035d2c5acb57ce8b01
-# the following copied version from cluster-openshift-controller-manager-operator glide.loc
-- package: github.com/ghodss/yaml
-  version: c7ce16629ff4cd059ed96ed06419dd3856fd3577
-- package: github.com/markbates/inflect
-  version: d582c680dc4d29c2279628ae00e743005bfcd4fe
-- package: github.com/pkg/errors
-  version: 645ef00459ed84a119197bfb8d8205042c6df63d
-- package: github.com/spf13/afero
-  version: 588a75ec4f32903aa5e39a2619ba6a4631e28424
-- package: github.com/gobuffalo/envy
-  version: 043cb4b8af871b49563291e32c66bb84378a60ac
-- package: github.com/joho/godotenv
-  version: 5c0e6c6ab1a0a9ef0a8822cba3a05d62f7dad941
-- package: github.com/rogpeppe/go-internal
-  version: 438578804ca6f31be148c27683afc419ce47c06e
+# the following copied version from library-go glide.lock, as it was not in glide.yaml
+- package: k8s.io/klog
+  version: 8e90cee79f823779174776412c13478955131846
