@@ -185,7 +185,7 @@ func verifyConditionsCompleteSamplesRemoved(t *testing.T) error {
 	})
 }
 
-func verifyClusterOperatorConditionsComplete(t *testing.T, expectedVersion string) {
+func verifyClusterOperatorConditionsComplete(t *testing.T, expectedVersion string, mgmtCfg operatorsv1api.ManagementState) {
 	var state *configv1.ClusterOperator
 	var err error
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
@@ -194,28 +194,41 @@ func verifyClusterOperatorConditionsComplete(t *testing.T, expectedVersion strin
 			t.Logf("%v", err)
 			return false, nil
 		}
-		availableOK, progressingOK, failingOK, versionOK := false, false, false, false
+		availableOK, progressingOK, degradedOK, versionOK, reasonOK := false, false, false, false, false
+		availableReason, progressingReason, degradedReason := "", "", ""
 		for _, condition := range state.Status.Conditions {
 			switch condition.Type {
 			case configv1.OperatorAvailable:
 				if condition.Status == configv1.ConditionTrue {
 					availableOK = true
 				}
+				availableReason = condition.Reason
 			case configv1.OperatorDegraded:
 				if condition.Status == configv1.ConditionFalse {
-					failingOK = true
+					degradedOK = true
 				}
+				degradedReason = condition.Reason
 			case configv1.OperatorProgressing:
 				if condition.Status == configv1.ConditionFalse {
 					progressingOK = true
 				}
+				progressingReason = condition.Reason
 			}
 		}
 		if len(state.Status.Versions) > 0 && state.Status.Versions[0].Name == "operator" && state.Status.Versions[0].Version == expectedVersion {
 			versionOK = true
 		}
 
-		if availableOK && progressingOK && failingOK && versionOK {
+		if mgmtCfg != operatorsv1api.Managed {
+			goodValue := "Currently" + string(mgmtCfg)
+			if availableReason == goodValue && progressingReason == goodValue && degradedReason == goodValue {
+				reasonOK = true
+			}
+		} else {
+			reasonOK = true
+		}
+
+		if availableOK && progressingOK && degradedOK && versionOK && reasonOK {
 			return true, nil
 		}
 		return false, nil
@@ -647,7 +660,7 @@ func TestImageStreamInOpenshiftNamespace(t *testing.T) {
 		t.Fatalf("Config did not stabilize on startup %#v", verifyOperatorUp(t))
 	}
 	verifySecretPresent(t)
-	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version)
+	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version, cfg.Status.ManagementState)
 	t.Logf("Config after TestImageStreamInOpenshiftNamespace: %#v", verifyOperatorUp(t))
 }
 
@@ -692,7 +705,7 @@ func TestRecreateConfigAfterDelete(t *testing.T) {
 
 	validateContent(t, &now)
 	cfg := verifyOperatorUp(t)
-	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version)
+	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version, cfg.Status.ManagementState)
 	t.Logf("Config after TestRecreateConfigAfterDelete: %#v", cfg)
 }
 
@@ -753,7 +766,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	verifyImageStreamsGone(t)
 	verifyTemplatesGone(t)
 
-	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version)
+	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version, cfg.Status.ManagementState)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cfg = verifyOperatorUp(t)
@@ -818,7 +831,7 @@ func TestSpecManagementStateField(t *testing.T) {
 
 	verifyDeletedImageStreamNotRecreated(t)
 	verifyDeletedTemplatesNotRecreated(t)
-	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version)
+	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version, cfg.Status.ManagementState)
 
 	// get timestamp to check against in progress condition
 	now = kapis.Now()
@@ -875,7 +888,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	}
 
 	validateContent(t, nil)
-	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version)
+	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version, cfg.Status.ManagementState)
 	t.Logf("Config after TestSpecManagementStateField: %#v", verifyOperatorUp(t))
 }
 
@@ -1046,7 +1059,7 @@ func coreTestUpgrade(t *testing.T) {
 		return false, nil
 	})
 
-	verifyClusterOperatorConditionsComplete(t, newVersion)
+	verifyClusterOperatorConditionsComplete(t, newVersion, cfg.Status.ManagementState)
 
 	if cfg.Status.ManagementState == operatorsv1api.Managed {
 		validateContent(t, nil)

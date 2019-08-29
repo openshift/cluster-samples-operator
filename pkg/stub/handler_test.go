@@ -828,7 +828,7 @@ func TestImageStreamImportError(t *testing.T) {
 			importErr.LastTransitionTime = metav1.Now()
 		}
 		cfg.ConditionUpdate(importErr)
-		status, reason, detail := cfg.ClusterOperatorStatusFailingCondition()
+		status, reason, detail := cfg.ClusterOperatorStatusDegradedCondition()
 		if (status != configv1.ConditionTrue && turnBackThreeHours) || (status == configv1.ConditionTrue && !turnBackThreeHours) {
 			t.Fatalf("image import error from %#v not reflected in cluster status %#v", is, cfg)
 		}
