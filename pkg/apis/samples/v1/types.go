@@ -329,18 +329,21 @@ func (s *Config) ClearNameInReason(reason, name string) string {
 }
 
 const (
-	noInstallDetailed  = "Samples installation in error at %s: %s"
-	installed          = "Samples installation successful at %s"
-	moving             = "Samples processing to %s"
-	removing           = "Deleting samples at %s"
-	doneImportsFailed  = "Samples installed at %s, with image import failures, see samples operator config object"
-	failedImageImports = "FailedImageImports"
+	noInstallDetailed      = "Samples installation in error at %s: %s"
+	installed              = "Samples installation successful at %s"
+	installedButNotManaged = "Samples installation was previously successful at %s but the samples operator is now %s"
+	moving                 = "Samples processing to %s"
+	removing               = "Deleting samples at %s"
+	doneImportsFailed      = "Samples installed at %s, with image import failures, see samples operator config object"
+	failedImageImports     = "FailedImageImports"
+	currentlyNotManaged    = "Currently%s"
 )
 
 // ClusterOperatorStatusAvailableCondition return values are as follows:
 // 1) the value to set on the ClusterOperator Available condition
-// 2) string is the message to set on the Available condition
-func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionStatus, string) {
+// 2) string is the reason to set on the Available condition
+// 3) string is the message to set on the Available condition
+func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionStatus, string, string) {
 	//notAtAnyVersionYet := len(s.Status.Version) == 0
 
 	falseRC := configv1.ConditionFalse
@@ -349,7 +352,8 @@ func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionSt
 	// group arch discussion has decided that we report the Available=true if removed/unmanaged
 	if s.Status.ManagementState == operatorv1.Removed ||
 		s.Status.ManagementState == operatorv1.Unmanaged {
-		return configv1.ConditionTrue, fmt.Sprintf(installed, s.Status.Version)
+		state := string(s.Status.ManagementState)
+		return configv1.ConditionTrue, fmt.Sprintf(currentlyNotManaged, state), fmt.Sprintf(installedButNotManaged, s.Status.Version, state)
 	}
 
 	// REMINDER: the intital config is always valid, as this operator generates it;
@@ -357,12 +361,12 @@ func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionSt
 	// the initial install result in ConfigurationValid == CondtitionFalse
 	// Next, if say bad config is injected after installing at a certain level,
 	// the samples are still available at the old config setting; the
-	// config issues will be highlighted in the progressing/failing messages, per
+	// config issues will be highlighted in the progressing/degraded messages, per
 	// https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions
 
-	if !s.ConditionTrue(SamplesExist) { // notAtAnyVersionYet {
+	if !s.ConditionTrue(SamplesExist) {
 		// return false for the initial state; don't set any messages yet
-		return falseRC, ""
+		return falseRC, "", ""
 	}
 
 	// otherwise version of last successful install
@@ -374,32 +378,41 @@ func (s *Config) ClusterOperatorStatusAvailableCondition() (configv1.ConditionSt
 		// flushes out
 		versionToNote = os.Getenv("RELEASE_VERSION")
 	}
-	return configv1.ConditionTrue, fmt.Sprintf(installed, versionToNote) //s.Status.Version)
+	return configv1.ConditionTrue, "", fmt.Sprintf(installed, versionToNote)
 
 }
 
-// ClusterOperatorStatusFailingCondition return values are as follows:
-// 1) the value to set on the ClusterOperator Failing condition
-// 2) the first string is the succinct text to apply to the Progressing condition on failure
-// 3) the second string is the fully detailed text to apply the the Failing condition
-func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStatus, string, string) {
+// ClusterOperatorStatusDegradedCondition return values are as follows:
+// 1) the value to set on the ClusterOperator Degraded condition
+// 2) the first string is the succinct text to apply to the Degraded condition reason field
+// 3) the second string is the fully detailed text to apply the the Degraded condition message field
+func (s *Config) ClusterOperatorStatusDegradedCondition() (configv1.ConditionStatus, string, string) {
 	// do not start checking for bad config and needed cred until we've iterated through
 	// the credential / config processing to actually processed a config
 	if len(s.Status.Conditions) < numconfigConditionType {
 		return configv1.ConditionFalse, "", ""
 	}
+
+	// after online starter upgrade attempts while this operator was not set to managed,
+	// group arch discussion has decided that we report the Degraded==false if removed/unmanaged
+	if s.Status.ManagementState == operatorv1.Removed ||
+		s.Status.ManagementState == operatorv1.Unmanaged {
+		state := string(s.Status.ManagementState)
+		return configv1.ConditionFalse, fmt.Sprintf(currentlyNotManaged, state), fmt.Sprintf(installedButNotManaged, s.Status.Version, state)
+	}
+
 	// the ordering here is not random; an invalid config will be caught first;
 	// the lack of credenitials will be caught second; any hiccups manipulating API objects
 	// will be potentially anywhere in the process
 	trueRC := configv1.ConditionTrue
 	if s.ConditionFalse(ConfigurationValid) {
 		return trueRC,
-			"invalid configuration",
+			"InvalidConfiguration",
 			fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), s.Condition(ConfigurationValid).Message)
 	}
 	if s.ClusterNeedsCreds() {
 		return trueRC,
-			"image pull credentials needed",
+			"ImagePullCredentialsNeeded",
 			fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), s.Condition(ImportCredentialsExist).Message)
 	}
 	// report degraded if img import error exists for 2 hrs
@@ -419,7 +432,7 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 	// of the conditions;
 	// If for some reason that ever changes, we'll need to adjust this
 	if s.AnyConditionUnknown() {
-		return trueRC, "bad API object operation", s.ConditionsMessages()
+		return trueRC, "APIServerError", s.ConditionsMessages()
 	}
 	// return the initial state, don't set any messages.
 	return configv1.ConditionFalse, "", ""
@@ -427,22 +440,31 @@ func (s *Config) ClusterOperatorStatusFailingCondition() (configv1.ConditionStat
 }
 
 // ClusterOperatorStatusProgressingCondition has the following parameters
-// 1) failingState, the succinct text from ClusterOperatorStatusFailingCondition() to use when
+// 1) degradedState, the succinct text from ClusterOperatorStatusDegradedCondition() to use when
 //    progressing but failed per https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions
 // 2) whether the Config is in available state
 // and the following return values:
 // 1) is the value to set on the ClusterOperator Progressing condition
-// 2) string is the message to set on the condition
-// 3) string is the reason to set on the condition if needed
-func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, available configv1.ConditionStatus) (configv1.ConditionStatus, string, string) {
-	if len(failingState) > 0 {
-		return configv1.ConditionTrue, fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), failingState), ""
+// 2) string is the reason to set on the condition if needed
+// 3) string is the message to set on the condition
+func (s *Config) ClusterOperatorStatusProgressingCondition(degradedState string, available configv1.ConditionStatus) (configv1.ConditionStatus, string, string) {
+
+	// after online starter upgrade attempts while this operator was not set to managed,
+	// group arch discussion has decided that we report the Progressing==false if removed/unmanaged
+	if s.Status.ManagementState == operatorv1.Removed ||
+		s.Status.ManagementState == operatorv1.Unmanaged {
+		state := string(s.Status.ManagementState)
+		return configv1.ConditionFalse, fmt.Sprintf(currentlyNotManaged, state), fmt.Sprintf(installedButNotManaged, s.Status.Version, state)
+	}
+
+	if len(degradedState) > 0 {
+		return configv1.ConditionTrue, "", fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), degradedState)
 	}
 	if s.ConditionTrue(ImageChangesInProgress) {
-		return configv1.ConditionTrue, fmt.Sprintf(moving, os.Getenv("RELEASE_VERSION")), ""
+		return configv1.ConditionTrue, "", fmt.Sprintf(moving, os.Getenv("RELEASE_VERSION"))
 	}
 	if s.ConditionTrue(RemovePending) {
-		return configv1.ConditionTrue, fmt.Sprintf(removing, s.Status.Version), ""
+		return configv1.ConditionTrue, "", fmt.Sprintf(removing, s.Status.Version)
 	}
 	if available == configv1.ConditionTrue {
 		msg := fmt.Sprintf(installed, s.Status.Version)
@@ -451,7 +473,7 @@ func (s *Config) ClusterOperatorStatusProgressingCondition(failingState string, 
 			msg = fmt.Sprintf(doneImportsFailed, s.Status.Version)
 			reason = failedImageImports
 		}
-		return configv1.ConditionFalse, msg, reason
+		return configv1.ConditionFalse, reason, msg
 	}
 	return configv1.ConditionFalse, "", ""
 }

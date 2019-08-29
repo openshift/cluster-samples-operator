@@ -60,29 +60,29 @@ type ClusterOperatorWrapper interface {
 
 func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config) error {
 	var err error
-	failing, failingReason, failingDetail := cfg.ClusterOperatorStatusFailingCondition()
+	degraded, degradedReason, degradedDetail := cfg.ClusterOperatorStatusDegradedCondition()
 	err = o.setOperatorStatus(configv1.OperatorDegraded,
-		failing,
-		failingDetail,
+		degraded,
+		degradedDetail,
 		"",
-		failingReason)
+		degradedReason)
 	if err != nil {
 		return err
 	}
 
-	available, msgForAvailable := cfg.ClusterOperatorStatusAvailableCondition()
+	available, reasonForAvailable, msgForAvailable := cfg.ClusterOperatorStatusAvailableCondition()
 	// if we're setting the operator status to available, also set the operator version
 	// to the current version.
 	err = o.setOperatorStatus(configv1.OperatorAvailable,
 		available,
 		msgForAvailable,
 		cfg.Status.Version,
-		"")
+		reasonForAvailable)
 	if err != nil {
 		return err
 	}
 
-	progressing, msgForProgressing, reasonForProgressing := cfg.ClusterOperatorStatusProgressingCondition(failingReason, available)
+	progressing, reasonForProgressing, msgForProgressing := cfg.ClusterOperatorStatusProgressingCondition(degradedReason, available)
 	err = o.setOperatorStatus(configv1.OperatorProgressing,
 		progressing,
 		msgForProgressing,
