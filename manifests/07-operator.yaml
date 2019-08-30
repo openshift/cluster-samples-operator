@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: cluster-samples-operator
   namespace: openshift-cluster-samples-operator
+  annotations:
+    config.openshift.io/inject-proxy: "cluster-samples-operator"
 spec:
   replicas: 1
   selector:
@@ -56,3 +58,14 @@ spec:
             value: quay.io/openshift/origin-jenkins-agent-nodejs:latest
           - name: IMAGE_AGENT_MAVEN
             value: quay.io/openshift/origin-jenkins-agent-maven:latest
+        volumeMounts:
+          - name: trusted-ca
+            mountPath: /etc/pki/ca-trust/extracted/pem/
+      volumes:
+        - name: trusted-ca
+          configMap:
+            name: trusted-ca
+            optional: true
+            items:
+              - key: ca-bundle.crt
+                path: tls-ca-bundle.pem
