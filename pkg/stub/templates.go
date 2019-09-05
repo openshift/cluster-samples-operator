@@ -30,6 +30,9 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 	if !doUpsert {
 		return nil
 	}
+	if cfg == nil {
+		return nil
+	}
 
 	template, err := h.Filetemplategetter.Get(filePath)
 	if err != nil {

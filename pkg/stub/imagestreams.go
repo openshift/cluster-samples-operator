@@ -31,6 +31,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		// if we initiated the change, it will be in our cache, and we want to process
 		// the in progress, import error conditions
 		anyChange := false
+		nonMatchDetail := ""
 		if cache.UpsertsAmount() > 0 {
 			cache.AddReceivedEventFromUpsert(is)
 			if !cfg.ConditionTrue(v1.ImageChangesInProgress) || !cfg.ConditionTrue(v1.SamplesExist) {
@@ -56,11 +57,16 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 					}
 				}
 
+				if !cfg.NameInReason(cfg.Condition(v1.ImageChangesInProgress).Reason, is.Name) &&
+					!cfg.NameInReason(cfg.Condition(v1.ImportImageErrorsExist).Reason, is.Name) {
+					logrus.Printf("skipping progress check (caching phase) for %s because it has been removed from the image progress and import error conditions", is.Name)
+					continue
+				}
+
 				// see if we should turn off pending, clear errors
-				nonMatchDetail := ""
 				cfg, nonMatchDetail, anyChange = h.processImportStatus(is, cfg)
-				if !anyChange {
-					logrus.Printf("imagestream %s still not finished with its image imports, including %s", is.Name, nonMatchDetail)
+				if !anyChange && len(nonMatchDetail) > 0 {
+					logrus.Printf("imagestream %s still not finished with its image imports (caching phase), including %s", is.Name, nonMatchDetail)
 					// cached instances are processed at the end of the handler Config event flow
 					return nil
 				}
@@ -87,16 +93,25 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			}
 			return err
 		}
+
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
+		if !cfg.NameInReason(cfg.Condition(v1.ImageChangesInProgress).Reason, is.Name) &&
+			!cfg.NameInReason(cfg.Condition(v1.ImportImageErrorsExist).Reason, is.Name) {
+			logrus.Printf("aborting progress check (post-cache) for %s because it has been removed from the image progress and import error conditions", is.Name)
+		}
 		// otherwise, if someone else changed it in such a way that we don't want to
 		// upsert it again, or we missed an event and this is a relist, or we had an update conflict
 		// after completing cache process, update conditions as needed
 		// as needed
-		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		cfg, _, anyChange = h.processImportStatus(is, cfg)
+		cfg, nonMatchDetail, anyChange = h.processImportStatus(is, cfg)
 		if anyChange {
 			dbg := fmt.Sprintf("updating progress/error condition after results for %s", is.Name)
 			logrus.Printf("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
+		} else {
+			if len(nonMatchDetail) > 0 {
+				logrus.Printf("imagestream %s still not finished with its image imports, including %s", is.Name, nonMatchDetail)
+			}
 		}
 		return nil
 
@@ -105,7 +120,9 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 	// prepWatchEvent has determined we actually need to do the upsert
 
 	if cfg == nil {
-		return fmt.Errorf("cannot upsert imagestream %s because could not obtain Config", is.Name)
+		// prepSamplesWatch will handle logging here as needed, as well as provide the appropriate
+		// non-nil or nil setting for err
+		return err
 	}
 
 	if cfg.ClusterNeedsCreds() {
@@ -405,12 +422,16 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 			if len(is.Spec.Tags) <= len(is.Status.Tags) {
 				for _, specTag := range is.Spec.Tags {
 					matched := false
+					foundTagInStatus := false
+					foundItemsInStatusTag := false
 					for _, statusTag := range is.Status.Tags {
 						logrus.Debugf("checking spec tag %s against status tag %s with num items %d", specTag.Name, statusTag.Tag, len(statusTag.Items))
 						if specTag.Name == statusTag.Tag {
+							foundTagInStatus = true
 							// if the latest gens have no errors, see if we got gen match
 							if statusTag.Items != nil {
 								for _, event := range statusTag.Items {
+									foundItemsInStatusTag = true
 									if specTag.Generation != nil {
 										logrus.Debugf("checking status tag %d against spec tag %d", event.Generation, *specTag.Generation)
 									}
@@ -427,8 +448,21 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 					}
 					if !matched {
 						pending = true
+						if len(nonMatchDetail) == 0 {
+							switch {
+							case foundTagInStatus == false:
+								nonMatchDetail = fmt.Sprintf("spec tag %s did not have a matching status tag", specTag.Name)
+							case foundItemsInStatusTag == false:
+								nonMatchDetail = fmt.Sprintf("status tag %s had no items in it", specTag.Name)
+							default:
+								nonMatchDetail = fmt.Sprintf("match failed for some unknown reason; spec: %#v status: %#v", is.Spec.Tags, is.Status.Tags)
+							}
+						}
 						break
 					}
+				}
+				if len(is.Spec.Tags) == 0 {
+					nonMatchDetail = fmt.Sprintf("there were no spec tags")
 				}
 			} else {
 				pending = true
@@ -450,6 +484,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 		if !anyErrors {
 			h.clearStreamFromImportError(is.Name, importError, cfg)
 		}
+		logrus.Printf("There are no more image imports in flight for imagestream %s", is.Name)
 		if processing.Status == corev1.ConditionTrue {
 			now := kapis.Now()
 			// remove this imagestream name, including the space separator, from processing
@@ -466,7 +501,6 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 				processing.LastTransitionTime = now
 				processing.LastUpdateTime = now
 				cfg.ConditionUpdate(processing)
-				logrus.Printf("There are no more image imports in flight for imagestream %s", is.Name)
 				anyConditionUpdate = true
 			}
 		}
