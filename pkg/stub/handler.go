@@ -147,6 +147,11 @@ type Handler struct {
 func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[string]string, deleted bool) (*v1.Config, string, bool, error) {
 	cfg, err := h.crdwrapper.Get(v1.ConfigName)
 	if cfg == nil || err != nil {
+		// if not found, then this also would mean a deletion event
+		if kerrors.IsNotFound(err) {
+			logrus.Printf("Received watch event %s but not upserting since deletion of the Config is in progress", kind+"/"+name)
+			return nil, "", false, nil
+		}
 		logrus.Printf("Received watch event %s but not upserting since not have the Config yet: %#v %#v", kind+"/"+name, err, cfg)
 		return nil, "", false, err
 	}
@@ -467,9 +472,11 @@ func (h *Handler) Handle(event v1.Event) error {
 		// and event delete flag true
 		if event.Deleted {
 			logrus.Info("A previous delete attempt has been successfully completed")
+			h.cvowrapper.UpdateOperatorStatus(cfg, true)
 			return nil
 		}
 		if cfg.DeletionTimestamp != nil {
+			h.cvowrapper.UpdateOperatorStatus(cfg, true)
 			// before we kick off the delete cycle though, we make sure a prior creation
 			// cycle is not still in progress, because we don't want the create adding back
 			// in things we just deleted ... if an upsert is still in progress, return an error;
@@ -481,6 +488,9 @@ func (h *Handler) Handle(event v1.Event) error {
 			if h.upsertInProgress {
 				return fmt.Errorf("A delete attempt has come in while creating samples; initiating retry; creation loop should abort soon")
 			}
+
+			// nuke any registered upserts
+			cache.ClearUpsertsCache()
 
 			if h.NeedsFinalizing(cfg) {
 				// so we initiate the delete and set exists to false first, where if we get
@@ -541,7 +551,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		// Every time we see a change to the Config object, update the ClusterOperator status
 		// based on the current conditions of the Config.
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		err := h.cvowrapper.UpdateOperatorStatus(cfg)
+		err := h.cvowrapper.UpdateOperatorStatus(cfg, false)
 		if err != nil {
 			logrus.Errorf("error updating cluster operator status: %v", err)
 			return err
@@ -818,6 +828,7 @@ func (h *Handler) Handle(event v1.Event) error {
 					is, e = h.imageclientwrapper.Get(key)
 					if e != nil {
 						keysToClear = append(keysToClear, key)
+						anyChange = true
 						continue
 					}
 				}
