@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,8 @@ import (
 
 const (
 	x86OCPContentRootDir = "/opt/openshift/operator/ocp-x86_64"
+	ppcOCPContentRootDir = "/opt/openshift/operator/ocp-ppc64le"
+	zOCPContentRootDir   = "/opt/openshift/operator/ocp-s390x"
 	installtypekey       = "keyForInstallTypeField"
 	regkey               = "keyForSamplesRegistryField"
 	skippedstreamskey    = "keyForSkippedImageStreamsField"
@@ -277,6 +280,25 @@ func IsRetryableAPIError(err error) bool {
 	return false
 }
 
+// this method assumes it is only called on initial cfg create, or if the Architecture array len == 0
+func (h *Handler) updateCfgArch(cfg *v1.Config) *v1.Config {
+	switch {
+	// if you look at https://golang.org/dl/ the arch symbols for ppc and 390 container
+	// the values of our constants below.
+	case strings.Contains(runtime.GOARCH, v1.PPCArchitecture):
+		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.PPCArchitecture)
+	case strings.Contains(runtime.GOARCH, v1.S390Architecture):
+		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.S390Architecture)
+	case strings.Contains(runtime.GOARCH, v1.AMDArchitecture):
+		fallthrough
+	case strings.Contains(runtime.GOARCH, v1.X86Architecture):
+		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.X86Architecture)
+	default:
+		logrus.Warningf("unsupported hardware architecture indicated by the golang GOARCH variable being set to %s", runtime.GOARCH)
+	}
+	return cfg
+}
+
 func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, error) {
 	// assume the caller has call lock on the mutex .. out pattern is to have that as
 	// high up the stack as possible ... loc because need to
@@ -326,7 +348,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg.Name = v1.ConfigName
 		cfg.Kind = "Config"
 		cfg.APIVersion = v1.GroupName + "/" + v1.Version
-		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.X86Architecture)
+		cfg = h.updateCfgArch(cfg)
 		cfg.Spec.ManagementState = operatorsv1api.Managed
 		h.AddFinalizer(cfg)
 		// we should get a watch event for the default pull secret, but just in case
@@ -597,6 +619,12 @@ func (h *Handler) Handle(event v1.Event) error {
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
+		//TODO adjust this check as we start getting samples for z or ppc
+		if len(cfg.Spec.Architectures) > 0 && cfg.Spec.Architectures[0] != v1.AMDArchitecture && cfg.Spec.Architectures[0] != v1.X86Architecture {
+			logrus.Printf("samples are not installed on non-x86 architectures")
+			return nil
+		}
+
 		h.buildSkipFilters(cfg)
 		configChanged := false
 		configChangeRequiresUpsert := false
@@ -720,7 +748,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		}
 
 		if len(cfg.Spec.Architectures) == 0 {
-			cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.X86Architecture)
+			cfg = h.updateCfgArch(cfg)
 		}
 
 		h.StoreCurrentValidConfig(cfg)
@@ -787,10 +815,8 @@ func (h *Handler) Handle(event v1.Event) error {
 			now := kapis.Now()
 			cfg = h.refetchCfgMinimizeConflicts(cfg)
 			progressing := cfg.Condition(v1.ImageChangesInProgress)
-			progressing.LastUpdateTime = now
-			progressing.LastTransitionTime = now
-			logrus.Debugf("Handle changing processing from false to true")
-			progressing.Status = corev1.ConditionTrue
+			progressing.Reason = ""
+			progressing.Message = ""
 			for isName := range h.imagestreamFile {
 				_, skipped := h.skippedImagestreams[isName]
 				unskipping := len(unskippedStreams) > 0
@@ -801,6 +827,34 @@ func (h *Handler) Handle(event v1.Event) error {
 				if !cfg.NameInReason(progressing.Reason, isName) && !skipped {
 					progressing.Reason = progressing.Reason + isName + " "
 				}
+			}
+			if len(progressing.Reason) > 0 {
+				progressing.LastUpdateTime = now
+				progressing.LastTransitionTime = now
+				logrus.Debugf("Handle changing processing from false to true")
+				progressing.Status = corev1.ConditionTrue
+			} else {
+				logrus.Debugln("there are no imagestreams available for import")
+				// see if there are unskipped templates, to set SamplesExists to true
+				if !cfg.ConditionTrue(v1.SamplesExist) {
+					templatesProcessed := false
+					for tName := range h.templateFile {
+						_, skipped := h.skippedTemplates[tName]
+						if skipped {
+							continue
+						}
+						templatesProcessed = true
+						break
+					}
+					if templatesProcessed {
+						cfg = h.refetchCfgMinimizeConflicts(cfg)
+						h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
+						dbg := "exist true update templates only"
+						logrus.Printf("CRDUPDATE %s", dbg)
+						return h.crdwrapper.UpdateStatus(cfg, dbg)
+					}
+				}
+				return nil
 			}
 			logrus.Debugf("Handle Reason field set to %s", progressing.Reason)
 			cfg.ConditionUpdate(progressing)

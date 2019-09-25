@@ -58,6 +58,16 @@ const (
 	// X86Architecture is the value used to specify the x86_64 hardware architecture
 	// in the Architectures array field.
 	X86Architecture = "x86_64"
+	// AMDArchitecture is the golang value for x86 64 bit hardware architecture; for the purposes
+	// of this operator, it is equivalent to X86Architecture, which is kept for historical/migration
+	// purposes
+	AMDArchitecture = "amd64"
+	// PPCArchitecture is the value used to specify the x86_64 hardware architecture
+	// in the Architectures array field.
+	PPCArchitecture = "ppc64le"
+	// S390Architecture is the value used to specify the s390x hardware architecture
+	// in the Architecture array field.
+	S390Architecture = "s390x"
 	// ConfigFinalizer is the text added to the Config.Finalizer field
 	// to enable finalizer processing.
 	ConfigFinalizer = GroupName + "/finalizer"
@@ -94,8 +104,8 @@ type ConfigSpec struct {
 	// defaults to registry.redhat.io.
 	SamplesRegistry string `json:"samplesRegistry,omitempty" protobuf:"bytes,2,opt,name=samplesRegistry"`
 
-	// Architectures determine which hardware architecture(s) to install, where x86_64 is the only
-	// supported choice currently.
+	// Architectures determine which hardware architecture(s) to install, where x86_64, ppc64le, and s390x are the only
+	// supported choices currently.
 	Architectures []string `json:"architectures,omitempty" protobuf:"bytes,4,opt,name=architectures"`
 
 	// SkippedImagestreams specifies names of image streams that should NOT be
