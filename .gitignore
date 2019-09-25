@@ -5,6 +5,12 @@ cluster-samples-operator
 tmp/_output
 tmp/_test
 
+vendor/bin
+vendor/pkg
+
+*.classpath
+*.project
+*.settings
 
 # Created by https://www.gitignore.io/api/go,vim,emacs,visualstudiocode
 
