@@ -1,3 +1,0 @@
-apiVersion: samplesoperator.config.openshift.io/v1alpha1
-kind: SamplesResource
-projectName: cluster-samples-operator
