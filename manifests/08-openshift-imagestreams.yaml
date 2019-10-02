@@ -9,6 +9,8 @@ metadata:
 spec:
   tags:
   - name: latest
+    importPolicy:
+      scheduled: true
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-cli:v4.0
@@ -21,6 +23,8 @@ metadata:
 spec:
   tags:
   - name: latest
+    importPolicy:
+      scheduled: true
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-cli-artifacts:v4.0
@@ -33,6 +37,8 @@ metadata:
 spec:
   tags:
   - name: latest
+    importPolicy:
+      scheduled: true
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-installer:v4.0
@@ -45,6 +51,8 @@ metadata:
 spec:
   tags:
   - name: latest
+    importPolicy:
+      scheduled: true
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-installer-artifacts:v4.0
@@ -57,6 +65,8 @@ metadata:
 spec:
   tags:
   - name: latest
+    importPolicy:
+      scheduled: true
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-tests:v4.0
@@ -69,6 +79,8 @@ metadata:
 spec:
   tags:
     - name: latest
+      importPolicy:
+        scheduled: true
       from:
         kind: DockerImage
         name: quay.io/openshift/origin-must-gather:v4.0
