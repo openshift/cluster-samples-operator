@@ -1,0 +1,17 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cluster-samples-operator
+  namespace: openshift-cluster-samples-operator
+spec:
+  endpoints:
+  - targetPort: 60000
+    interval: 60s
+    scheme: https
+    path: /metrics
+    tlsConfig:
+      caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
+      serverName: metrics.openshift-cluster-samples-operator.svc
+  selector:
+    name: cluster-samples-operator

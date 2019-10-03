@@ -1,0 +1,43 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    name: samples-operator-alerts
+  name: samples-operator-alerts
+  namespace: openshift-cluster-samples-operator
+spec:
+  groups:
+  - name: SamplesOperator
+    rules:
+    - alert: SamplesDegraded
+      expr: openshift_samples_degraded_info == 1
+      for: 2h
+      labels:
+        severity: warning
+      annotations:
+        message: |
+          Samples could not be deployed and are in Degraded status. You can look at the "openshift-samples" ClusterOperator object for details. You can also query 'openshift_samples_failed_imagestream_import_info' to see if ImageStreams do not import. The samples operator reports itself Degraded if an ImageStream import continues to fail for 2 hours.
+    - alert: SamplesInvalidConfig
+      expr: openshift_samples_invalidconfig_info == 1
+      for: 2h
+      labels:
+        severity: warning
+      annotations:
+        message: |
+          Samples operator has been given an invalid configuration.
+    - alert: SamplesMissingSecret
+      expr: openshift_samples_invalidsecret_info{reason="missing_secret"} == 1
+      for: 2h
+      labels:
+        severity: warning
+      annotations:
+        message: |
+          Samples operator cannot find the samples pull secret in the openshift namespace.
+    - alert: SamplesMissingTBRCredential
+      expr: openshift_samples_invalidsecret_info{reason="missing_tbr_credential"} == 1
+      for: 2h
+      labels:
+        severity: warning
+      annotations:
+        message: |
+          Samples operator cannot find credentials for 'registry.redhat.io' in the samples pull secret in the openshift namespace.  Unless you have updated the 'samplesRegistry' field in the samples operator config to change which registry the sample ImageStreams are pulled from, you will have failed imports for many of the sample ImageStreams in this case.

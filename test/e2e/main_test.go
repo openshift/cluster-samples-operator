@@ -21,6 +21,7 @@ import (
 	"time"
 
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	samplesapi "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	"github.com/openshift/cluster-samples-operator/test/framework"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,7 +64,7 @@ func TestMain(m *testing.M) {
 }
 
 func waitForOperator() error {
-	depClient := kubeClient.AppsV1().Deployments("openshift-cluster-samples-operator")
+	depClient := kubeClient.AppsV1().Deployments(samplesapi.OperatorNamespace)
 	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
 		_, err := depClient.Get("cluster-samples-operator", metav1.GetOptions{})
 		if err != nil {

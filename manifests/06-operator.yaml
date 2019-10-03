@@ -14,6 +14,7 @@ spec:
         name: cluster-samples-operator
     spec:
       serviceAccountName: cluster-samples-operator
+      shareProcessNamespace: true
       nodeSelector:
         node-role.kubernetes.io/master: ""
       priorityClassName: "system-cluster-critical"
@@ -29,6 +30,10 @@ spec:
         operator: "Exists"
         effect: "NoExecute"
         tolerationSeconds: 120 # Evict pods within 2 mins.
+      volumes:
+      - name: samples-operator-tls
+        secret:
+          secretName: samples-operator-tls
       containers:
       - name: cluster-samples-operator
         image: quay.io/openshift/origin-cluster-samples-operator:latest
@@ -41,6 +46,9 @@ spec:
           requests:
             cpu: 10m
         imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: samples-operator-tls
+          mountPath: /etc/secrets
         env:
           - name: WATCH_NAMESPACE
             valueFrom:
@@ -56,3 +64,18 @@ spec:
             value: quay.io/openshift/origin-jenkins-agent-nodejs:latest
           - name: IMAGE_AGENT_MAVEN
             value: quay.io/openshift/origin-jenkins-agent-maven:latest
+      - name: cluster-samples-operator-watch
+        image: quay.io/openshift/origin-cluster-samples-operator:latest
+        command:
+        - cluster-samples-operator-watch
+        - file-watcher-watchdog
+        args:
+        - --namespace=openshift-cluster-samples-operator
+        - --process-name=cluster-samples-operator
+        - --termination-grace-period=30s
+        - --files=/etc/secrets/tls.crt,/etc/secrets/tls.key
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 10m
+

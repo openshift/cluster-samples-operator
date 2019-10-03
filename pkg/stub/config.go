@@ -6,6 +6,7 @@ import (
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
 	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -185,6 +186,7 @@ func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 				h.crdwrapper.UpdateStatus(cfg, dbg)
 				return err
 			}
+			metrics.ClearStreams()
 			err = h.processFiles(dir, files, cfg)
 			if err != nil {
 				cfg = h.refetchCfgMinimizeConflicts(cfg)
@@ -220,6 +222,11 @@ func (h *Handler) processError(opcfg *v1.Config, ctype v1.ConfigConditionType, c
 		status.Status = cstatus
 		status.Message = log
 		opcfg.ConditionUpdate(status)
+	}
+
+	switch ctype {
+	case v1.ConfigurationValid:
+		metrics.ConfigInvalid(true)
 	}
 
 	// return original error
@@ -338,6 +345,8 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		now := kapis.Now()
 		cfgvalid.LastTransitionTime = now
 		cfgvalid.LastUpdateTime = now
+		cfgvalid.Status = corev1.ConditionTrue
+		metrics.ConfigInvalid(false)
 		cfg.ConditionUpdate(cfgvalid)
 		return true, false, nil
 	}

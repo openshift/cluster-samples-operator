@@ -36,6 +36,8 @@ import (
 	operatorsv1api "github.com/openshift/api/operator/v1"
 	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/cache"
+	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
+	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 
 	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samples/v1"
@@ -50,11 +52,7 @@ const (
 )
 
 func NewSamplesOperatorHandler(kubeconfig *restclient.Config,
-	configLister configv1lister.ConfigLister,
-	streamLister imagev1lister.ImageStreamNamespaceLister,
-	templateLister templatev1lister.TemplateNamespaceLister,
-	openshiftNamespaceSecretLister corev1lister.SecretNamespaceLister,
-	configNamespaceSecretLister corev1lister.SecretNamespaceLister) (*Handler, error) {
+	listers *sampopclient.Listers) (*Handler, error) {
 	h := &Handler{}
 
 	h.initter = &defaultInClusterInitter{}
@@ -66,23 +64,23 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config,
 		return nil, err
 	}
 	crdWrapper.client = client.Configs()
-	crdWrapper.lister = configLister
+	crdWrapper.lister = listers.Config
 
 	h.crdwrapper = crdWrapper
 
-	h.crdlister = configLister
-	h.streamlister = streamLister
-	h.tplstore = templateLister
-	h.opshiftsecretlister = openshiftNamespaceSecretLister
-	h.cfgsecretlister = configNamespaceSecretLister
+	h.crdlister = listers.Config
+	h.streamlister = listers.ImageStreams
+	h.tplstore = listers.Templates
+	h.opshiftsecretlister = listers.OpenShiftNamespaceSecrets
+	h.cfgsecretlister = listers.ConfigNamespaceSecrets
 
 	h.Fileimagegetter = &DefaultImageStreamFromFileGetter{}
 	h.Filetemplategetter = &DefaultTemplateFromFileGetter{}
 	h.Filefinder = &DefaultResourceFileLister{}
 
-	h.imageclientwrapper = &defaultImageStreamClientWrapper{h: h, lister: streamLister}
-	h.templateclientwrapper = &defaultTemplateClientWrapper{h: h, lister: templateLister}
-	h.secretclientwrapper = &defaultSecretClientWrapper{coreclient: h.coreclient, opnshftlister: openshiftNamespaceSecretLister, cfglister: configNamespaceSecretLister}
+	h.imageclientwrapper = &defaultImageStreamClientWrapper{h: h, lister: listers.ImageStreams}
+	h.templateclientwrapper = &defaultTemplateClientWrapper{h: h, lister: listers.Templates}
+	h.secretclientwrapper = &defaultSecretClientWrapper{coreclient: h.coreclient, opnshftlister: listers.OpenShiftNamespaceSecrets, cfglister: listers.ConfigNamespaceSecrets}
 	h.cvowrapper = operatorstatus.NewClusterOperatorHandler(h.configclient)
 
 	h.skippedImagestreams = make(map[string]bool)
@@ -95,6 +93,8 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config,
 
 	h.mapsMutex = sync.Mutex{}
 	h.version = os.Getenv("RELEASE_VERSION")
+
+	metrics.InitializeMetricsCollector(listers)
 
 	return h, nil
 }
@@ -120,6 +120,7 @@ type Handler struct {
 	tplstore            templatev1lister.TemplateNamespaceLister
 	opshiftsecretlister corev1lister.SecretNamespaceLister
 	cfgsecretlister     corev1lister.SecretNamespaceLister
+	opersecretlister    corev1lister.SecretNamespaceLister
 
 	Fileimagegetter    ImageStreamFromFileGetter
 	Filetemplategetter TemplateFromFileGetter
@@ -179,7 +180,8 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 	// on pod restarts samples watch events come in before the first
 	// Config event, or we might not get an event at all if there were no changes,
 	// so build list here
-	h.buildFileMaps(cfg, false)
+	force := metrics.StreamsEmpty()
+	h.buildFileMaps(cfg, force)
 
 	// make sure skip filter list is ready
 	h.buildSkipFilters(cfg)
@@ -247,6 +249,14 @@ func (h *Handler) GoodConditionUpdate(cfg *v1.Config, newStatus corev1.Condition
 		condition.Message = ""
 		condition.Reason = ""
 		cfg.ConditionUpdate(condition)
+	}
+	if conditionType == v1.ConfigurationValid {
+		switch newStatus {
+		case corev1.ConditionTrue:
+			metrics.ConfigInvalid(false)
+		default:
+			metrics.ConfigInvalid(true)
+		}
 	}
 }
 
@@ -623,7 +633,8 @@ func (h *Handler) Handle(event v1.Event) error {
 
 				// in case this is a bring up after initial install, we take a pass
 				// and see if any samples were deleted while samples operator was down
-				h.buildFileMaps(cfg, false)
+				force := metrics.StreamsEmpty()
+				h.buildFileMaps(cfg, force)
 				// passing in false means if the samples is present, we leave it alone
 				_, err = h.createSamples(cfg, false, registryChanged, unskippedStreams, unskippedTemplates)
 				return err

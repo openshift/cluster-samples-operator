@@ -16,6 +16,7 @@ import (
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
 	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 )
 
 const (
@@ -89,6 +90,11 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 		errs = append(errs, err)
 		logrus.Warningf("error occurred while attempting to set degraded condition: %s", err.Error())
 	}
+	flagForMetric := false
+	if degraded == configv1.ConditionTrue {
+		flagForMetric = true
+	}
+	metrics.Degraded(flagForMetric)
 
 	available, reasonForAvailable, msgForAvailable := cfg.ClusterOperatorStatusAvailableCondition()
 	// if we're setting the operator status to available, also set the operator version
@@ -195,7 +201,7 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 
 		state.Status.RelatedObjects = []configv1.ObjectReference{
 			{Group: v1.GroupName, Resource: "configs", Name: "cluster"},
-			{Resource: "namespaces", Name: "openshift-cluster-samples-operator"},
+			{Resource: "namespaces", Name: v1.OperatorNamespace},
 			{Resource: "namespaces", Name: "openshift"},
 		}
 

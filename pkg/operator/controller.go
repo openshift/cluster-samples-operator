@@ -44,21 +44,21 @@ const (
 type Controller struct {
 	restconfig *restclient.Config
 	cvowrapper *operatorstatus.ClusterOperatorHandler
-	//generator  *resource.Generator
+
 	crWorkqueue    workqueue.RateLimitingInterface
 	osSecWorkqueue workqueue.RateLimitingInterface
-	opSecWorkqueue workqueue.RateLimitingInterface
+	ocSecWorkqueue workqueue.RateLimitingInterface
 	isWorkqueue    workqueue.RateLimitingInterface
 	tWorkqueue     workqueue.RateLimitingInterface
 
 	crInformer    cache.SharedIndexInformer
 	osSecInformer cache.SharedIndexInformer
-	opSecInformer cache.SharedIndexInformer
+	ocSecInformer cache.SharedIndexInformer
 	isInformer    cache.SharedIndexInformer
 	tInformer     cache.SharedIndexInformer
 
 	kubeOSNSInformerFactory kubeinformers.SharedInformerFactory
-	kubeOPNSInformerFactory kubeinformers.SharedInformerFactory
+	kubeOCNSInformerFactory kubeinformers.SharedInformerFactory
 	imageInformerFactory    imageinformers.SharedInformerFactory
 	templateInformerFactory templateinformers.SharedInformerFactory
 	sampopInformerFactory   sampopinformers.SharedInformerFactory
@@ -84,7 +84,7 @@ func NewController() (*Controller, error) {
 		cvowrapper:     operatorstatus.NewClusterOperatorHandler(operatorClient),
 		crWorkqueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "samplesconfig-changes"),
 		osSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openshift-secret-changes"),
-		opSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openshift-config-namespace-secret-changes"),
+		ocSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openshift-config-namespace-secret-changes"),
 		isWorkqueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "imagestream-changes"),
 		tWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "template-changes"),
 		listers:        listers,
@@ -114,7 +114,7 @@ func NewController() (*Controller, error) {
 	}
 
 	c.kubeOSNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, "openshift", nil)
-	c.kubeOPNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, "openshift-config", nil)
+	c.kubeOCNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, "openshift-config", nil)
 	//TODO - eventually a k8s go-client deps bump will lead to the form below, similar to the image registry operator's kubeinformer initialization,
 	// and similar to what is available with the openshift go-client for imagestreams and templates
 	//kubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncDuration, kubeinformers.WithNamespace("kube-system"))
@@ -126,9 +126,9 @@ func NewController() (*Controller, error) {
 	c.osSecInformer.AddEventHandler(c.osSecretInformerEventHandler())
 	c.listers.OpenShiftNamespaceSecrets = c.kubeOSNSInformerFactory.Core().V1().Secrets().Lister().Secrets("openshift")
 
-	c.opSecInformer = c.kubeOPNSInformerFactory.Core().V1().Secrets().Informer()
-	c.opSecInformer.AddEventHandler(c.opSecretInformerEventHandler())
-	c.listers.OperatorNamespaceSecrets = c.kubeOPNSInformerFactory.Core().V1().Secrets().Lister().Secrets("openshift-config")
+	c.ocSecInformer = c.kubeOCNSInformerFactory.Core().V1().Secrets().Informer()
+	c.ocSecInformer.AddEventHandler(c.ocSecretInformerEventHandler())
+	c.listers.ConfigNamespaceSecrets = c.kubeOCNSInformerFactory.Core().V1().Secrets().Lister().Secrets("openshift-config")
 
 	c.isInformer = c.imageInformerFactory.Image().V1().ImageStreams().Informer()
 	c.isInformer.AddEventHandler(c.imagestreamInformerEventHandler())
@@ -143,11 +143,7 @@ func NewController() (*Controller, error) {
 	c.listers.Config = c.sampopInformerFactory.Samples().V1().Configs().Lister()
 
 	c.handlerStub, err = stub.NewSamplesOperatorHandler(kubeconfig,
-		c.listers.Config,
-		c.listers.ImageStreams,
-		c.listers.Templates,
-		c.listers.OpenShiftNamespaceSecrets,
-		c.listers.OperatorNamespaceSecrets)
+		c.listers)
 	if err != nil {
 		return nil, err
 	}
@@ -158,18 +154,18 @@ func NewController() (*Controller, error) {
 func (c *Controller) Run(stopCh <-chan struct{}) error {
 	defer c.crWorkqueue.ShutDown()
 	defer c.osSecWorkqueue.ShutDown()
-	defer c.opSecWorkqueue.ShutDown()
+	defer c.ocSecWorkqueue.ShutDown()
 	defer c.isWorkqueue.ShutDown()
 	defer c.tWorkqueue.ShutDown()
 
 	c.kubeOSNSInformerFactory.Start(stopCh)
-	c.kubeOPNSInformerFactory.Start(stopCh)
+	c.kubeOCNSInformerFactory.Start(stopCh)
 	c.imageInformerFactory.Start(stopCh)
 	c.templateInformerFactory.Start(stopCh)
 	c.sampopInformerFactory.Start(stopCh)
 
 	logrus.Println("waiting for informer caches to sync")
-	if !cache.WaitForCacheSync(stopCh, c.osSecInformer.HasSynced, c.opSecInformer.HasSynced,
+	if !cache.WaitForCacheSync(stopCh, c.osSecInformer.HasSynced, c.ocSecInformer.HasSynced,
 		c.isInformer.HasSynced, c.tInformer.HasSynced, c.crInformer.HasSynced) {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
@@ -186,12 +182,12 @@ func (c *Controller) Run(stopCh <-chan struct{}) error {
 		getter:    &osSecretGetter{},
 	}
 	go wait.Until(osSecQueueWorker.workqueueProcessor, time.Second, stopCh)
-	opSecQueueWorker := queueWorker{
+	ocSecQueueWorker := queueWorker{
 		c:         c,
-		workQueue: c.opSecWorkqueue,
-		getter:    &opSecretGetter{},
+		workQueue: c.ocSecWorkqueue,
+		getter:    &ocSecretGetter{},
 	}
-	go wait.Until(opSecQueueWorker.workqueueProcessor, time.Second, stopCh)
+	go wait.Until(ocSecQueueWorker.workqueueProcessor, time.Second, stopCh)
 	isQueueWorker := queueWorker{
 		c:         c,
 		workQueue: c.isWorkqueue,
@@ -234,10 +230,10 @@ func (g *osSecretGetter) Get(c *Controller, key string) (runtime.Object, error) 
 	return c.listers.OpenShiftNamespaceSecrets.Get(key)
 }
 
-type opSecretGetter struct{}
+type ocSecretGetter struct{}
 
-func (g *opSecretGetter) Get(c *Controller, key string) (runtime.Object, error) {
-	return c.listers.OperatorNamespaceSecrets.Get(key)
+func (g *ocSecretGetter) Get(c *Controller, key string) (runtime.Object, error) {
+	return c.listers.ConfigNamespaceSecrets.Get(key)
 }
 
 type isGetter struct{}
@@ -423,8 +419,8 @@ func (c *Controller) osSecretInformerEventHandler() cache.ResourceEventHandlerFu
 	return c.commonInformerEventHandler(&secretQueueKeyGen{}, c.osSecWorkqueue)
 }
 
-func (c *Controller) opSecretInformerEventHandler() cache.ResourceEventHandlerFuncs {
-	return c.commonInformerEventHandler(&secretQueueKeyGen{}, c.opSecWorkqueue)
+func (c *Controller) ocSecretInformerEventHandler() cache.ResourceEventHandlerFuncs {
+	return c.commonInformerEventHandler(&secretQueueKeyGen{}, c.ocSecWorkqueue)
 }
 
 func (c *Controller) imagestreamInformerEventHandler() cache.ResourceEventHandlerFuncs {

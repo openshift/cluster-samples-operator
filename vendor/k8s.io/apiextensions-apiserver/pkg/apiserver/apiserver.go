@@ -30,6 +30,7 @@ import (
 	_ "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
 	_ "k8s.io/apiextensions-apiserver/pkg/client/informers/internalversion"
 	internalinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/internalversion"
+	"k8s.io/apiextensions-apiserver/pkg/controller/apiapproval"
 	"k8s.io/apiextensions-apiserver/pkg/controller/establish"
 	"k8s.io/apiextensions-apiserver/pkg/controller/finalizer"
 	openapicontroller "k8s.io/apiextensions-apiserver/pkg/controller/openapi"
@@ -191,6 +192,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		c.ExtraConfig.AuthResolverWrapper,
 		c.ExtraConfig.MasterCount,
 		s.GenericAPIServer.Authorizer,
+		c.GenericConfig.RequestTimeout,
 	)
 	if err != nil {
 		return nil, err
@@ -200,6 +202,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 
 	crdController := NewDiscoveryController(s.Informers.Apiextensions().InternalVersion().CustomResourceDefinitions(), versionDiscoveryHandler, groupDiscoveryHandler)
 	namingController := status.NewNamingConditionController(s.Informers.Apiextensions().InternalVersion().CustomResourceDefinitions(), crdClient.Apiextensions())
+	apiApprovalController := apiapproval.NewKubernetesAPIApprovalPolicyConformantConditionController(s.Informers.Apiextensions().InternalVersion().CustomResourceDefinitions(), crdClient.Apiextensions())
 	finalizingController := finalizer.NewCRDFinalizer(
 		s.Informers.Apiextensions().InternalVersion().CustomResourceDefinitions(),
 		crdClient.Apiextensions(),
@@ -222,6 +225,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		go crdController.Run(context.StopCh)
 		go namingController.Run(context.StopCh)
 		go establishingController.Run(context.StopCh)
+		go apiApprovalController.Run(5, context.StopCh)
 		go finalizingController.Run(5, context.StopCh)
 		return nil
 	})
