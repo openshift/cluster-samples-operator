@@ -11,6 +11,7 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	imagev1lister "github.com/openshift/client-go/image/listers/image/v1"
 	templatev1lister "github.com/openshift/client-go/template/listers/template/v1"
 	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
@@ -33,6 +34,7 @@ type ImageStreamClientWrapper interface {
 	Update(is *imagev1.ImageStream) (*imagev1.ImageStream, error)
 	Delete(name string, opts *metav1.DeleteOptions) error
 	Watch() (watch.Interface, error)
+	ImageStreamImports(namespace string) imagev1client.ImageStreamImportInterface
 }
 
 type defaultImageStreamClientWrapper struct {
@@ -63,6 +65,10 @@ func (g *defaultImageStreamClientWrapper) Delete(name string, opts *metav1.Delet
 func (g *defaultImageStreamClientWrapper) Watch() (watch.Interface, error) {
 	opts := metav1.ListOptions{}
 	return g.h.imageclient.ImageStreams("openshift").Watch(opts)
+}
+
+func (g *defaultImageStreamClientWrapper) ImageStreamImports(namespace string) imagev1client.ImageStreamImportInterface {
+	return g.h.imageclient.ImageStreamImports(namespace)
 }
 
 type TemplateClientWrapper interface {
