@@ -3,6 +3,7 @@ package stub
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
@@ -382,13 +383,23 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 				if mostRecentErrorGeneration > 0 && mostRecentErrorGeneration >= latestGeneration {
 					logrus.Warningf("Image import for imagestream %s tag %s generation %v failed with detailed message %s", is.Name, statusTag.Tag, mostRecentErrorGeneration, message)
 					anyErrors = true
-					// add this imagestream to the Reason field
-					if !cfg.NameInReason(importError.Reason, is.Name) {
-						now := kapis.Now()
-						importError.Reason = importError.Reason + is.Name + " "
-						importError.Message = importError.Message + "<imagestream/" + is.Name + ">" + message + "<imagestream/" + is.Name + ">"
-						importError.Status = corev1.ConditionTrue
-						importError.LastTransitionTime = now
+					// add this imagestream to the Reason field;
+					// we don't want to initiate imports repeatedly, but we do want to retry periodically as part
+					// of relist
+					now := kapis.Now()
+					// a little bit less than the 15 minute relist interval
+					tenMinutesAgo := now.Time.Add(-10 * time.Minute)
+					if !cfg.NameInReason(importError.Reason, is.Name) ||
+						importError.LastUpdateTime.Time.Before(tenMinutesAgo){
+						if !cfg.NameInReason(importError.Reason, is.Name) {
+							importError.Reason = importError.Reason + is.Name + " "
+							importError.Message = importError.Message + "<imagestream/" + is.Name + ">" + message + "<imagestream/" + is.Name + ">"
+						}
+						if importError.Status != corev1.ConditionTrue {
+							importError.Status = corev1.ConditionTrue
+							importError.LastTransitionTime = now
+						}
+						// we always bump last update here as a signal that another import attempt is happening
 						importError.LastUpdateTime = now
 						cfg.ConditionUpdate(importError)
 						anyConditionUpdate = true
@@ -401,7 +412,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 						if imgImport == nil {
 							break
 						}
-						imgImport, err = h.imageclient.ImageStreamImports("openshift").Create(imgImport)
+						imgImport, err = h.imageclientwrapper.ImageStreamImports("openshift").Create(imgImport)
 						if err != nil {
 							logrus.Warningf("attempted to initiate an imagestreamimport retry for imagestream/tag %s/%s but got err %v; simply moving on", is.Name, statusTag.Tag, err)
 							break
@@ -511,6 +522,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 	if cfg.NameInReason(importError.Reason, is.Name) && !anyErrors {
 		logrus.Printf("There are no image import errors for %s", is.Name)
 		h.clearStreamFromImportError(is.Name, importError, cfg)
+		anyConditionUpdate = true
 	}
 
 	return cfg, nonMatchDetail, anyConditionUpdate

@@ -24,6 +24,8 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	operatorsv1api "github.com/openshift/api/operator/v1"
 	templatev1 "github.com/openshift/api/template/v1"
+
+	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 )
 
 const (
@@ -449,6 +451,94 @@ func TestImageStreamEvent(t *testing.T) {
 	}
 	h.processImageStreamWatchEvent(is, false)
 	validate(true, err, "", cfg, conditions, statuses, t)
+}
+
+func TestImageStreamErrorRetry(t *testing.T) {
+	h, cfg, event := setup()
+	processCred(&h, cfg, t)
+	mimic(&h, x86OCPContentRootDir)
+	err := h.Handle(event)
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	validate(true, err, "", cfg, conditions, statuses, t)
+	// expedite the stream events coming in
+	cache.ClearUpsertsCache()
+
+	tagVersion := int64(1)
+	is := &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+			Annotations: map[string]string{
+				v1.SamplesVersionAnnotation: h.version,
+			},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			Tags: []imagev1.TagReference{
+				{
+					Name:       "foo",
+					Generation: &tagVersion,
+					From: &corev1.ObjectReference{
+						Kind: "DockerImage",
+						Name: "foofoo",
+					},
+				},
+			},
+		},
+		Status: imagev1.ImageStreamStatus{
+			Tags: []imagev1.NamedTagEventList{
+				{
+					Tag: "foo",
+					Conditions: []imagev1.TagEventCondition{
+						{
+							Generation: tagVersion,
+							Status: corev1.ConditionFalse,
+							Message: "failed import",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	h.processImageStreamWatchEvent(is, false)
+
+	if !cfg.ConditionTrue(v1.ImportImageErrorsExist) {
+		t.Fatalf("Import Error Condition not true: %#v", cfg)
+	}
+
+	initialImportErrorLastUpdateTime := cfg.Condition(v1.ImportImageErrorsExist).LastUpdateTime
+	h.processImageStreamWatchEvent(is, false)
+	// refetch to see if updated
+	importError := cfg.Condition(v1.ImportImageErrorsExist)
+	if !importError.LastUpdateTime.Equal(&initialImportErrorLastUpdateTime) {
+		t.Fatalf("Import Error Condition updated too soon: old update time %s new update time %s", initialImportErrorLastUpdateTime.String(), importError.LastUpdateTime.String())
+	}
+
+	// now let's push back 15 minutes and update
+	importError.LastUpdateTime.Time = metav1.Now().Add(-15 * time.Minute)
+	cfg.ConditionUpdate(importError)
+	// save a copy for compare
+	fifteenMinutesAgo := importError.LastUpdateTime
+
+	h.processImageStreamWatchEvent(is, false)
+
+	// refetch and make sure it has changed
+	if cfg.Condition(v1.ImportImageErrorsExist).LastUpdateTime.Equal(&fifteenMinutesAgo) {
+		t.Fatalf("Import Error Condition should have been updated: old update time %s new update time %s", initialImportErrorLastUpdateTime.String(), cfg.Condition(v1.ImportImageErrorsExist).LastUpdateTime.String())
+	}
+
+	tagVersion = int64(2)
+	is.Status.Tags[0].Conditions[0] = imagev1.TagEventCondition{}
+	is.Status.Tags[0].Items = []imagev1.TagEvent{
+		{
+			Generation: tagVersion,
+		},
+	}
+
+	h.processImageStreamWatchEvent(is, false)
+
+	if cfg.ConditionTrue(v1.ImportImageErrorsExist) {
+		t.Fatalf("Import Error Condition not true: %#v", cfg)
+	}
 }
 
 func TestTemplateEvent(t *testing.T) {
@@ -1380,6 +1470,16 @@ func (f *fakeImageStreamClientWrapper) Delete(name string, opts *metav1.DeleteOp
 
 func (f *fakeImageStreamClientWrapper) Watch() (watch.Interface, error) {
 	return nil, nil
+}
+
+func (f *fakeImageStreamClientWrapper) ImageStreamImports(namespace string) imagev1client.ImageStreamImportInterface {
+	return &fakeImageStreamImporter{}
+}
+
+type fakeImageStreamImporter struct {}
+
+func (f *fakeImageStreamImporter) Create(*imagev1.ImageStreamImport) (*imagev1.ImageStreamImport, error) {
+	return &imagev1.ImageStreamImport{}, nil
 }
 
 type fakeTemplateClientWrapper struct {
