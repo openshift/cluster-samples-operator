@@ -28,3 +28,5 @@ tar xvf t.tar
 git add operator
 rm t.tar
 rm -rf library-master
+
+echo "REMEMBER TO PATCH THE DATAGRID TEMPLATES TO apps/v1 FOR THEIR StatefulSets INSTANCES"

@@ -1,6 +1,8 @@
 
 cluster-samples-operator
 
+.idea
+
 # Temporary Build Files
 tmp/_output
 tmp/_test
