@@ -334,7 +334,7 @@ const (
 	installedButNotManaged = "Samples installation was previously successful at %s but the samples operator is now %s"
 	moving                 = "Samples processing to %s"
 	removing               = "Deleting samples at %s"
-	doneImportsFailed      = "Samples installed at %s, with image import failures for these imagestreams: %s"
+	doneImportsFailed      = "Samples installed at %s, with image import failures for these imagestreams: %s; last import attempt %s"
 	failedImageImports     = "FailedImageImports"
 	currentlyNotManaged    = "Currently%s"
 )
@@ -421,7 +421,7 @@ func (s *Config) ClusterOperatorStatusDegradedCondition() (configv1.ConditionSta
 		now := metav1.Now()
 		twoHrsAgo := now.Time.Add(-2 * time.Hour)
 		if impErrCon.LastTransitionTime.Time.Before(twoHrsAgo) {
-			msg := fmt.Sprintf(doneImportsFailed, s.Status.Version, impErrCon.Reason)
+			msg := fmt.Sprintf(doneImportsFailed, s.Status.Version, impErrCon.Reason, impErrCon.LastUpdateTime.String())
 			return trueRC, failedImageImports, msg
 		}
 
@@ -471,7 +471,7 @@ func (s *Config) ClusterOperatorStatusProgressingCondition(degradedState string,
 		reason := ""
 		if s.ConditionTrue(ImportImageErrorsExist) {
 			importErrors := s.Condition(ImportImageErrorsExist)
-			msg = fmt.Sprintf(doneImportsFailed, s.Status.Version, importErrors.Reason)
+			msg = fmt.Sprintf(doneImportsFailed, s.Status.Version, importErrors.Reason, importErrors.LastUpdateTime.String())
 			reason = failedImageImports
 		}
 		return configv1.ConditionFalse, reason, msg
