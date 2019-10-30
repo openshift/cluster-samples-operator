@@ -389,7 +389,7 @@ k8s.io/apiserver/pkg/storage/etcd3
 k8s.io/apiserver/pkg/admission/plugin/webhook/config/apis/webhookadmission
 k8s.io/apiserver/pkg/admission/plugin/webhook/config/apis/webhookadmission/v1alpha1
 k8s.io/apiserver/pkg/storage/etcd
-# k8s.io/client-go v11.0.0+incompatible
+# k8s.io/client-go v11.0.0+incompatible => github.com/openshift/kubernetes-client-go v11.0.1-0.20190701222832-70952d66b5d1+incompatible
 k8s.io/client-go/plugin/pkg/client/auth/gcp
 k8s.io/client-go/listers/core/v1
 k8s.io/client-go/rest

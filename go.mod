@@ -46,3 +46,5 @@ require (
 	k8s.io/component-base v0.0.0-20190314000054-4a91899592f4 // indirect
 	k8s.io/utils v0.0.0-20190221042446-c2654d5206da // indirect
 )
+
+replace k8s.io/client-go => github.com/openshift/kubernetes-client-go v11.0.1-0.20190701222832-70952d66b5d1+incompatible
