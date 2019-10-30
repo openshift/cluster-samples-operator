@@ -12,10 +12,6 @@ require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/emicklei/go-restful v2.11.1+incompatible // indirect
 	github.com/evanphx/json-patch v4.5.0+incompatible // indirect
-	github.com/go-openapi/jsonpointer v0.19.0 // indirect
-	github.com/go-openapi/jsonreference v0.19.0 // indirect
-	github.com/go-openapi/spec v0.17.2 // indirect
-	github.com/go-openapi/swag v0.17.2 // indirect
 	github.com/golang/groupcache v0.0.0-20191027212112-611e8accdfc9 // indirect
 	github.com/google/btree v1.0.0 // indirect
 	github.com/googleapis/gnostic v0.3.1 // indirect
@@ -28,6 +24,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jonboulle/clockwork v0.1.0 // indirect
 	github.com/json-iterator/go v1.1.8 // indirect
+	github.com/jteeuwen/go-bindata v3.0.7+incompatible
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/onsi/ginkgo v1.10.2 // indirect
 	github.com/openshift/api v0.0.0-20190904155310-a25bb2adc83e
@@ -53,8 +50,8 @@ require (
 	k8s.io/apimachinery v0.0.0-20191025225532-af6325b3a843
 	k8s.io/apiserver v0.0.0-20190313205120-8b27c41bdbb1 // indirect
 	k8s.io/client-go v11.0.0+incompatible
+	k8s.io/code-generator v0.0.0-20191029223907-9f431a56fdbc
 	k8s.io/component-base v0.0.0-20190314000054-4a91899592f4 // indirect
-	k8s.io/klog v1.0.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20190918143330-0270cf2f1c1d // indirect
 	k8s.io/utils v0.0.0-20190221042446-c2654d5206da // indirect
 	sigs.k8s.io/structured-merge-diff v0.0.0-20191023203907-336d3378ca53 // indirect
