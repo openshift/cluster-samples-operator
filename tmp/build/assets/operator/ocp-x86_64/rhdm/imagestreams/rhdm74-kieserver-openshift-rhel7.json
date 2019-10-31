@@ -3,24 +3,24 @@
     "kind": "ImageStream",
     "metadata": {
         "annotations": {
-            "openshift.io/display-name": "Red Hat Decision Manager Decision Central 7.3",
+            "openshift.io/display-name": "Red Hat Decision Manager KIE Server 7.4",
             "openshift.io/provider-display-name": "Red Hat, Inc."
         },
-        "name": "rhdm73-decisioncentral-openshift"
+        "name": "rhdm74-kieserver-openshift"
     },
     "spec": {
         "tags": [
             {
                 "annotations": {
-                    "description": "Red Hat Decision Manager 7.3 - Decision Central image.",
+                    "description": "Red Hat Decision Manager 7.4 - KIE Server image.",
                     "iconClass": "icon-jboss",
-                    "supports": "rhdm:7.3",
+                    "supports": "rhdm:7.4",
                     "tags": "rhdm",
                     "version": "1.0"
                 },
                 "from": {
                     "kind": "DockerImage",
-                    "name": "registry.redhat.io/rhdm-7/rhdm73-decisioncentral-openshift:1.0"
+                    "name": "registry.redhat.io/rhdm-7/rhdm74-kieserver-openshift:1.0"
                 },
                 "name": "1.0",
                 "referencePolicy": {
@@ -29,15 +29,15 @@
             },
             {
                 "annotations": {
-                    "description": "Red Hat Decision Manager 7.3 - Decision Central image.",
+                    "description": "Red Hat Decision Manager 7.4 - KIE Server image.",
                     "iconClass": "icon-jboss",
-                    "supports": "rhdm:7.3",
+                    "supports": "rhdm:7.4",
                     "tags": "rhdm",
                     "version": "1.1"
                 },
                 "from": {
                     "kind": "DockerImage",
-                    "name": "registry.redhat.io/rhdm-7/rhdm73-decisioncentral-openshift:1.1"
+                    "name": "registry.redhat.io/rhdm-7/rhdm74-kieserver-openshift:1.1"
                 },
                 "name": "1.1",
                 "referencePolicy": {

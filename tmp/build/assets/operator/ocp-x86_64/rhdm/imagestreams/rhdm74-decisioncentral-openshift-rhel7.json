@@ -3,24 +3,24 @@
     "kind": "ImageStream",
     "metadata": {
         "annotations": {
-            "openshift.io/display-name": "Red Hat Process Automation Manager Business Central 7.3",
+            "openshift.io/display-name": "Red Hat Decision Manager Decision Central 7.4",
             "openshift.io/provider-display-name": "Red Hat, Inc."
         },
-        "name": "rhpam73-businesscentral-openshift"
+        "name": "rhdm74-decisioncentral-openshift"
     },
     "spec": {
         "tags": [
             {
                 "annotations": {
-                    "description": "Red Hat Process Automation Manager 7.3 - Business Central image.",
+                    "description": "Red Hat Decision Manager 7.4 - Decision Central image.",
                     "iconClass": "icon-jboss",
-                    "supports": "rhpam:7.3",
-                    "tags": "rhpam",
+                    "supports": "rhdm:7.4",
+                    "tags": "rhdm",
                     "version": "1.0"
                 },
                 "from": {
                     "kind": "DockerImage",
-                    "name": "registry.redhat.io/rhpam-7/rhpam73-businesscentral-openshift:1.0"
+                    "name": "registry.redhat.io/rhdm-7/rhdm74-decisioncentral-openshift:1.0"
                 },
                 "name": "1.0",
                 "referencePolicy": {
@@ -29,15 +29,15 @@
             },
             {
                 "annotations": {
-                    "description": "Red Hat Process Automation Manager 7.3 - Business Central image.",
+                    "description": "Red Hat Decision Manager 7.4 - Decision Central image.",
                     "iconClass": "icon-jboss",
-                    "supports": "rhpam:7.3",
-                    "tags": "rhpam",
+                    "supports": "rhdm:7.4",
+                    "tags": "rhdm",
                     "version": "1.1"
                 },
                 "from": {
                     "kind": "DockerImage",
-                    "name": "registry.redhat.io/rhpam-7/rhpam73-businesscentral-openshift:1.1"
+                    "name": "registry.redhat.io/rhdm-7/rhdm74-decisioncentral-openshift:1.1"
                 },
                 "name": "1.1",
                 "referencePolicy": {
