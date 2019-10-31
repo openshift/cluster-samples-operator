@@ -27,6 +27,7 @@ require (
 	github.com/jteeuwen/go-bindata v3.0.7+incompatible
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/onsi/ginkgo v1.10.2 // indirect
+	github.com/onsi/gomega v1.7.0 // indirect
 	github.com/openshift/api v0.0.0-20190904155310-a25bb2adc83e
 	github.com/openshift/client-go v0.0.0-20190813201236-5a5508328169
 	github.com/openshift/library-go v0.0.0-20190904120025-7d4acc018c61
@@ -43,11 +44,12 @@ require (
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	go.etcd.io/bbolt v1.3.3 // indirect
 	go.uber.org/zap v1.12.0 // indirect
+	golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456 // indirect
 	golang.org/x/time v0.0.0-20161028155119-f51c12702a4d // indirect
 	google.golang.org/appengine v1.6.2 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/api v0.0.0-20191016110408-35e52d86657a
-	k8s.io/apimachinery v0.0.0-20191025225532-af6325b3a843
+	k8s.io/apimachinery v0.0.0-20191004115801-a2eda9f80ab8
 	k8s.io/apiserver v0.0.0-20190313205120-8b27c41bdbb1 // indirect
 	k8s.io/client-go v11.0.0+incompatible
 	k8s.io/code-generator v0.0.0-20191029223907-9f431a56fdbc
