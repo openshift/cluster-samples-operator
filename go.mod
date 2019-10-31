@@ -46,7 +46,7 @@ require (
 	golang.org/x/time v0.0.0-20161028155119-f51c12702a4d // indirect
 	google.golang.org/appengine v1.6.2 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	k8s.io/api v0.0.0-20191025225708-5524a3672fbb
+	k8s.io/api v0.0.0-20191016110408-35e52d86657a
 	k8s.io/apimachinery v0.0.0-20191025225532-af6325b3a843
 	k8s.io/apiserver v0.0.0-20190313205120-8b27c41bdbb1 // indirect
 	k8s.io/client-go v11.0.0+incompatible
@@ -55,7 +55,6 @@ require (
 	k8s.io/kube-openapi v0.0.0-20190918143330-0270cf2f1c1d // indirect
 	k8s.io/utils v0.0.0-20190221042446-c2654d5206da // indirect
 	sigs.k8s.io/structured-merge-diff v0.0.0-20191023203907-336d3378ca53 // indirect
-	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
 //replace (
