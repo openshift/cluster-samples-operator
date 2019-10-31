@@ -58,11 +58,11 @@ require (
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
-replace (
-	k8s.io/api => github.com/openshift/kubernetes-api v0.0.0-20190815163222-ffaba947a5e9
-	k8s.io/apimachinery => github.com/openshift/kubernetes-apimachinery v0.0.0-20190823072306-d19092a3cc0a
-	k8s.io/apiserver => k8s.io/apiserver v0.0.0-20190313205120-8b27c41bdbb1
-	k8s.io/client-go => github.com/openshift/kubernetes-client-go v11.0.1-0.20190701222832-70952d66b5d1+incompatible
-	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20190228160746-b3a7cee44a30
-	sigs.k8s.io/structured-merge-diff => sigs.k8s.io/structured-merge-diff v0.0.0-20190302045857-e85c7b244fd2
-)
+//replace (
+//	k8s.io/api => github.com/openshift/kubernetes-api v0.0.0-20190815163222-ffaba947a5e9
+//	k8s.io/apimachinery => github.com/openshift/kubernetes-apimachinery v0.0.0-20190823072306-d19092a3cc0a
+//	k8s.io/apiserver => k8s.io/apiserver v0.0.0-20190313205120-8b27c41bdbb1
+//	k8s.io/client-go => github.com/openshift/kubernetes-client-go v11.0.1-0.20190701222832-70952d66b5d1+incompatible
+//	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20190228160746-b3a7cee44a30
+//	sigs.k8s.io/structured-merge-diff => sigs.k8s.io/structured-merge-diff v0.0.0-20190302045857-e85c7b244fd2
+//)
