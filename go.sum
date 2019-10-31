@@ -462,6 +462,7 @@ k8s.io/apiserver v0.0.0-20190313205120-8b27c41bdbb1/go.mod h1:6bqaTSOSJavUIXUtfa
 k8s.io/apiserver v0.0.0-20191016112112-5190913f932d h1:leksCBKKBrPJmW1jV4dZUvwqmVtXpKdzpHsqXfFS094=
 k8s.io/apiserver v0.0.0-20191016112112-5190913f932d/go.mod h1:7OqfAolfWxUM/jJ/HBLyE+cdaWFBUoo5Q5pHgJVj2ws=
 k8s.io/apiserver v0.0.0-20191031110436-8cb875160ee0 h1:BGkQMPpKpx07hvq9AW64gifbf+zbAh/xUbB5OYXPvQ0=
+k8s.io/client-go v0.0.0-20191016111102-bec269661e48 h1:C2XVy2z0dV94q9hSSoCuTPp1KOG7IegvbdXuz9VGxoU=
 k8s.io/client-go v0.0.0-20191016111102-bec269661e48/go.mod h1:hrwktSwYGI4JK+TJA3dMaFyyvHVi/aLarVHpbs8bgCU=
 k8s.io/client-go v11.0.0+incompatible h1:LBbX2+lOwY9flffWlJM7f1Ct8V2SRNiMRDFeiwnJo9o=
 k8s.io/client-go v11.0.0+incompatible/go.mod h1:7vJpHMYJwNQCWgzmNV+VYUl1zCObLyodBc8nIyt8L5s=
