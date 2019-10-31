@@ -237,6 +237,8 @@ github.com/openshift/kubernetes-client-go v11.0.1-0.20190701222832-70952d66b5d1+
 github.com/openshift/kubernetes-client-go v11.0.1-0.20190701222832-70952d66b5d1+incompatible/go.mod h1:FD6cp60IUiYnIZCmXQkBOZ+oYSjRaFDFvQEipo9BXTw=
 github.com/openshift/library-go v0.0.0-20190904120025-7d4acc018c61 h1:nWVo9bZwSK7z/qc+JU/nIppuHVhAFcRLKElm24ib6Ng=
 github.com/openshift/library-go v0.0.0-20190904120025-7d4acc018c61/go.mod h1:NBttNjZpWwup/nthuLbPAPSYC8Qyo+BBK5bCtFoyYjo=
+github.com/openshift/library-go v0.0.0-20191029093732-d368763acf52 h1:kR/fUOBlu5ay93brNgFppx2GuFEveP2oMTOQ6Om/o9Y=
+github.com/openshift/library-go v0.0.0-20191029093732-d368763acf52/go.mod h1:NBttNjZpWwup/nthuLbPAPSYC8Qyo+BBK5bCtFoyYjo=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/pborman/uuid v0.0.0-20150603214016-ca53cad383ca h1:dKRMHfduZ/ZqOHuYGk/0kkTIUbnyorkAfzLOp6Ts8pU=
 github.com/pborman/uuid v0.0.0-20150603214016-ca53cad383ca/go.mod h1:VyrYX9gd7irzKovcSS6BIIEwPRkP2Wm2m9ufcdFSJ34=

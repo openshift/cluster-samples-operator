@@ -51,6 +51,7 @@ require (
 replace (
 	github.com/openshift/api => github.com/openshift/api v3.9.1-0.20191028134408-abf28f93703b+incompatible
 	github.com/openshift/client-go => github.com/openshift/client-go v0.0.0-20191022152013-2823239d2298
+	github.com/openshift/library-go => github.com/openshift/library-go v0.0.0-20191029093732-d368763acf52
 	k8s.io/api => k8s.io/api v0.0.0-20191016110408-35e52d86657a
 	k8s.io/apimachinery => k8s.io/apimachinery v0.0.0-20191004115801-a2eda9f80ab8
 	k8s.io/apiserver => k8s.io/apiserver v0.0.0-20191016112112-5190913f932d
