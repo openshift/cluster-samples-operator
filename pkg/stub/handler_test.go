@@ -481,7 +481,14 @@ func TestImageStreamErrorRetry(t *testing.T) {
 						Name: "foofoo",
 					},
 				},
-			},
+				{
+					Name:       "bar",
+					Generation: &tagVersion,
+					From: &corev1.ObjectReference{
+						Kind: "DockerImage",
+						Name: "foofoo",
+					},
+				}},
 		},
 		Status: imagev1.ImageStreamStatus{
 			Tags: []imagev1.NamedTagEventList{
@@ -490,12 +497,21 @@ func TestImageStreamErrorRetry(t *testing.T) {
 					Conditions: []imagev1.TagEventCondition{
 						{
 							Generation: tagVersion,
-							Status: corev1.ConditionFalse,
-							Message: "failed import",
+							Status:     corev1.ConditionFalse,
+							Message:    "failed import",
 						},
 					},
 				},
-			},
+				{
+					Tag: "bar",
+					Conditions: []imagev1.TagEventCondition{
+						{
+							Generation: tagVersion,
+							Status:     corev1.ConditionFalse,
+							Message:    "failed import",
+						},
+					},
+				}},
 		},
 	}
 
@@ -503,6 +519,13 @@ func TestImageStreamErrorRetry(t *testing.T) {
 
 	if !cfg.ConditionTrue(v1.ImportImageErrorsExist) {
 		t.Fatalf("Import Error Condition not true: %#v", cfg)
+	}
+
+	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
+	fakeimporter := fakeisclient.ImageStreamImports("foo").(*fakeImageStreamImporter)
+
+	if fakeimporter.count != 2 {
+		t.Fatalf("incorrect amount of import calls %d", fakeimporter.count)
 	}
 
 	initialImportErrorLastUpdateTime := cfg.Condition(v1.ImportImageErrorsExist).LastUpdateTime
@@ -514,25 +537,31 @@ func TestImageStreamErrorRetry(t *testing.T) {
 	}
 
 	// now let's push back 15 minutes and update
-	importError.LastUpdateTime.Time = metav1.Now().Add(-15 * time.Minute)
+	lastUpdateTime, _ := h.imagestreamRetry[is.Name]
+	lastUpdateTime.Time = metav1.Now().Add(-15 * time.Minute)
+	h.imagestreamRetry[is.Name] = lastUpdateTime
 	cfg.ConditionUpdate(importError)
 	// save a copy for compare
-	fifteenMinutesAgo := importError.LastUpdateTime
+	fifteenMinutesAgo := lastUpdateTime
 
 	h.processImageStreamWatchEvent(is, false)
 
 	// refetch and make sure it has changed
-	if cfg.Condition(v1.ImportImageErrorsExist).LastUpdateTime.Equal(&fifteenMinutesAgo) {
+	lastUpdateTime, _ = h.imagestreamRetry[is.Name]
+	if lastUpdateTime.Equal(&fifteenMinutesAgo) {
 		t.Fatalf("Import Error Condition should have been updated: old update time %s new update time %s", initialImportErrorLastUpdateTime.String(), cfg.Condition(v1.ImportImageErrorsExist).LastUpdateTime.String())
 	}
 
 	tagVersion = int64(2)
-	is.Status.Tags[0].Conditions[0] = imagev1.TagEventCondition{}
-	is.Status.Tags[0].Items = []imagev1.TagEvent{
-		{
-			Generation: tagVersion,
-		},
+	for _, tag := range is.Status.Tags {
+		tag.Conditions[0] = imagev1.TagEventCondition{}
+		tag.Items = []imagev1.TagEvent{
+			{
+				Generation: tagVersion,
+			},
+		}
 	}
+
 
 	h.processImageStreamWatchEvent(is, false)
 
@@ -1329,6 +1358,7 @@ func NewTestHandler() Handler {
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
+	h.imagestreamRetry = make(map[string]metav1.Time)
 	h.version = TestVersion
 
 	return h
@@ -1419,11 +1449,12 @@ func (f *fakeResourceFileLister) List(dir string) ([]os.FileInfo, error) {
 }
 
 type fakeImageStreamClientWrapper struct {
-	streams      map[string]*imagev1.ImageStream
-	upsertkeys   map[string]bool
-	geterrors    map[string]error
-	upserterrors map[string]error
-	listerrors   map[string]error
+	streams                 map[string]*imagev1.ImageStream
+	upsertkeys              map[string]bool
+	geterrors               map[string]error
+	upserterrors            map[string]error
+	listerrors              map[string]error
+	fakeImageStreamImporter *fakeImageStreamImporter
 }
 
 func (f *fakeImageStreamClientWrapper) Get(name string) (*imagev1.ImageStream, error) {
@@ -1473,12 +1504,18 @@ func (f *fakeImageStreamClientWrapper) Watch() (watch.Interface, error) {
 }
 
 func (f *fakeImageStreamClientWrapper) ImageStreamImports(namespace string) imagev1client.ImageStreamImportInterface {
-	return &fakeImageStreamImporter{}
+	if f.fakeImageStreamImporter == nil {
+		f.fakeImageStreamImporter = &fakeImageStreamImporter{}
+	}
+	return f.fakeImageStreamImporter
 }
 
-type fakeImageStreamImporter struct {}
+type fakeImageStreamImporter struct {
+	count int
+}
 
 func (f *fakeImageStreamImporter) Create(*imagev1.ImageStreamImport) (*imagev1.ImageStreamImport, error) {
+	f.count++
 	return &imagev1.ImageStreamImport{}, nil
 }
 
