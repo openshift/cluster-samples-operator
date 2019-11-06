@@ -186,6 +186,8 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 	// whether we are now skipping this imagestream, or are upserting it, remove any prior errors from the import error
 	// condition; in the skip case, we don't want errors to a now skipped stream blocking availability status; in the upsert
 	// case, any errors will cause the imagestream controller to attempt another image import
+	h.mapsMutex.Lock()
+	defer h.mapsMutex.Unlock()
 	h.clearStreamFromImportError(imagestreamInOperatorImage.Name, opcfg.Condition(v1.ImportImageErrorsExist), opcfg)
 
 	if _, isok := h.skippedImagestreams[imagestreamInOperatorImage.Name]; isok {
@@ -317,6 +319,7 @@ func (h *Handler) coreUpdateDockerPullSpec(oldreg, newreg string, oldies []strin
 	return oldreg
 }
 
+// clearStreamFromImportError assumes the caller has call h.mapsMutex.Lock() and Unlock() appropriately
 func (h *Handler) clearStreamFromImportError(name string, importError *v1.ConfigCondition, cfg *v1.Config) *v1.ConfigCondition {
 	if cfg.NameInReason(importError.Reason, name) {
 		logrus.Printf("clearing imagestream %s from the import image error condition", name)
@@ -333,6 +336,7 @@ func (h *Handler) clearStreamFromImportError(name string, importError *v1.Config
 			importError.Status = corev1.ConditionFalse
 			importError.Reason = ""
 			importError.Message = ""
+			delete(h.imagestreamRetry, name)
 		} else {
 			importError.Status = corev1.ConditionTrue
 		}
@@ -351,6 +355,9 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 	importError := cfg.Condition(v1.ImportImageErrorsExist)
 	nonMatchDetail := ""
 	anyConditionUpdate := false
+	// in case we have to manipulate imagestream retry map
+	h.mapsMutex.Lock()
+	defer h.mapsMutex.Unlock()
 
 	// need to check for error conditions outside of the spec/status comparison because in an error scenario
 	// you can end up with less status tags than spec tags (especially if one tag refs another), but don't cite
@@ -360,6 +367,19 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 	if !skipped {
 		// so reaching this point means we have a prior upsert in progress, and we just want to track the status
 		logrus.Debugf("checking tag spec/status for %s spec len %d status len %d", is.Name, len(is.Spec.Tags), len(is.Status.Tags))
+
+		// get the retry time for this imagestream
+		now := kapis.Now()
+		lastRetryTime, ok := h.imagestreamRetry[is.Name]
+		retryIfNeeded := false
+		if !ok {
+			retryIfNeeded = true
+		} else {
+			// a little bit less than the 15 minute relist interval
+			tenMinutesAgo := now.Time.Add(-10 * time.Minute)
+			retryIfNeeded = lastRetryTime.Time.Before(tenMinutesAgo)
+		}
+
 
 		for _, statusTag := range is.Status.Tags {
 			// if an error occurred with the latest generation, let's give up as we are no longer "in progress"
@@ -386,11 +406,10 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 					// add this imagestream to the Reason field;
 					// we don't want to initiate imports repeatedly, but we do want to retry periodically as part
 					// of relist
-					now := kapis.Now()
-					// a little bit less than the 15 minute relist interval
-					tenMinutesAgo := now.Time.Add(-10 * time.Minute)
+
 					if !cfg.NameInReason(importError.Reason, is.Name) ||
-						importError.LastUpdateTime.Time.Before(tenMinutesAgo){
+						retryIfNeeded {
+						h.imagestreamRetry[is.Name] = now
 						if !cfg.NameInReason(importError.Reason, is.Name) {
 							importError.Reason = importError.Reason + is.Name + " "
 							importError.Message = importError.Message + "<imagestream/" + is.Name + ">" + message + "<imagestream/" + is.Name + ">"
@@ -420,7 +439,6 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 						logrus.Printf("initiated an imagestreamimport retry for imagestream/tag %s/%s", is.Name, statusTag.Tag)
 
 					}
-					break
 				}
 			}
 		}
