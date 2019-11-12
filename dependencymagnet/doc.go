@@ -9,4 +9,5 @@ import (
 	_ "github.com/openshift/crd-schema-gen/cmd/crd-schema-gen"
 	_ "github.com/openshift/library-go/alpha-build-machinery"
 	_ "k8s.io/code-generator"
+	_ "github.com/openshift/api/samples"
 )
