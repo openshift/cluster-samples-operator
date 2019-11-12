@@ -2,6 +2,7 @@ package operator
 
 import (
 	"fmt"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -25,7 +26,7 @@ import (
 	templateset "github.com/openshift/client-go/template/clientset/versioned"
 	templateinformers "github.com/openshift/client-go/template/informers/externalversions"
 
-	sampopapi "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	sampopapi "github.com/openshift/api/samples/v1"
 	sampcache "github.com/openshift/cluster-samples-operator/pkg/cache"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
@@ -253,7 +254,7 @@ func (g *tGetter) Get(c *Controller, key string) (runtime.Object, error) {
 func (c *Controller) handleWork(getter runtimeObjectGetter, o interface{}) error {
 	logrus.Debugf("handleWork key %s getter %#v", o, getter)
 
-	event := sampopapi.Event{
+	event := util.Event{
 		Object:  nil,
 		Deleted: true,
 	}

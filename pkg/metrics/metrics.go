@@ -10,8 +10,9 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 
-	configv1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	configv1 "github.com/openshift/api/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/client"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 	sampoplisters "github.com/openshift/cluster-samples-operator/pkg/generated/listers/samples/v1"
 
 	"github.com/sirupsen/logrus"
@@ -100,8 +101,8 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 		skips[skip] = true
 	}
 
-	importFailuresExist := cfg.ConditionTrue(configv1.ImportImageErrorsExist)
-	importFailures := cfg.Condition(configv1.ImportImageErrorsExist)
+	importFailuresExist := util.ConditionTrue(cfg, configv1.ImportImageErrorsExist)
+	importFailures := util.Condition(cfg, configv1.ImportImageErrorsExist)
 	importFailuresReason := importFailures.Reason
 	for _, stream := range streams {
 		_, skipped := skips[stream]
@@ -120,13 +121,13 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 		addCountGauge(ch, importsFailedDesc, stream, float64(0))
 	}
 
-	if !cfg.ConditionTrue(configv1.ConfigurationValid) {
+	if !util.ConditionTrue(cfg, configv1.ConfigurationValid) {
 		configInvalidStat.Set(1)
 	} else {
 		configInvalidStat.Set(0)
 	}
 
-	if !cfg.ConditionTrue(configv1.ImportCredentialsExist) {
+	if !util.ConditionTrue(cfg, configv1.ImportCredentialsExist) {
 		addCountGauge(ch, invalidSecretDesc, missingSecret, float64(1))
 	} else {
 		addCountGauge(ch, invalidSecretDesc, missingSecret, float64(0))

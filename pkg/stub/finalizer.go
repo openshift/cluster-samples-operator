@@ -1,6 +1,9 @@
 package stub
 
-import "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+import (
+	"github.com/openshift/api/samples/v1"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
+)
 
 func (h *Handler) AddFinalizer(cfg *v1.Config) {
 	hasFinalizer := false
@@ -27,7 +30,7 @@ func (h *Handler) RemoveFinalizer(cfg *v1.Config) {
 }
 
 func (h *Handler) NeedsFinalizing(cfg *v1.Config) bool {
-	if cfg.ConditionFalse(v1.SamplesExist) {
+	if util.ConditionFalse(cfg, v1.SamplesExist) {
 		return false
 	}
 

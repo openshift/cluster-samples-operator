@@ -14,7 +14,7 @@ import (
 	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	imagev1lister "github.com/openshift/client-go/image/listers/image/v1"
 	templatev1lister "github.com/openshift/client-go/template/listers/template/v1"
-	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/api/samples/v1"
 	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samples/v1"
 	configv1lister "github.com/openshift/cluster-samples-operator/pkg/generated/listers/samples/v1"
 	"github.com/sirupsen/logrus"

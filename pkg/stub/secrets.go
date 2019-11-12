@@ -4,8 +4,9 @@ import (
 	"fmt"
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
-	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/api/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/cache"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -112,7 +113,7 @@ func (h *Handler) WaitingForCredential(cfg *v1.Config) (bool, bool) {
 	// be added out of the gate
 	_, err := h.secretclientwrapper.Get("openshift", v1.SamplesRegistryCredentials)
 	if err != nil {
-		cred := cfg.Condition(v1.ImportCredentialsExist)
+		cred := util.Condition(cfg, v1.ImportCredentialsExist)
 		// - if import cred is false, and the message is empty, that means we have NOT registered the error, and need to do so
 		// - if cred is false, and the message is there, we can just return nil to the sdk, which "true" for the boolean return value indicates;
 		// not returning the same error multiple times to the sdk avoids additional churn; once the secret comes in, it will update the Config
@@ -124,7 +125,7 @@ func (h *Handler) WaitingForCredential(cfg *v1.Config) (bool, bool) {
 		h.processError(cfg, v1.ImportCredentialsExist, corev1.ConditionFalse, err, "%v")
 		return true, true
 	}
-	if !cfg.ConditionTrue(v1.ImportCredentialsExist) {
+	if !util.ConditionTrue(cfg, v1.ImportCredentialsExist) {
 		h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.ImportCredentialsExist)
 	}
 
@@ -133,7 +134,7 @@ func (h *Handler) WaitingForCredential(cfg *v1.Config) (bool, bool) {
 	return false, false
 }
 
-func (h *Handler) processSecretEvent(cfg *v1.Config, dockercfgSecret *corev1.Secret, event v1.Event) error {
+func (h *Handler) processSecretEvent(cfg *v1.Config, dockercfgSecret *corev1.Secret, event util.Event) error {
 	// if the secret event gets through while we are creating samples, it will
 	// lead to a conflict when updating in progress to true in the initial create
 	// loop, which can lead to an extra cycle of creates as we'll return an error there and retry;
@@ -167,7 +168,7 @@ func (h *Handler) processSecretEvent(cfg *v1.Config, dockercfgSecret *corev1.Sec
 				if ok {
 					// this is just a notification from a prior upsert
 					logrus.Println("creation/update of credential in openshift namespace recognized")
-					if !cfg.ConditionTrue(v1.ImportCredentialsExist) {
+					if !util.ConditionTrue(cfg, v1.ImportCredentialsExist) {
 						cfg = h.refetchCfgMinimizeConflicts(cfg)
 						h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.ImportCredentialsExist)
 						dbg := "switching import cred to true following openshift namespace event"
@@ -188,7 +189,7 @@ func (h *Handler) processSecretEvent(cfg *v1.Config, dockercfgSecret *corev1.Sec
 		// namespace; we don't like that either, and will
 		// recreate; but we have to account for the fact that on a valid delete/remove, the secret deletion occurs
 		// before the updating of the samples resource, so we employ a short term retry
-		if cfg.ConditionTrue(v1.ImportCredentialsExist) {
+		if util.ConditionTrue(cfg, v1.ImportCredentialsExist) {
 			if h.secretRetryCount < 3 {
 				err := fmt.Errorf("retry on credential deletion in the openshift namespace to make sure the operator deleted it")
 				h.secretRetryCount++
@@ -210,7 +211,7 @@ func (h *Handler) processSecretEvent(cfg *v1.Config, dockercfgSecret *corev1.Sec
 		// ignore any stray non-delete events while in removed state
 		return nil
 	}
-	beforeStatus := cfg.Condition(v1.ImportCredentialsExist).Status
+	beforeStatus := util.Condition(cfg, v1.ImportCredentialsExist).Status
 	err := h.manageDockerCfgSecret(deleted, cfg, dockercfgSecret)
 	dbg := ""
 	if err != nil {
@@ -222,7 +223,7 @@ func (h *Handler) processSecretEvent(cfg *v1.Config, dockercfgSecret *corev1.Sec
 		logrus.Printf("CRDUPDATE %s", dbg)
 		// update the error even if we are in error before (updated times and in case error changes)
 	} else {
-		afterStatus := cfg.Condition(v1.ImportCredentialsExist).Status
+		afterStatus := util.Condition(cfg, v1.ImportCredentialsExist).Status
 		if beforeStatus == afterStatus {
 			return nil
 		}

@@ -6,8 +6,9 @@ import (
 	"time"
 
 	imagev1 "github.com/openshift/api/image/v1"
-	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/api/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/cache"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -16,7 +17,7 @@ import (
 
 func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted bool) error {
 	cfg, filePath, doUpsert, err := h.prepSamplesWatchEvent("imagestream", is.Name, is.Annotations, deleted)
-	if cfg != nil && cfg.ConditionTrue(v1.ImageChangesInProgress) {
+	if cfg != nil && util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
 		logrus.Printf("Imagestream %s watch event do upsert %v; no errors in prep %v,  possibly update operator conditions %v", is.Name, doUpsert, err == nil, cfg != nil)
 	} else {
 		logrus.Debugf("Imagestream %s watch event do upsert %v; no errors in prep %v,  possibly update operator conditions %v", is.Name, doUpsert, err == nil, cfg != nil)
@@ -35,7 +36,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		nonMatchDetail := ""
 		if cache.UpsertsAmount() > 0 {
 			cache.AddReceivedEventFromUpsert(is)
-			if !cfg.ConditionTrue(v1.ImageChangesInProgress) || !cfg.ConditionTrue(v1.SamplesExist) {
+			if !util.ConditionTrue(cfg, v1.ImageChangesInProgress) || !util.ConditionTrue(cfg, v1.SamplesExist) {
 				logrus.Printf("caching imagestream event %s because we have not yet completed all the samples upserts", is.Name)
 				return nil
 			}
@@ -58,8 +59,8 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 					}
 				}
 
-				if !cfg.NameInReason(cfg.Condition(v1.ImageChangesInProgress).Reason, is.Name) &&
-					!cfg.NameInReason(cfg.Condition(v1.ImportImageErrorsExist).Reason, is.Name) {
+				if !util.NameInReason(cfg, util.Condition(cfg, v1.ImageChangesInProgress).Reason, is.Name) &&
+					!util.NameInReason(cfg, util.Condition(cfg, v1.ImportImageErrorsExist).Reason, is.Name) {
 					logrus.Printf("skipping progress check (caching phase) for %s because it has been removed from the image progress and import error conditions", is.Name)
 					continue
 				}
@@ -74,8 +75,8 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			}
 			for _, key := range keysToClear {
 				cache.RemoveUpsert(key)
-				cfg.ClearNameInReason(cfg.Condition(v1.ImageChangesInProgress).Reason, key)
-				cfg.ClearNameInReason(cfg.Condition(v1.ImportImageErrorsExist).Reason, key)
+				util.ClearNameInReason(cfg, util.Condition(cfg, v1.ImageChangesInProgress).Reason, key)
+				util.ClearNameInReason(cfg, util.Condition(cfg, v1.ImportImageErrorsExist).Reason, key)
 			}
 			// at this point, all the processImportStatus calls have come back with anyChange == true
 			// unless we were unable to fetch any of the imagestreams
@@ -96,8 +97,8 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		}
 
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		if !cfg.NameInReason(cfg.Condition(v1.ImageChangesInProgress).Reason, is.Name) &&
-			!cfg.NameInReason(cfg.Condition(v1.ImportImageErrorsExist).Reason, is.Name) {
+		if !util.NameInReason(cfg, util.Condition(cfg, v1.ImageChangesInProgress).Reason, is.Name) &&
+			!util.NameInReason(cfg, util.Condition(cfg, v1.ImportImageErrorsExist).Reason, is.Name) {
 			logrus.Printf("aborting progress check (post-cache) for %s because it has been removed from the image progress and import error conditions", is.Name)
 		}
 		// otherwise, if someone else changed it in such a way that we don't want to
@@ -126,7 +127,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		return err
 	}
 
-	if cfg.ClusterNeedsCreds() {
+	if util.ClusterNeedsCreds(cfg) {
 		return fmt.Errorf("cannot upsert imagestream %s because rhel credentials do not exist", is.Name)
 	}
 
@@ -163,16 +164,16 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 	}
 	// now update progressing condition
 	cfg = h.refetchCfgMinimizeConflicts(cfg)
-	progressing := cfg.Condition(v1.ImageChangesInProgress)
+	progressing := util.Condition(cfg, v1.ImageChangesInProgress)
 	now := kapis.Now()
 	progressing.LastUpdateTime = now
 	progressing.LastTransitionTime = now
 	logrus.Debugf("Handle changing processing from false to true for imagestream %s", imagestream.Name)
 	progressing.Status = corev1.ConditionTrue
-	if !cfg.NameInReason(progressing.Reason, imagestream.Name) {
+	if !util.NameInReason(cfg, progressing.Reason, imagestream.Name) {
 		progressing.Reason = progressing.Reason + imagestream.Name + " "
 	}
-	cfg.ConditionUpdate(progressing)
+	util.ConditionUpdate(cfg, progressing)
 	dbg := fmt.Sprintf("progressing true update for imagestream %s", imagestream.Name)
 	logrus.Printf("CRDUPDATE %s", dbg)
 	return h.crdwrapper.UpdateStatus(cfg, dbg)
@@ -188,7 +189,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 	// case, any errors will cause the imagestream controller to attempt another image import
 	h.mapsMutex.Lock()
 	defer h.mapsMutex.Unlock()
-	h.clearStreamFromImportError(imagestreamInOperatorImage.Name, opcfg.Condition(v1.ImportImageErrorsExist), opcfg)
+	h.clearStreamFromImportError(imagestreamInOperatorImage.Name, util.Condition(opcfg, v1.ImportImageErrorsExist), opcfg)
 
 	if _, isok := h.skippedImagestreams[imagestreamInOperatorImage.Name]; isok {
 		if imagestreamInCluster != nil {
@@ -321,7 +322,7 @@ func (h *Handler) coreUpdateDockerPullSpec(oldreg, newreg string, oldies []strin
 
 // clearStreamFromImportError assumes the caller has call h.mapsMutex.Lock() and Unlock() appropriately
 func (h *Handler) clearStreamFromImportError(name string, importError *v1.ConfigCondition, cfg *v1.Config) *v1.ConfigCondition {
-	if cfg.NameInReason(importError.Reason, name) {
+	if util.NameInReason(cfg, importError.Reason, name) {
 		logrus.Printf("clearing imagestream %s from the import image error condition", name)
 	}
 	oldStatus := importError.Status
@@ -329,7 +330,7 @@ func (h *Handler) clearStreamFromImportError(name string, importError *v1.Config
 	end := strings.LastIndex(importError.Message, "<imagestream/"+name+">")
 	if start >= 0 && end > 0 {
 		now := kapis.Now()
-		importError.Reason = cfg.ClearNameInReason(importError.Reason, name)
+		importError.Reason = util.ClearNameInReason(cfg, importError.Reason, name)
 		entireMsg := importError.Message[start : end+len("<imagestream/"+name+">")]
 		importError.Message = strings.Replace(importError.Message, entireMsg, "", -1)
 		if len(strings.TrimSpace(importError.Reason)) == 0 {
@@ -344,7 +345,7 @@ func (h *Handler) clearStreamFromImportError(name string, importError *v1.Config
 			importError.LastTransitionTime = now
 		}
 		importError.LastUpdateTime = now
-		cfg.ConditionUpdate(importError)
+		util.ConditionUpdate(cfg, importError)
 	}
 	return importError
 }
@@ -352,7 +353,7 @@ func (h *Handler) clearStreamFromImportError(name string, importError *v1.Config
 func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (*v1.Config, string, bool) {
 	//pending := false
 	anyErrors := false
-	importError := cfg.Condition(v1.ImportImageErrorsExist)
+	importError := util.Condition(cfg, v1.ImportImageErrorsExist)
 	nonMatchDetail := ""
 	anyConditionUpdate := false
 	// in case we have to manipulate imagestream retry map
@@ -407,10 +408,10 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 					// we don't want to initiate imports repeatedly, but we do want to retry periodically as part
 					// of relist
 
-					if !cfg.NameInReason(importError.Reason, is.Name) ||
+					if !util.NameInReason(cfg, importError.Reason, is.Name) ||
 						retryIfNeeded {
 						h.imagestreamRetry[is.Name] = now
-						if !cfg.NameInReason(importError.Reason, is.Name) {
+						if !util.NameInReason(cfg, importError.Reason, is.Name) {
 							importError.Reason = importError.Reason + is.Name + " "
 							importError.Message = importError.Message + "<imagestream/" + is.Name + ">" + message + "<imagestream/" + is.Name + ">"
 						}
@@ -420,7 +421,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 						}
 						// we always bump last update here as a signal that another import attempt is happening
 						importError.LastUpdateTime = now
-						cfg.ConditionUpdate(importError)
+						util.ConditionUpdate(cfg, importError)
 						anyConditionUpdate = true
 						// initiate a retry (if same error happens again, imagestream status does not change, we won't get an event, and we do not try again)
 						imgImport, err := importTag(is, statusTag.Tag)
@@ -504,7 +505,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 		h.clearStreamFromImportError(is.Name, importError, cfg)
 	}
 
-	processing := cfg.Condition(v1.ImageChangesInProgress)
+	processing := util.Condition(cfg, v1.ImageChangesInProgress)
 
 	//logrus.Debugf("pending is %v any errors %v for %s", pending, anyErrors, is.Name)
 	logrus.Debugf("any errors %v for %s", anyErrors, is.Name)
@@ -519,9 +520,9 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 			now := kapis.Now()
 			// remove this imagestream name, including the space separator, from processing
 			logrus.Debugf("current reason %s ", processing.Reason)
-			replaceOccurs := cfg.NameInReason(processing.Reason, is.Name)
+			replaceOccurs := util.NameInReason(cfg, processing.Reason, is.Name)
 			if replaceOccurs {
-				processing.Reason = cfg.ClearNameInReason(processing.Reason, is.Name)
+				processing.Reason = util.ClearNameInReason(cfg, processing.Reason, is.Name)
 				logrus.Debugf("processing reason now %s", processing.Reason)
 				if len(strings.TrimSpace(processing.Reason)) == 0 && processing.Status != corev1.ConditionFalse {
 					logrus.Println("The last in progress imagestream has completed (import status check)")
@@ -530,7 +531,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 				}
 				processing.LastTransitionTime = now
 				processing.LastUpdateTime = now
-				cfg.ConditionUpdate(processing)
+				util.ConditionUpdate(cfg, processing)
 				anyConditionUpdate = true
 			}
 		}
@@ -538,7 +539,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 
 	// clear out error for this stream if there were errors previously but no longer are
 	// think a scheduled import failing then recovering
-	if cfg.NameInReason(importError.Reason, is.Name) && !anyErrors {
+	if util.NameInReason(cfg, importError.Reason, is.Name) && !anyErrors {
 		logrus.Printf("There are no image import errors for %s", is.Name)
 		h.clearStreamFromImportError(is.Name, importError, cfg)
 		anyConditionUpdate = true
