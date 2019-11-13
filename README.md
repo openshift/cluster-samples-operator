@@ -64,8 +64,8 @@ The samples resource maintains the following conditions in its status:
 - SamplesExists
 -- Indicates the samples have been created in the openshift namespace
 - ImageChangesInProgress
--- True when imagestreams have been created/updated, but not all of the tag spec generations and tag status generations match
--- False when all of the generations match, or unrecoverable errors occurred during import … the last seen error will be in the message field
+-- True when imagestreams have been created/updated, but we are awaiting acknowledgment all the changes were applied  
+-- False when all imagestream changes are acknowledged 
 -- The list of pending imagestreams will be in the reason field
 - ImportCredentialsExist
 -- A 'samples-registry-credentials' secret has been copied into the openshift namespace
