@@ -346,7 +346,7 @@ func (h *Handler) clearStreamFromImportError(name string, importError *v1.Config
 }
 
 func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (*v1.Config, string, bool) {
-	pending := false
+	//pending := false
 	anyErrors := false
 	importError := cfg.Condition(v1.ImportImageErrorsExist)
 	nonMatchDetail := ""
@@ -425,7 +425,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 			}
 		}
 
-		if !anyErrors {
+		/*if !anyErrors {
 			// it is possible after an upgrade that tags can be removed because of EOL processing;
 			// since we do not delete those EOL images from the imagestream status (so as to not break
 			// existing deployments referencing specific tags), it is possible that a valid configuration
@@ -479,7 +479,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 				pending = true
 				nonMatchDetail = "the number of status tags is less than the number of spec tags"
 			}
-		}
+		}*/
 	} else {
 		logrus.Debugf("no error/progress checks cause stream %s is skipped", is.Name)
 		// but if skipped, clear out any errors, since we do not care about errors for skipped
@@ -488,10 +488,11 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 
 	processing := cfg.Condition(v1.ImageChangesInProgress)
 
-	logrus.Debugf("pending is %v any errors %v for %s", pending, anyErrors, is.Name)
+	//logrus.Debugf("pending is %v any errors %v for %s", pending, anyErrors, is.Name)
+	logrus.Debugf("any errors %v for %s", anyErrors, is.Name)
 
 	// we check for processing == true here as well to avoid churn on relists
-	if !pending {
+	//if !pending {
 		if !anyErrors {
 			h.clearStreamFromImportError(is.Name, importError, cfg)
 		}
@@ -515,7 +516,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 				anyConditionUpdate = true
 			}
 		}
-	}
+	//}
 
 	// clear out error for this stream if there were errors previously but no longer are
 	// think a scheduled import failing then recovering
