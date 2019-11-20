@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
-	configv1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	configv1 "github.com/openshift/api/samples/v1"
 
 	corev1 "k8s.io/api/core/v1"
 )

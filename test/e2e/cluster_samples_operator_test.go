@@ -25,11 +25,12 @@ import (
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	imageset "github.com/openshift/client-go/image/clientset/versioned"
 	templateset "github.com/openshift/client-go/template/clientset/versioned"
-	samplesapi "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	samplesapi "github.com/openshift/api/samples/v1"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
 	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/stub"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 	kubeset "k8s.io/client-go/kubernetes"
 )
 
@@ -178,10 +179,10 @@ func verifyConditionsCompleteSamplesAdded(t *testing.T) error {
 			t.Logf("%v", err)
 			return false, nil
 		}
-		if cfg.ConditionTrue(samplesapi.SamplesExist) &&
-			cfg.ConditionTrue(samplesapi.ConfigurationValid) &&
-			cfg.ConditionTrue(samplesapi.ImportCredentialsExist) &&
-			cfg.ConditionFalse(samplesapi.ImageChangesInProgress) {
+		if util.ConditionTrue(cfg, samplesapi.SamplesExist) &&
+			util.ConditionTrue(cfg, samplesapi.ConfigurationValid) &&
+			util.ConditionTrue(cfg, samplesapi.ImportCredentialsExist) &&
+			util.ConditionFalse(cfg, samplesapi.ImageChangesInProgress) {
 			return true, nil
 		}
 
@@ -197,8 +198,8 @@ func verifyConditionsCompleteSamplesRemoved(t *testing.T) error {
 			t.Logf("%v", err)
 			return false, nil
 		}
-		if cfg.ConditionFalse(samplesapi.SamplesExist) &&
-			cfg.ConditionFalse(samplesapi.ImageChangesInProgress) {
+		if util.ConditionFalse(cfg, samplesapi.SamplesExist) &&
+			util.ConditionFalse(cfg, samplesapi.ImageChangesInProgress) {
 			return true, nil
 		}
 
@@ -409,7 +410,7 @@ func verifyImageChangesInProgress(t *testing.T) {
 			t.Logf("%v", err)
 			return false, nil
 		}
-		if cfg.ConditionTrue(samplesapi.ImageChangesInProgress) {
+		if util.ConditionTrue(cfg, samplesapi.ImageChangesInProgress) {
 			return true, nil
 		}
 		return false, nil
@@ -500,7 +501,7 @@ func verifyConfigurationValid(t *testing.T, status corev1.ConditionStatus) {
 			t.Logf("%v", e)
 			return false, nil
 		}
-		if cfg.Condition(samplesapi.ConfigurationValid).Status == status {
+		if util.Condition(cfg, samplesapi.ConfigurationValid).Status == status {
 			return true, nil
 		}
 		return false, nil
@@ -903,7 +904,7 @@ func TestSpecManagementStateField(t *testing.T) {
 			t.Logf("%v", err)
 			return false, nil
 		}
-		if cfg.Condition(samplesapi.ImageChangesInProgress).LastUpdateTime.After(now.Time) {
+		if util.Condition(cfg, samplesapi.ImageChangesInProgress).LastUpdateTime.After(now.Time) {
 			return true, nil
 		}
 		return false, nil
@@ -1080,7 +1081,7 @@ func coreTestUpgrade(t *testing.T) {
 	if cfg.Status.ManagementState == operatorsv1api.Managed {
 		err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
 			cfg := verifyOperatorUp(t)
-			if cfg.ConditionTrue(samplesapi.MigrationInProgress) {
+			if util.ConditionTrue(cfg, samplesapi.MigrationInProgress) {
 				return true, nil
 			}
 			return false, nil

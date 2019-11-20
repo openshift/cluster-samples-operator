@@ -15,8 +15,9 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
-	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/api/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 )
 
 const (
@@ -94,7 +95,7 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 	}
 
 	errs := []error{}
-	degraded, degradedReason, degradedDetail := cfg.ClusterOperatorStatusDegradedCondition()
+	degraded, degradedReason, degradedDetail := util.ClusterOperatorStatusDegradedCondition(cfg)
 	err := o.setOperatorStatus(configv1.OperatorDegraded,
 		degraded,
 		degradedDetail,
@@ -111,7 +112,7 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 	}
 	metrics.Degraded(flagForMetric)
 
-	available, reasonForAvailable, msgForAvailable := cfg.ClusterOperatorStatusAvailableCondition()
+	available, reasonForAvailable, msgForAvailable := util.ClusterOperatorStatusAvailableCondition(cfg)
 	// if we're setting the operator status to available, also set the operator version
 	// to the current version.
 	err = o.setOperatorStatus(configv1.OperatorAvailable,
@@ -125,7 +126,7 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 		logrus.Warningf("error occurred while attempting to set available condition: %s", err.Error())
 	}
 
-	progressing, reasonForProgressing, msgForProgressing := cfg.ClusterOperatorStatusProgressingCondition(degradedReason, available)
+	progressing, reasonForProgressing, msgForProgressing := util.ClusterOperatorStatusProgressingCondition(cfg, degradedReason, available)
 	err = o.setOperatorStatus(configv1.OperatorProgressing,
 		progressing,
 		msgForProgressing,

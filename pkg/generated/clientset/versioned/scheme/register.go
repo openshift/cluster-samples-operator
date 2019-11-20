@@ -3,7 +3,7 @@
 package scheme
 
 import (
-	samplesv1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	samplesv1 "github.com/openshift/api/samples/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

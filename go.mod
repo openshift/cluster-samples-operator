@@ -17,9 +17,8 @@ require (
 	github.com/json-iterator/go v1.1.8 // indirect
 	github.com/jteeuwen/go-bindata v3.0.7+incompatible
 	github.com/onsi/ginkgo v1.10.2 // indirect
-	github.com/openshift/api v3.9.1-0.20191031084152-11eee842dafd+incompatible
+	github.com/openshift/api v3.9.1-0.20191112184635-1271508fbe8f+incompatible
 	github.com/openshift/client-go v0.0.0-20191022152013-2823239d2298
-	github.com/openshift/crd-schema-gen v1.0.0
 	github.com/openshift/library-go v0.0.0-20191030100914-d6f3b526f033
 	github.com/prometheus/client_golang v1.0.0
 	github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4

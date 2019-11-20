@@ -5,8 +5,9 @@ import (
 	"strings"
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
-	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/api/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,7 +45,7 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 
 	// if we have not had a valid Config processed, allow caller to try with
 	// the cfg contents
-	if !cfg.ConditionTrue(v1.SamplesExist) && !cfg.ConditionTrue(v1.ImageChangesInProgress) {
+	if !util.ConditionTrue(cfg, v1.SamplesExist) && !util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
 		logrus.Println("Spec is valid because this operator has not processed a config yet")
 		return nil
 	}
@@ -146,9 +147,9 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool, bool,
 	// see if need to update the cfg from the main loop to clear out any prior image import
 	// errors for skipped streams
 	for _, stream := range cfg.Spec.SkippedImagestreams {
-		importErrors := cfg.Condition(v1.ImportImageErrorsExist)
-		beforeError := cfg.NameInReason(importErrors.Reason, stream)
-		importErrors = h.clearStreamFromImportError(stream, cfg.Condition(v1.ImportImageErrorsExist), cfg)
+		importErrors := util.Condition(cfg, v1.ImportImageErrorsExist)
+		beforeError := util.NameInReason(cfg, importErrors.Reason, stream)
+		importErrors = h.clearStreamFromImportError(stream, util.Condition(cfg, v1.ImportImageErrorsExist), cfg)
 		if beforeError {
 			clearImageImportErrors = true
 			// we do not break here cause we want to clear out all possible streams
@@ -212,7 +213,7 @@ func (h *Handler) processError(opcfg *v1.Config, ctype v1.ConfigConditionType, c
 		log = fmt.Sprintf(msg, err, args)
 	}
 	logrus.Println(log)
-	status := opcfg.Condition(ctype)
+	status := util.Condition(opcfg, ctype)
 	// decision was made to not spam master if
 	// duplicate events come it (i.e. status does not
 	// change)
@@ -224,7 +225,7 @@ func (h *Handler) processError(opcfg *v1.Config, ctype v1.ConfigConditionType, c
 		}
 		status.Status = cstatus
 		status.Message = log
-		opcfg.ConditionUpdate(status)
+		util.ConditionUpdate(opcfg, status)
 	}
 
 	switch ctype {
@@ -249,34 +250,34 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		// first, we will not process a Removed setting if a prior create/update cycle is still in progress;
 		// if still creating/updating, set the remove on hold condition and we'll try the remove once that
 		// is false
-		if cfg.ConditionTrue(v1.ImageChangesInProgress) && cfg.ConditionTrue(v1.RemovePending) {
+		if util.ConditionTrue(cfg, v1.ImageChangesInProgress) && util.ConditionTrue(cfg, v1.RemovePending) {
 			return false, false, nil
 		}
 
-		if cfg.Status.ManagementState != operatorsv1api.Removed && !cfg.ConditionTrue(v1.RemovePending) {
+		if cfg.Status.ManagementState != operatorsv1api.Removed && !util.ConditionTrue(cfg, v1.RemovePending) {
 			now := kapis.Now()
-			condition := cfg.Condition(v1.RemovePending)
+			condition := util.Condition(cfg, v1.RemovePending)
 			condition.LastTransitionTime = now
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionTrue
-			cfg.ConditionUpdate(condition)
+			util.ConditionUpdate(cfg, condition)
 			return false, true, nil
 		}
 
 		// turn off remove pending once status mgmt state says removed
-		if cfg.ConditionTrue(v1.RemovePending) && cfg.Status.ManagementState == operatorsv1api.Removed {
+		if util.ConditionTrue(cfg, v1.RemovePending) && cfg.Status.ManagementState == operatorsv1api.Removed {
 			now := kapis.Now()
-			condition := cfg.Condition(v1.RemovePending)
+			condition := util.Condition(cfg, v1.RemovePending)
 			condition.LastTransitionTime = now
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionFalse
-			cfg.ConditionUpdate(condition)
+			util.ConditionUpdate(cfg, condition)
 			return false, true, nil
 		}
 
 		// now actually process removed state
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState ||
-			cfg.ConditionTrue(v1.SamplesExist) {
+			util.ConditionTrue(cfg, v1.SamplesExist) {
 			logrus.Println("management state set to removed so deleting samples")
 			err := h.CleanUpOpenshiftNamespaceOnDelete(cfg)
 			if err != nil {
@@ -285,11 +286,11 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			// explicitly reset samples exist and import cred to false since the Config has not
 			// actually been deleted; secret watch ignores events when samples resource is in removed state
 			now := kapis.Now()
-			condition := cfg.Condition(v1.SamplesExist)
+			condition := util.Condition(cfg, v1.SamplesExist)
 			condition.LastTransitionTime = now
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionFalse
-			cfg.ConditionUpdate(condition)
+			util.ConditionUpdate(cfg, condition)
 			cfg.Status.ManagementState = operatorsv1api.Removed
 			// after online starter upgrade attempts while this operator was not set to managed,
 			// group arch discussion has decided that we report the latest version
@@ -308,7 +309,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 	case operatorsv1api.Managed:
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState {
 			logrus.Println("management state set to managed")
-			if cfg.ConditionFalse(v1.ImportCredentialsExist) {
+			if util.ConditionFalse(cfg, v1.ImportCredentialsExist) {
 				h.copyDefaultClusterPullSecret(nil)
 			}
 		}
@@ -322,13 +323,13 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			// after online starter upgrade attempts while this operator was not set to managed,
 			// group arch discussion has decided that we report the latest version
 			cfg.Status.Version = h.version
-			if cfg.ConditionTrue(v1.RemovePending) {
+			if util.ConditionTrue(cfg, v1.RemovePending) {
 				now := kapis.Now()
-				condition := cfg.Condition(v1.RemovePending)
+				condition := util.Condition(cfg, v1.RemovePending)
 				condition.LastTransitionTime = now
 				condition.LastUpdateTime = now
 				condition.Status = corev1.ConditionFalse
-				cfg.ConditionUpdate(condition)
+				util.ConditionUpdate(cfg, condition)
 			}
 			return false, true, nil
 		}
@@ -343,14 +344,14 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 	default:
 		// force it to Managed if they passed in something funky, including the empty string
 		logrus.Warningf("Unknown management state %s specified; switch to Managed", cfg.Spec.ManagementState)
-		cfgvalid := cfg.Condition(v1.ConfigurationValid)
+		cfgvalid := util.Condition(cfg, v1.ConfigurationValid)
 		cfgvalid.Message = fmt.Sprintf("Unexpected management state %v received, switching to %v", cfg.Spec.ManagementState, operatorsv1api.Managed)
 		now := kapis.Now()
 		cfgvalid.LastTransitionTime = now
 		cfgvalid.LastUpdateTime = now
 		cfgvalid.Status = corev1.ConditionTrue
 		metrics.ConfigInvalid(false)
-		cfg.ConditionUpdate(cfgvalid)
+		util.ConditionUpdate(cfg, cfgvalid)
 		return true, false, nil
 	}
 }

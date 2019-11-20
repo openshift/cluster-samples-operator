@@ -10,8 +10,9 @@ import (
 
 	"testing"
 
-	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/api/samples/v1"
 	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -116,7 +117,7 @@ func TestWithBadArch(t *testing.T) {
 		"bad",
 	}
 	h.Handle(event)
-	invalidConfig(t, "architecture bad unsupported", cfg.Condition(v1.ConfigurationValid))
+	invalidConfig(t, "architecture bad unsupported", util.Condition(cfg, v1.ConfigurationValid))
 }
 
 func TestManagementState(t *testing.T) {
@@ -193,10 +194,10 @@ func TestManagementState(t *testing.T) {
 
 	// mimic when in progress set to false by imagestream watch
 	// then analyze resulting Config event
-	progressing := cfg.Condition(v1.ImageChangesInProgress)
+	progressing := util.Condition(cfg, v1.ImageChangesInProgress)
 	progressing.Status = corev1.ConditionFalse
 	progressing.Reason = ""
-	cfg.ConditionUpdate(progressing)
+	util.ConditionUpdate(cfg, progressing)
 	cfg.ResourceVersion = "5"
 	err = h.Handle(event)
 	// index 0 samples exist should be false
@@ -250,11 +251,11 @@ func TestSkipped(t *testing.T) {
 	}
 
 	// also, even with an import error, on an imagestream event, the import error should be cleared out
-	importerror := cfg.Condition(v1.ImportImageErrorsExist)
+	importerror := util.Condition(cfg, v1.ImportImageErrorsExist)
 	importerror.Reason = "foo "
 	importerror.Message = "<imagestream/foo> import failed <imagestream/foo>"
 	importerror.Status = corev1.ConditionTrue
-	cfg.ConditionUpdate(importerror)
+	util.ConditionUpdate(cfg, importerror)
 	event.Object = &imagev1.ImageStream{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo",
@@ -273,7 +274,7 @@ func TestSkipped(t *testing.T) {
 		},
 	}
 	h.Handle(event)
-	importerror = cfg.Condition(v1.ImportImageErrorsExist)
+	importerror = util.Condition(cfg, v1.ImportImageErrorsExist)
 	if len(importerror.Reason) > 0 || importerror.Status == corev1.ConditionTrue {
 		t.Fatalf("skipped imagestream still reporting error %#v", importerror)
 	}
@@ -335,9 +336,9 @@ func TestProcessed(t *testing.T) {
 	cfg.Spec.SamplesRegistry = "bar.io"
 	cfg.ResourceVersion = "2"
 	// fake out that the samples completed updating
-	progressing := cfg.Condition(v1.ImageChangesInProgress)
+	progressing := util.Condition(cfg, v1.ImageChangesInProgress)
 	progressing.Status = corev1.ConditionFalse
-	cfg.ConditionUpdate(progressing)
+	util.ConditionUpdate(cfg, progressing)
 
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
@@ -517,7 +518,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 
 	h.processImageStreamWatchEvent(is, false)
 
-	if !cfg.ConditionTrue(v1.ImportImageErrorsExist) {
+	if !util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
 		t.Fatalf("Import Error Condition not true: %#v", cfg)
 	}
 
@@ -528,10 +529,10 @@ func TestImageStreamErrorRetry(t *testing.T) {
 		t.Fatalf("incorrect amount of import calls %d", fakeimporter.count)
 	}
 
-	initialImportErrorLastUpdateTime := cfg.Condition(v1.ImportImageErrorsExist).LastUpdateTime
+	initialImportErrorLastUpdateTime := util.Condition(cfg, v1.ImportImageErrorsExist).LastUpdateTime
 	h.processImageStreamWatchEvent(is, false)
 	// refetch to see if updated
-	importError := cfg.Condition(v1.ImportImageErrorsExist)
+	importError := util.Condition(cfg, v1.ImportImageErrorsExist)
 	if !importError.LastUpdateTime.Equal(&initialImportErrorLastUpdateTime) {
 		t.Fatalf("Import Error Condition updated too soon: old update time %s new update time %s", initialImportErrorLastUpdateTime.String(), importError.LastUpdateTime.String())
 	}
@@ -540,7 +541,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 	lastUpdateTime, _ := h.imagestreamRetry[is.Name]
 	lastUpdateTime.Time = metav1.Now().Add(-15 * time.Minute)
 	h.imagestreamRetry[is.Name] = lastUpdateTime
-	cfg.ConditionUpdate(importError)
+	util.ConditionUpdate(cfg, importError)
 	// save a copy for compare
 	fifteenMinutesAgo := lastUpdateTime
 
@@ -549,7 +550,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 	// refetch and make sure it has changed
 	lastUpdateTime, _ = h.imagestreamRetry[is.Name]
 	if lastUpdateTime.Equal(&fifteenMinutesAgo) {
-		t.Fatalf("Import Error Condition should have been updated: old update time %s new update time %s", initialImportErrorLastUpdateTime.String(), cfg.Condition(v1.ImportImageErrorsExist).LastUpdateTime.String())
+		t.Fatalf("Import Error Condition should have been updated: old update time %s new update time %s", initialImportErrorLastUpdateTime.String(), util.Condition(cfg, v1.ImportImageErrorsExist).LastUpdateTime.String())
 	}
 
 	tagVersion = int64(2)
@@ -565,7 +566,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 
 	h.processImageStreamWatchEvent(is, false)
 
-	if cfg.ConditionTrue(v1.ImportImageErrorsExist) {
+	if util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
 		t.Fatalf("Import Error Condition not true: %#v", cfg)
 	}
 }
@@ -680,7 +681,7 @@ func TestCreateDeleteSecretAfterCR(t *testing.T) {
 
 }
 
-func setup() (Handler, *v1.Config, v1.Event) {
+func setup() (Handler, *v1.Config, util.Event) {
 	h := NewTestHandler()
 	cfg, _ := h.CreateDefaultResourceIfNeeded(nil)
 	cfg = h.initConditions(cfg)
@@ -688,11 +689,11 @@ func setup() (Handler, *v1.Config, v1.Event) {
 	fakesecretclient.err = kerrors.NewNotFound(schema.GroupResource{}, v1.SamplesRegistryCredentials)
 	h.crdwrapper.(*fakeCRDWrapper).cfg = cfg
 	cache.ClearUpsertsCache()
-	return h, cfg, v1.Event{Object: cfg}
+	return h, cfg, util.Event{Object: cfg}
 }
 
 func processCred(h *Handler, cfg *v1.Config, t *testing.T) {
-	if !cfg.ConditionFalse(v1.ImportCredentialsExist) {
+	if !util.ConditionFalse(cfg, v1.ImportCredentialsExist) {
 		t.Fatalf("import cred exists unexpectedly true: %#v", cfg)
 	}
 	h.secretclientwrapper.(*fakeSecretClientWrapper).err = nil
@@ -706,9 +707,9 @@ func processCred(h *Handler, cfg *v1.Config, t *testing.T) {
 			ResourceVersion: "a",
 		},
 	}
-	credEvent := v1.Event{Object: secret}
+	credEvent := util.Event{Object: secret}
 	err := h.Handle(credEvent)
-	if !cfg.ConditionTrue(v1.ImportCredentialsExist) {
+	if !util.ConditionTrue(cfg, v1.ImportCredentialsExist) {
 		t.Fatalf("secret event did not set import cred to true; err: %v, cfg: %#v", err, cfg)
 	}
 }
@@ -930,23 +931,23 @@ func TestImageStreamImportError(t *testing.T) {
 		dir := h.GetBaseDir(v1.X86Architecture, cfg)
 		files, _ := h.Filefinder.List(dir)
 		h.processFiles(dir, files, cfg)
-		progressing := cfg.Condition(v1.ImageChangesInProgress)
+		progressing := util.Condition(cfg, v1.ImageChangesInProgress)
 		progressing.Status = corev1.ConditionTrue
 		progressing.Reason = is.Name + " "
-		cfg.ConditionUpdate(progressing)
-		needCreds := cfg.Condition(v1.ImportCredentialsExist)
+		util.ConditionUpdate(cfg, progressing)
+		needCreds := util.Condition(cfg, v1.ImportCredentialsExist)
 		needCreds.Status = corev1.ConditionTrue
-		cfg.ConditionUpdate(needCreds)
+		util.ConditionUpdate(cfg, needCreds)
 		err := h.processImageStreamWatchEvent(is, false)
 		if err != nil {
 			t.Fatalf("processImageStreamWatchEvent error %#v for stream %#v", err, is)
 		}
-		if cfg.ConditionFalse(v1.ImportImageErrorsExist) {
+		if util.ConditionFalse(cfg, v1.ImportImageErrorsExist) {
 			t.Fatalf("processImageStreamWatchEvent did not set import error to true %#v for stream %#v", cfg, is)
 		}
 
-		importErr := cfg.Condition(v1.ImportImageErrorsExist)
-		if len(importErr.Reason) == 0 || !cfg.NameInReason(importErr.Reason, is.Name) {
+		importErr := util.Condition(cfg, v1.ImportImageErrorsExist)
+		if len(importErr.Reason) == 0 || !util.NameInReason(cfg, importErr.Reason, is.Name) {
 			t.Fatalf("processImageStreamWatchEvent did not set import error reason field %#v for stream %#v", cfg, is)
 		}
 		if turnBackThreeHours {
@@ -954,8 +955,8 @@ func TestImageStreamImportError(t *testing.T) {
 		} else {
 			importErr.LastTransitionTime = metav1.Now()
 		}
-		cfg.ConditionUpdate(importErr)
-		status, reason, detail := cfg.ClusterOperatorStatusDegradedCondition()
+		util.ConditionUpdate(cfg, importErr)
+		status, reason, detail := util.ClusterOperatorStatusDegradedCondition(cfg)
 		if (status != configv1.ConditionTrue && turnBackThreeHours) || (status == configv1.ConditionTrue && !turnBackThreeHours) {
 			t.Fatalf("image import error from %#v not reflected in cluster status %#v", is, cfg)
 		}
@@ -1014,20 +1015,20 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 	dir := h.GetBaseDir(v1.X86Architecture, cfg)
 	files, _ := h.Filefinder.List(dir)
 	h.processFiles(dir, files, cfg)
-	importError := cfg.Condition(v1.ImportImageErrorsExist)
+	importError := util.Condition(cfg, v1.ImportImageErrorsExist)
 	importError.Status = corev1.ConditionTrue
 	importError.Reason = "foo "
 	importError.Message = "<imagestream/foo> import failed <imagestream/foo>"
-	cfg.ConditionUpdate(importError)
+	util.ConditionUpdate(cfg, importError)
 	err := h.processImageStreamWatchEvent(stream, false)
 	if err != nil {
 		t.Fatalf("processImageStreamWatchEvent error %#v", err)
 	}
-	if cfg.ConditionTrue(v1.ImportImageErrorsExist) {
+	if util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
 		t.Fatalf("processImageStreamWatchEvent did not set import error to false %#v", cfg)
 	}
-	importErr := cfg.Condition(v1.ImportImageErrorsExist)
-	if len(importErr.Reason) > 0 && cfg.NameInReason(importErr.Reason, stream.Name) {
+	importErr := util.Condition(cfg, v1.ImportImageErrorsExist)
+	if len(importErr.Reason) > 0 && util.NameInReason(cfg, importErr.Reason, stream.Name) {
 		t.Fatalf("processImageStreamWatchEvent did not set import error reason field %#v", cfg)
 	}
 }

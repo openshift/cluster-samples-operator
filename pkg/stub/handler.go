@@ -35,9 +35,10 @@ import (
 	configv1lister "github.com/openshift/cluster-samples-operator/pkg/generated/listers/samples/v1"
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
-	v1 "github.com/openshift/cluster-samples-operator/pkg/apis/samples/v1"
+	v1 "github.com/openshift/api/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/cache"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 
@@ -171,7 +172,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return nil, "", false, nil
 	}
 
-	if cfg.ConditionFalse(v1.ImageChangesInProgress) {
+	if util.ConditionFalse(cfg, v1.ImageChangesInProgress) {
 		// we do no return the cfg in these cases because we do not want to bother with any progress tracking
 		switch cfg.Spec.ManagementState {
 		case operatorsv1api.Removed:
@@ -218,8 +219,8 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return cfg, filePath, true, nil
 	}
 
-	if cfg.ConditionFalse(v1.ImageChangesInProgress) &&
-		(cfg.ConditionTrue(v1.MigrationInProgress) || h.version != cfg.Status.Version) {
+	if util.ConditionFalse(cfg, v1.ImageChangesInProgress) &&
+		(util.ConditionTrue(cfg, v1.MigrationInProgress) || h.version != cfg.Status.Version) {
 		// we have gotten events for items early in the migration list but we have not
 		// finished processing the list
 		// avoid (re)upsert, but check import status
@@ -242,7 +243,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 
 func (h *Handler) GoodConditionUpdate(cfg *v1.Config, newStatus corev1.ConditionStatus, conditionType v1.ConfigConditionType) {
 	logrus.Debugf("updating condition %s to %s", conditionType, newStatus)
-	condition := cfg.Condition(conditionType)
+	condition := util.Condition(cfg, conditionType)
 	// decision was made to not spam master if
 	// duplicate events come it (i.e. status does not
 	// change)
@@ -255,7 +256,7 @@ func (h *Handler) GoodConditionUpdate(cfg *v1.Config, newStatus corev1.Condition
 		condition.Status = newStatus
 		condition.Message = ""
 		condition.Reason = ""
-		cfg.ConditionUpdate(condition)
+		util.ConditionUpdate(cfg, condition)
 	}
 	if conditionType == v1.ConfigurationValid {
 		switch newStatus {
@@ -380,9 +381,9 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 
 func (h *Handler) initConditions(cfg *v1.Config) *v1.Config {
 	now := kapis.Now()
-	cfg.Condition(v1.SamplesExist)
-	cfg.Condition(v1.ImportCredentialsExist)
-	valid := cfg.Condition(v1.ConfigurationValid)
+	util.Condition(cfg, v1.SamplesExist)
+	util.Condition(cfg, v1.ImportCredentialsExist)
+	valid := util.Condition(cfg, v1.ConfigurationValid)
 	// our default config is valid; since Condition sets new conditions to false
 	// if we get false here this is the first pass through; invalid configs
 	// are caught above
@@ -390,12 +391,12 @@ func (h *Handler) initConditions(cfg *v1.Config) *v1.Config {
 		valid.Status = corev1.ConditionTrue
 		valid.LastUpdateTime = now
 		valid.LastTransitionTime = now
-		cfg.ConditionUpdate(valid)
+		util.ConditionUpdate(cfg, valid)
 	}
-	cfg.Condition(v1.ImageChangesInProgress)
-	cfg.Condition(v1.RemovePending)
-	cfg.Condition(v1.MigrationInProgress)
-	cfg.Condition(v1.ImportImageErrorsExist)
+	util.Condition(cfg, v1.ImageChangesInProgress)
+	util.Condition(cfg, v1.RemovePending)
+	util.Condition(cfg, v1.MigrationInProgress)
+	util.Condition(cfg, v1.ImportImageErrorsExist)
 	return cfg
 }
 
@@ -458,7 +459,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 	return nil
 }
 
-func (h *Handler) Handle(event v1.Event) error {
+func (h *Handler) Handle(event util.Event) error {
 	switch event.Object.(type) {
 	case *imagev1.ImageStream:
 		is, _ := event.Object.(*imagev1.ImageStream)
@@ -572,7 +573,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		}
 
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		if cfg.ConditionUnknown(v1.ImportCredentialsExist) {
+		if util.ConditionUnknown(cfg, v1.ImportCredentialsExist) {
 			// retry the default cred copy if it failed previously
 			err := h.copyDefaultClusterPullSecret(nil)
 			if err == nil {
@@ -606,7 +607,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		}
 
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		existingValidStatus := cfg.Condition(v1.ConfigurationValid).Status
+		existingValidStatus := util.Condition(cfg, v1.ConfigurationValid).Status
 		err = h.SpecValidation(cfg)
 		if err != nil {
 			// flush status update
@@ -617,7 +618,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 		// if a bad config was corrected, update and return
-		if existingValidStatus != cfg.Condition(v1.ConfigurationValid).Status {
+		if existingValidStatus != util.Condition(cfg, v1.ConfigurationValid).Status {
 			dbg := "spec corrected"
 			logrus.Printf("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
@@ -643,20 +644,20 @@ func (h *Handler) Handle(event v1.Event) error {
 				configChanged,
 				configChangeRequiresUpsert,
 				configChangeRequiresImportErrorUpdate,
-				cfg.ConditionTrue(v1.SamplesExist),
-				cfg.ConditionFalse(v1.ImageChangesInProgress),
+				util.ConditionTrue(cfg, v1.SamplesExist),
+				util.ConditionFalse(cfg, v1.ImageChangesInProgress),
 				h.version,
 				cfg.Status.Version)
 			// so ignore if config does not change and the samples exist and
 			// we are not in progress and at the right level
 			if !configChanged &&
-				cfg.ConditionTrue(v1.SamplesExist) &&
-				cfg.ConditionFalse(v1.ImageChangesInProgress) &&
+				util.ConditionTrue(cfg, v1.SamplesExist) &&
+				util.ConditionFalse(cfg, v1.ImageChangesInProgress) &&
 				h.version == cfg.Status.Version {
 				logrus.Debugf("At steady state: config the same and exists is true, in progress false, and version correct")
 
 				// once the status version is in sync, we can turn off the migration condition
-				if cfg.ConditionTrue(v1.MigrationInProgress) {
+				if util.ConditionTrue(cfg, v1.MigrationInProgress) {
 					h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.MigrationInProgress)
 					dbg := " turn migration off"
 					logrus.Printf("CRDUPDATE %s", dbg)
@@ -676,7 +677,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			// processing of the config change and replace whatever was previously
 			// in progress
 			if configChangeRequiresUpsert &&
-				cfg.ConditionTrue(v1.ImageChangesInProgress) {
+				util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
 				dbg := "change in progress from true to false for config change"
 				logrus.Printf("CRDUPDATE %s", dbg)
@@ -686,13 +687,13 @@ func (h *Handler) Handle(event v1.Event) error {
 
 		cfg.Status.ManagementState = operatorsv1api.Managed
 		// if coming from remove turn off
-		if cfg.ConditionTrue(v1.RemovePending) {
+		if util.ConditionTrue(cfg, v1.RemovePending) {
 			now := kapis.Now()
-			condition := cfg.Condition(v1.RemovePending)
+			condition := util.Condition(cfg, v1.RemovePending)
 			condition.LastTransitionTime = now
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionFalse
-			cfg.ConditionUpdate(condition)
+			util.ConditionUpdate(cfg, condition)
 		}
 
 		// if trying to do rhel to the default registry.redhat.io registry requires the secret
@@ -715,7 +716,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		}
 
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		if cfg.ConditionFalse(v1.MigrationInProgress) &&
+		if util.ConditionFalse(cfg, v1.MigrationInProgress) &&
 			len(cfg.Status.Version) > 0 &&
 			h.version != cfg.Status.Version {
 			logrus.Printf("Undergoing migration from %s to %s", cfg.Status.Version, h.version)
@@ -727,11 +728,11 @@ func (h *Handler) Handle(event v1.Event) error {
 
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		if !configChanged &&
-			cfg.ConditionTrue(v1.SamplesExist) &&
-			cfg.ConditionFalse(v1.ImageChangesInProgress) &&
-			cfg.Condition(v1.MigrationInProgress).LastUpdateTime.Before(&cfg.Condition(v1.ImageChangesInProgress).LastUpdateTime) &&
+			util.ConditionTrue(cfg, v1.SamplesExist) &&
+			util.ConditionFalse(cfg, v1.ImageChangesInProgress) &&
+			util.Condition(cfg, v1.MigrationInProgress).LastUpdateTime.Before(&util.Condition(cfg, v1.ImageChangesInProgress).LastUpdateTime) &&
 			h.version != cfg.Status.Version {
-			if cfg.ConditionTrue(v1.ImportImageErrorsExist) {
+			if util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
 				logrus.Printf("An image import error occurred applying the latest configuration on version %s; this operator will periodically retry the import, or an administrator can investigate and remedy manually", h.version)
 			}
 			cfg.Status.Version = h.version
@@ -739,7 +740,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			dbg := "upd status version"
 			logrus.Printf("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
-			/*if cfg.ConditionFalse(v1.ImportImageErrorsExist) {
+			/*if cfg.ConditionFalse(cfg, v1.ImportImageErrorsExist) {
 				cfg.Status.Version = h.version
 				logrus.Printf("The samples are now at version %s", cfg.Status.Version)
 				logrus.Println("CRDUPDATE upd status version")
@@ -774,13 +775,13 @@ func (h *Handler) Handle(event v1.Event) error {
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
-		if configChanged && !configChangeRequiresUpsert && cfg.ConditionTrue(v1.SamplesExist) {
+		if configChanged && !configChangeRequiresUpsert && util.ConditionTrue(cfg, v1.SamplesExist) {
 			dbg := "bypassing upserts for non invasive config change after initial create"
 			logrus.Printf("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
-		if !cfg.ConditionTrue(v1.ImageChangesInProgress) {
+		if !util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
 			// pass in true to force rebuild of maps, which we do here because at this point
 			// we have taken on some form of config change
 			err = h.buildFileMaps(cfg, true)
@@ -818,7 +819,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			}
 			now := kapis.Now()
 			cfg = h.refetchCfgMinimizeConflicts(cfg)
-			progressing := cfg.Condition(v1.ImageChangesInProgress)
+			progressing := util.Condition(cfg, v1.ImageChangesInProgress)
 			progressing.Reason = ""
 			progressing.Message = ""
 			for isName := range h.imagestreamFile {
@@ -828,7 +829,7 @@ func (h *Handler) Handle(event v1.Event) error {
 				if unskipping && !unskipped {
 					continue
 				}
-				if !cfg.NameInReason(progressing.Reason, isName) && !skipped {
+				if !util.NameInReason(cfg, progressing.Reason, isName) && !skipped {
 					progressing.Reason = progressing.Reason + isName + " "
 				}
 			}
@@ -840,7 +841,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			} else {
 				logrus.Debugln("there are no imagestreams available for import")
 				// see if there are unskipped templates, to set SamplesExists to true
-				if !cfg.ConditionTrue(v1.SamplesExist) {
+				if !util.ConditionTrue(cfg, v1.SamplesExist) {
 					templatesProcessed := false
 					for tName := range h.templateFile {
 						_, skipped := h.skippedTemplates[tName]
@@ -861,7 +862,7 @@ func (h *Handler) Handle(event v1.Event) error {
 				return nil
 			}
 			logrus.Debugf("Handle Reason field set to %s", progressing.Reason)
-			cfg.ConditionUpdate(progressing)
+			util.ConditionUpdate(cfg, progressing)
 
 			// now that we employ status subresources, we can't populate
 			// the conditions on create; so we do initialize here, which is our "step 1"
@@ -873,7 +874,7 @@ func (h *Handler) Handle(event v1.Event) error {
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
-		if !cfg.ConditionTrue(v1.SamplesExist) {
+		if !util.ConditionTrue(cfg, v1.SamplesExist) {
 			cfg = h.refetchCfgMinimizeConflicts(cfg)
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
 			dbg := "exist true update"
@@ -885,7 +886,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		// the image imports are complete; hence we would not get any more
 		// events until the next relist to clear out in progress; so let's
 		// cycle through them here now
-		if cache.AllUpsertEventsArrived() && cfg.ConditionTrue(v1.ImageChangesInProgress) {
+		if cache.AllUpsertEventsArrived() && util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
 			keysToClear := []string{}
 			anyChange := false
 			ac := false
@@ -906,10 +907,10 @@ func (h *Handler) Handle(event v1.Event) error {
 			}
 			for _, key := range keysToClear {
 				cache.RemoveUpsert(key)
-				cfg.ClearNameInReason(cfg.Condition(v1.ImageChangesInProgress).Reason, key)
-				cfg.ClearNameInReason(cfg.Condition(v1.ImportImageErrorsExist).Reason, key)
+				util.ClearNameInReason(cfg, util.Condition(cfg, v1.ImageChangesInProgress).Reason, key)
+				util.ClearNameInReason(cfg, util.Condition(cfg, v1.ImportImageErrorsExist).Reason, key)
 			}
-			if len(strings.TrimSpace(cfg.Condition(v1.ImageChangesInProgress).Reason)) == 0 {
+			if len(strings.TrimSpace(util.Condition(cfg, v1.ImageChangesInProgress).Reason)) == 0 {
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
 				logrus.Println("The last in progress imagestream has completed (config event loop)")
 			}
@@ -917,7 +918,7 @@ func (h *Handler) Handle(event v1.Event) error {
 				dbg := "updating in progress after examining cached imagestream events"
 				logrus.Printf("CRDUPDATE %s", dbg)
 				err = h.crdwrapper.UpdateStatus(cfg, dbg)
-				if err == nil && cfg.ConditionFalse(v1.ImageChangesInProgress) {
+				if err == nil && util.ConditionFalse(cfg, v1.ImageChangesInProgress) {
 					// only clear out cache if we got the update through
 					cache.ClearUpsertsCache()
 				}
@@ -1031,7 +1032,7 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 
 	// if after initial startup, and not migration, the only cfg change was changing the registry, since that does not impact
 	// the templates, we can move on
-	if len(unskippedTemplates) == 0 && registryChanged && cfg.ConditionTrue(v1.SamplesExist) && cfg.ConditionFalse(v1.MigrationInProgress) {
+	if len(unskippedTemplates) == 0 && registryChanged && util.ConditionTrue(cfg, v1.SamplesExist) && util.ConditionFalse(cfg, v1.MigrationInProgress) {
 		return false, nil
 	}
 
