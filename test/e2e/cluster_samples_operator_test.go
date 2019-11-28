@@ -131,6 +131,24 @@ func verifyOperatorUp(t *testing.T) *samplesapi.Config {
 	return cfg
 }
 
+func verifyX86(t *testing.T) bool {
+	err := wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+		cfg := verifyOperatorUp(t)
+		if len(cfg.Status.Architectures) == 0 {
+			return false, nil
+		}
+		return true, nil
+	})
+	cfg := verifyOperatorUp(t)
+	if err != nil {
+		t.Fatalf("architecture field was not set after 1 minute: %#v", cfg)
+	}
+	if cfg.Status.Architectures[0] != samplesapi.X86Architecture && cfg.Status.Architectures[0] != samplesapi.AMDArchitecture {
+		return false
+	}
+	return true
+}
+
 func verifySecretPresent(t *testing.T) {
 	setupClients(t)
 	secClient := kubeClient.CoreV1().Secrets("openshift")
@@ -460,6 +478,10 @@ func verifyTemplatesGone(t *testing.T) {
 }
 
 func validateContent(t *testing.T, timeToCompare *kapis.Time) {
+	if !verifyX86(t) {
+		return
+	}
+
 	contentDir := getContentDir(t)
 	content := getSamplesNames(contentDir, nil, t)
 	streams, _ := content[imagestreamsKey]
@@ -563,6 +585,10 @@ func verifySkippedTemplateManagedLabel(t *testing.T, value string) {
 }
 
 func verifyDeletedImageStreamNotRecreated(t *testing.T) {
+	if !verifyX86(t) {
+		return
+	}
+
 	err := imageClient.ImageV1().ImageStreams("openshift").Delete("jenkins", &metav1.DeleteOptions{})
 	if err != nil {
 		dumpPod(t)
@@ -620,6 +646,10 @@ func verifyDeletedTemplatesRecreated(t *testing.T) {
 }
 
 func verifyDeletedTemplatesNotRecreated(t *testing.T) {
+	if !verifyX86(t) {
+		return
+	}
+
 	err := templateClient.TemplateV1().Templates("openshift").Delete("jenkins-ephemeral", &metav1.DeleteOptions{})
 	if err != nil {
 		dumpPod(t)
@@ -893,6 +923,10 @@ func TestSpecManagementStateField(t *testing.T) {
 }
 
 func TestSkippedProcessing(t *testing.T) {
+	if !verifyX86(t) {
+		return
+	}
+
 	err := verifyConditionsCompleteSamplesAdded(t)
 	if err != nil {
 		dumpPod(t)
@@ -973,6 +1007,10 @@ func TestSkippedProcessing(t *testing.T) {
 }
 
 func TestRecreateDeletedManagedSample(t *testing.T) {
+	if !verifyX86(t) {
+		return
+	}
+
 	verifyOperatorUp(t)
 	// first make sure we are at normal state
 	err := verifyConditionsCompleteSamplesAdded(t)
