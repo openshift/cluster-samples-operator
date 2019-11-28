@@ -93,6 +93,8 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config,
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
 
+	h.imagestreamRetry = make(map[string]metav1.Time)
+
 	h.mapsMutex = sync.Mutex{}
 	h.version = os.Getenv("RELEASE_VERSION")
 
@@ -130,6 +132,8 @@ type Handler struct {
 
 	imagestreamFile map[string]string
 	templateFile    map[string]string
+
+	imagestreamRetry map[string]metav1.Time
 
 	mapsMutex sync.Mutex
 
