@@ -187,12 +187,12 @@ go.uber.org/zap/internal/bufferpool
 go.uber.org/zap/buffer
 go.uber.org/zap/internal/color
 go.uber.org/zap/internal/exit
-# golang.org/x/crypto v0.0.0-20190611184440-5c40567a22f8
+# golang.org/x/crypto v0.0.0-20190820162420-60c769a6c586
 golang.org/x/crypto/ssh/terminal
 # golang.org/x/lint v0.0.0-20190930215403-16217165b5de
 golang.org/x/lint/golint
 golang.org/x/lint
-# golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7
+# golang.org/x/net v0.0.0-20191004110552-13f9640d40b9
 golang.org/x/net/http2
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2/hpack
@@ -217,7 +217,7 @@ golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
 golang.org/x/text/transform
 golang.org/x/text/width
-# golang.org/x/time v0.0.0-20181108054448-85acf8d2951c
+# golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 golang.org/x/time/rate
 # golang.org/x/tools v0.0.0-20191029190741-b9c20aec41a5
 golang.org/x/tools/imports
@@ -340,7 +340,7 @@ honnef.co/go/tools/ssautil
 honnef.co/go/tools/staticcheck/vrp
 honnef.co/go/tools/go/types/typeutil
 honnef.co/go/tools/internal/renameio
-# k8s.io/api v0.0.0-20191031065753-b19d8caf39be
+# k8s.io/api v0.0.0-20191122220107-b5267f2975e0
 k8s.io/api/core/v1
 k8s.io/api/admissionregistration/v1
 k8s.io/api/admissionregistration/v1beta1
@@ -358,8 +358,10 @@ k8s.io/api/certificates/v1beta1
 k8s.io/api/coordination/v1
 k8s.io/api/coordination/v1beta1
 k8s.io/api/discovery/v1alpha1
+k8s.io/api/discovery/v1beta1
 k8s.io/api/events/v1beta1
 k8s.io/api/extensions/v1beta1
+k8s.io/api/flowcontrol/v1alpha1
 k8s.io/api/networking/v1
 k8s.io/api/networking/v1beta1
 k8s.io/api/node/v1alpha1
@@ -381,7 +383,7 @@ k8s.io/api/authorization/v1
 k8s.io/api/authorization/v1beta1
 k8s.io/api/admission/v1
 k8s.io/api/admission/v1beta1
-# k8s.io/apimachinery v0.0.0-20191030190112-bb31b70367b7
+# k8s.io/apimachinery v0.0.0-20191121175448-79c2a76c473a
 k8s.io/apimachinery/pkg/apis/meta/v1
 k8s.io/apimachinery/pkg/api/meta
 k8s.io/apimachinery/pkg/runtime
@@ -515,7 +517,7 @@ k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager/internal
 k8s.io/apiserver/pkg/storage/etcd3
 k8s.io/apiserver/pkg/admission/plugin/webhook/config/apis/webhookadmission
 k8s.io/apiserver/pkg/admission/plugin/webhook/config/apis/webhookadmission/v1alpha1
-# k8s.io/client-go v0.0.0-20191028230319-1a481fb1e32d
+# k8s.io/client-go v0.0.0-20191122220542-ed16ecbdf3a0
 k8s.io/client-go/plugin/pkg/client/auth/gcp
 k8s.io/client-go/listers/core/v1
 k8s.io/client-go/rest
@@ -554,6 +556,7 @@ k8s.io/client-go/informers/core
 k8s.io/client-go/informers/discovery
 k8s.io/client-go/informers/events
 k8s.io/client-go/informers/extensions
+k8s.io/client-go/informers/flowcontrol
 k8s.io/client-go/informers/internalinterfaces
 k8s.io/client-go/informers/networking
 k8s.io/client-go/informers/node
@@ -582,8 +585,10 @@ k8s.io/client-go/kubernetes/typed/certificates/v1beta1
 k8s.io/client-go/kubernetes/typed/coordination/v1
 k8s.io/client-go/kubernetes/typed/coordination/v1beta1
 k8s.io/client-go/kubernetes/typed/discovery/v1alpha1
+k8s.io/client-go/kubernetes/typed/discovery/v1beta1
 k8s.io/client-go/kubernetes/typed/events/v1beta1
 k8s.io/client-go/kubernetes/typed/extensions/v1beta1
+k8s.io/client-go/kubernetes/typed/flowcontrol/v1alpha1
 k8s.io/client-go/kubernetes/typed/networking/v1
 k8s.io/client-go/kubernetes/typed/networking/v1beta1
 k8s.io/client-go/kubernetes/typed/node/v1alpha1
@@ -625,8 +630,10 @@ k8s.io/client-go/informers/coordination/v1
 k8s.io/client-go/informers/coordination/v1beta1
 k8s.io/client-go/informers/core/v1
 k8s.io/client-go/informers/discovery/v1alpha1
+k8s.io/client-go/informers/discovery/v1beta1
 k8s.io/client-go/informers/events/v1beta1
 k8s.io/client-go/informers/extensions/v1beta1
+k8s.io/client-go/informers/flowcontrol/v1alpha1
 k8s.io/client-go/informers/networking/v1
 k8s.io/client-go/informers/networking/v1beta1
 k8s.io/client-go/informers/node/v1alpha1
@@ -660,8 +667,10 @@ k8s.io/client-go/listers/certificates/v1beta1
 k8s.io/client-go/listers/coordination/v1
 k8s.io/client-go/listers/coordination/v1beta1
 k8s.io/client-go/listers/discovery/v1alpha1
+k8s.io/client-go/listers/discovery/v1beta1
 k8s.io/client-go/listers/events/v1beta1
 k8s.io/client-go/listers/extensions/v1beta1
+k8s.io/client-go/listers/flowcontrol/v1alpha1
 k8s.io/client-go/listers/networking/v1
 k8s.io/client-go/listers/networking/v1beta1
 k8s.io/client-go/listers/node/v1alpha1
@@ -730,7 +739,7 @@ k8s.io/gengo/parser
 k8s.io/gengo/examples/set-gen/sets
 # k8s.io/klog v1.0.0
 k8s.io/klog
-# k8s.io/kube-openapi v0.0.0-20190918143330-0270cf2f1c1d
+# k8s.io/kube-openapi v0.0.0-20191107075043-30be4d16710a
 k8s.io/kube-openapi/pkg/builder
 k8s.io/kube-openapi/pkg/common
 k8s.io/kube-openapi/pkg/handler
@@ -741,7 +750,7 @@ k8s.io/kube-openapi/pkg/generators
 k8s.io/kube-openapi/pkg/generators/rules
 k8s.io/kube-openapi/pkg/util/sets
 k8s.io/kube-openapi/pkg/schemaconv
-# k8s.io/utils v0.0.0-20191010214722-8d271d903fe4
+# k8s.io/utils v0.0.0-20191114184206-e782cd3c129f
 k8s.io/utils/integer
 k8s.io/utils/buffer
 k8s.io/utils/trace
