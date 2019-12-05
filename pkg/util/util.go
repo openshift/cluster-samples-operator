@@ -325,6 +325,14 @@ func ClusterNeedsCreds(s *samplev1.Config, ) bool {
 	return ConditionFalse(s, samplev1.ImportCredentialsExist)
 }
 
+// IsNonX86Arch let's us know if this is something other than x86_64/amd like s390x or ppc
+func IsNonX86Arch(cfg *samplev1.Config) bool {
+	if len(cfg.Spec.Architectures) > 0 && cfg.Spec.Architectures[0] != samplev1.AMDArchitecture && cfg.Spec.Architectures[0] != samplev1.X86Architecture {
+		return true
+	}
+	return false
+}
+
 type Event struct {
 	Object  runtime.Object
 	Deleted bool

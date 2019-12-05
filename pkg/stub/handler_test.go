@@ -3,6 +3,7 @@ package stub
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -83,9 +84,17 @@ func TestWithDist(t *testing.T) {
 func TestWithArchDist(t *testing.T) {
 	h, cfg, event := setup()
 	processCred(&h, cfg, t)
-	cfg.Spec.Architectures = []string{
-		v1.X86Architecture,
+	if len(cfg.Spec.Architectures) == 0 {
+		t.Errorf("arch not set on bootstrap")
 	}
+	testValue := runtime.GOARCH
+	if testValue == v1.AMDArchitecture {
+		testValue = v1.X86Architecture
+	}
+	if cfg.Spec.Architectures[0] != testValue {
+		t.Errorf("arch set to %s instead of %s", cfg.Spec.Architectures[0], runtime.GOARCH)
+	}
+
 	mimic(&h, x86OCPContentRootDir)
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -98,6 +107,7 @@ func TestWithArchDist(t *testing.T) {
 		conditions,
 		statuses, t)
 
+
 }
 
 func TestWithArch(t *testing.T) {
@@ -108,7 +118,7 @@ func TestWithArch(t *testing.T) {
 		v1.PPCArchitecture,
 	}
 	err := h.Handle(event)
-	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	validateArchOverride(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t, v1.PPCArchitecture)
 }
 
 func TestWithBadArch(t *testing.T) {
@@ -1280,7 +1290,7 @@ func mimic(h *Handler, topdir string) {
 
 }
 
-func validate(succeed bool, err error, errstr string, cfg *v1.Config, statuses []v1.ConfigConditionType, conditions []corev1.ConditionStatus, t *testing.T) {
+func validateArchOverride(succeed bool, err error, errstr string, cfg *v1.Config, statuses []v1.ConfigConditionType, conditions []corev1.ConditionStatus, t *testing.T, arch string) {
 	if succeed && err != nil {
 		t.Fatal(err)
 	}
@@ -1307,8 +1317,21 @@ func validate(succeed bool, err error, errstr string, cfg *v1.Config, statuses [
 				t.Fatalf("unexpected for succeed %v have status condition %#v expected condition %#v and status %#v", succeed, cfg.Status.Conditions[i], c, conditions[i])
 			}
 		}
+		testValue := arch
+		if testValue == v1.AMDArchitecture {
+			testValue = v1.X86Architecture
+		}
+		if cfg.Spec.Architectures[0] != testValue {
+			t.Fatalf("arch set to %s instead of %s", cfg.Spec.Architectures[0], runtime.GOARCH)
+		}
 	}
+
 }
+
+func validate(succeed bool, err error, errstr string, cfg *v1.Config, statuses []v1.ConfigConditionType, conditions []corev1.ConditionStatus, t *testing.T) {
+	validateArchOverride(succeed, err, errstr, cfg, statuses, conditions, t, runtime.GOARCH)
+}
+
 
 func NewTestHandler() Handler {
 	h := Handler{}
