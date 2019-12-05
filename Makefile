@@ -1,8 +1,6 @@
 REPO=openshift
 
-all: generate build build-image
-generate:
-	./hack/codegen/update-generated.sh
+all: build build-image
 
 build:
 #FYI if we ever add back in git version into the binary, compile like
