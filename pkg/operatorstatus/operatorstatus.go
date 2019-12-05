@@ -87,7 +87,7 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 		// will ignore errors in delete path, but we at least log them above
 		return nil
 	}
-	if len(cfg.Spec.Architectures) > 0 && cfg.Spec.Architectures[0] != v1.AMDArchitecture && cfg.Spec.Architectures[0] != v1.X86Architecture {
+	if util.IsNonX86Arch(cfg) {
 		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionFalse, cfg, nonX86)
 		// will ignore errors in non-x86 path, but we at least log them above
 		return nil
