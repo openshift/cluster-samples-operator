@@ -31,11 +31,8 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 	for _, arch := range cfg.Spec.Architectures {
 		switch arch {
 		case v1.X86Architecture:
-		case v1.AMDArchitecture:
-		case v1.PPCArchitecture:
-		case v1.S390Architecture:
 		default:
-			err := fmt.Errorf("architecture %s unsupported; only support %s", arch, strings.Join([]string{v1.X86Architecture, v1.AMDArchitecture, v1.PPCArchitecture, v1.S390Architecture}, ","))
+			err := fmt.Errorf("architecture %s unsupported; only support %s", arch, v1.X86Architecture)
 			return h.processError(cfg, v1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 		}
 	}

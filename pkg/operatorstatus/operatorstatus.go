@@ -23,7 +23,6 @@ import (
 const (
 	ClusterOperatorName = "openshift-samples"
 	doingDelete         = "DeletionInProgress"
-	nonX86              = "NonX86Platform"
 )
 
 // ClusterOperatorHandler allows for wrappering access to configv1.ClusterOperator
@@ -63,37 +62,23 @@ type ClusterOperatorWrapper interface {
 	Create(state *configv1.ClusterOperator) (err error)
 }
 
-// this method ensures that Available==true and Degraded==false, regardless of other conditions; it currently
-// allows Progressing to be explicitly set to true or false based on the scenario the caller is addressing
-func (o *ClusterOperatorHandler) setOperatorStatusWithoutInterrogatingConfig(progressing configv1.ConditionStatus, cfg *v1.Config, reason string) {
-	err := o.setOperatorStatus(configv1.OperatorAvailable, configv1.ConditionTrue, "", cfg.Status.Version, reason)
-	if err != nil {
-		logrus.Warningf("error occurred while attempting to set available condition: %s", err.Error())
-	}
-	err = o.setOperatorStatus(configv1.OperatorProgressing, progressing, "", cfg.Status.Version, reason)
-	if err != nil {
-		logrus.Warningf("error occurred while attempting to set progressing condition: %s", err.Error())
-	}
-	err = o.setOperatorStatus(configv1.OperatorDegraded, configv1.ConditionFalse, "", cfg.Status.Version, reason)
-	if err != nil {
-		logrus.Warningf("error occurred while attempting to set degraded condition: %s", err.Error())
-	}
-
-}
-
 func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionInProgress bool) error {
 	if deletionInProgress {
-		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionTrue, cfg, doingDelete)
+		err := o.setOperatorStatus(configv1.OperatorAvailable, configv1.ConditionTrue, "", cfg.Status.Version, doingDelete)
+		if err != nil {
+			logrus.Warningf("error occurred while attempting to set available condition: %s", err.Error())
+		}
+		err = o.setOperatorStatus(configv1.OperatorProgressing, configv1.ConditionTrue, "", cfg.Status.Version, doingDelete)
+		if err != nil {
+			logrus.Warningf("error occurred while attempting to set progressing condition: %s", err.Error())
+		}
+		err = o.setOperatorStatus(configv1.OperatorDegraded, configv1.ConditionFalse, "", cfg.Status.Version, doingDelete)
+		if err != nil {
+			logrus.Warningf("error occurred while attempting to set degraded condition: %s", err.Error())
+		}
 		// will ignore errors in delete path, but we at least log them above
 		return nil
 	}
-	if len(cfg.Spec.Architectures) > 0 && cfg.Spec.Architectures[0] != v1.AMDArchitecture && cfg.Spec.Architectures[0] != v1.X86Architecture {
-		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionFalse, cfg, nonX86)
-		// will ignore errors in non-x86 path, but we at least log them above
-		return nil
-
-	}
-
 	errs := []error{}
 	degraded, degradedReason, degradedDetail := util.ClusterOperatorStatusDegradedCondition(cfg)
 	err := o.setOperatorStatus(configv1.OperatorDegraded,

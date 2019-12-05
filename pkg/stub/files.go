@@ -57,12 +57,6 @@ func (h *Handler) GetBaseDir(arch string, opcfg *v1.Config) (dir string) {
 	switch arch {
 	case v1.X86Architecture:
 		dir = x86OCPContentRootDir
-	case v1.AMDArchitecture:
-		dir = x86OCPContentRootDir
-	case v1.PPCArchitecture:
-		dir = ppcOCPContentRootDir
-	case v1.S390Architecture:
-		dir = zOCPContentRootDir
 	default:
 	}
 	return dir

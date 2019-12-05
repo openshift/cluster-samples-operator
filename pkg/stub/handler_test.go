@@ -55,11 +55,10 @@ func TestNoArchOrDist(t *testing.T) {
 	h, cfg, event := setup()
 	processCred(&h, cfg, t)
 	err := h.Handle(event)
-	// image in progress (4th entry, array index 3) should still be false when there is no content ... a la z or ppc
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	err = h.Handle(event)
-	// and on a subsequent event, exists should still be false since we did not create any content previously
+	statuses[0] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
 }
 
@@ -67,17 +66,12 @@ func TestWithDist(t *testing.T) {
 	h, cfg, event := setup()
 	processCred(&h, cfg, t)
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	err = h.Handle(event)
-	// image in progress (4th entry, array index 3) should still be false when there is no content ... a la z or ppc
-	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
-	mimic(&h, x86OCPContentRootDir)
-	err = h.Handle(event)
-	// with content present, image im progress should now be true
-	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
+
 }
 
 func TestWithArchDist(t *testing.T) {
@@ -103,12 +97,11 @@ func TestWithArchDist(t *testing.T) {
 func TestWithArch(t *testing.T) {
 	h, cfg, event := setup()
 	processCred(&h, cfg, t)
-	// without a mimic call this simulates our current PPC/390 stories of no samples content
 	cfg.Spec.Architectures = []string{
-		v1.PPCArchitecture,
+		v1.X86Architecture,
 	}
 	err := h.Handle(event)
-	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 }
 
 func TestWithBadArch(t *testing.T) {
@@ -229,7 +222,7 @@ func TestSkipped(t *testing.T) {
 	mimic(&h, x86OCPContentRootDir)
 
 	err := h.Handle(event)
-	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	for _, key := range iskeys {
@@ -612,7 +605,6 @@ func TestCreateDeleteSecretBeforeCR(t *testing.T) {
 			ResourceVersion: "a",
 		},
 	}
-	mimic(&h, x86OCPContentRootDir)
 
 	err := h.Handle(event)
 	validate(false, err, "Received secret samples-registry-credentials but do not have the Config yet", cfg,
@@ -645,7 +637,7 @@ func TestCreateDeleteSecretBeforeCR(t *testing.T) {
 
 func TestCreateDeleteSecretAfterCR(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
+
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
@@ -716,7 +708,7 @@ func processCred(h *Handler, cfg *v1.Config, t *testing.T) {
 
 func TestSameSecret(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
+
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
@@ -1109,22 +1101,20 @@ func TestDeletedCR(t *testing.T) {
 
 func TestSameCR(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
 	processCred(&h, cfg, t)
 	cfg.ResourceVersion = "a"
 
-	// first pass on the resource creates the samples, exists (first entry, index 0) is still false
+	// first pass on the resource creates the samples
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	err := h.Handle(event)
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	err = h.Handle(event)
-	// next pass is when we expect exists to be true
 	statuses[0] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	err = h.Handle(event)
-	// now with content, should see no change in status after duplicate event, where imagestream import status has not changed
+	statuses[3] = corev1.ConditionFalse
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 }
@@ -1152,7 +1142,6 @@ func TestBadSubDirList(t *testing.T) {
 
 func TestBadTopLevelStatus(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
 	processCred(&h, cfg, t)
 	fakestatus := h.crdwrapper.(*fakeCRDWrapper)
 	fakestatus.updateerr = fmt.Errorf("badsdkupdate")
