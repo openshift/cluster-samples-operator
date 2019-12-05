@@ -271,6 +271,9 @@ github.com/openshift/client-go v0.0.0-20190813201236-5a5508328169 h1:rQZe9w0+xEm
 github.com/openshift/client-go v0.0.0-20190813201236-5a5508328169/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
 github.com/openshift/client-go v0.0.0-20191022152013-2823239d2298 h1:wg5VfVIEtKI0yaBNeHNM1N01EjwTGg7JW0Gp+jqnYGQ=
 github.com/openshift/client-go v0.0.0-20191022152013-2823239d2298/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
+github.com/openshift/client-go v0.0.0-20191205152420-9faca5198b4f h1:1ak9jgsR7+vJ/nvvXS2RUpBhv4Fi0LPc1Zp+wSbGtqg=
+github.com/openshift/client-go v0.0.0-20191205152420-9faca5198b4f/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
+github.com/openshift/client-go v3.9.0+incompatible h1:13k3Ok0B7TA2hA3bQW2aFqn6y04JaJWdk7ITTyg+Ek0=
 github.com/openshift/crd-schema-gen v1.0.0 h1:s/6kG236Z0aqOBUlIZrlykdsXLzvDl3ylHJIME17ZRg=
 github.com/openshift/crd-schema-gen v1.0.0/go.mod h1:jTmSmtfJzK2emb3ucPkHqvoOe//PuNhR3aBiUBbg/rc=
 github.com/openshift/kubernetes-api v0.0.0-20190815163222-ffaba947a5e9 h1:tbH5v9yh6GWw37cxEMPlu8vFmCKHPgqzFEpOgBD7Fb8=
