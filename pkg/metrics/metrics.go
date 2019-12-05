@@ -13,7 +13,7 @@ import (
 	configv1 "github.com/openshift/api/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/client"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
-	sampoplisters "github.com/openshift/cluster-samples-operator/pkg/generated/listers/samples/v1"
+	sampoplisters "github.com/openshift/client-go/samples/listers/samples/v1"
 
 	"github.com/sirupsen/logrus"
 )

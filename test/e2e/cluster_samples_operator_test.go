@@ -27,7 +27,7 @@ import (
 	templateset "github.com/openshift/client-go/template/clientset/versioned"
 	samplesapi "github.com/openshift/api/samples/v1"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
-	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
+	sampleclientv1 "github.com/openshift/client-go/samples/clientset/versioned"
 	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/stub"
 	"github.com/openshift/cluster-samples-operator/pkg/util"

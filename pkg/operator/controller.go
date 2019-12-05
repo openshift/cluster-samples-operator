@@ -29,8 +29,8 @@ import (
 	sampopapi "github.com/openshift/api/samples/v1"
 	sampcache "github.com/openshift/cluster-samples-operator/pkg/cache"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
-	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
-	sampopinformers "github.com/openshift/cluster-samples-operator/pkg/generated/informers/externalversions"
+	sampleclientv1 "github.com/openshift/client-go/samples/clientset/versioned"
+	sampopinformers "github.com/openshift/client-go/samples/informers/externalversions"
 
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/stub"
