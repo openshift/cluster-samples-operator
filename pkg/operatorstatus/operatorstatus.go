@@ -61,6 +61,14 @@ type ClusterOperatorWrapper interface {
 	Create(state *configv1.ClusterOperator) (err error)
 }
 
+// IsNonX86Arch let's us know if this is something other than x86_64/amd like s390x or ppc
+func IsNonX86Arch(cfg *v1.Config) bool {
+	if len(cfg.Spec.Architectures) > 0 && cfg.Spec.Architectures[0] != v1.AMDArchitecture && cfg.Spec.Architectures[0] != v1.X86Architecture {
+		return true
+	}
+	return false
+}
+
 // this method ensures that Available==true and Degraded==false, regardless of other conditions; it currently
 // allows Progressing to be explicitly set to true or false based on the scenario the caller is addressing
 func (o *ClusterOperatorHandler) setOperatorStatusWithoutInterrogatingConfig(progressing configv1.ConditionStatus, cfg *v1.Config, reason string) {
@@ -85,7 +93,7 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 		// will ignore errors in delete path, but we at least log them above
 		return nil
 	}
-	if len(cfg.Spec.Architectures) > 0 && cfg.Spec.Architectures[0] != v1.AMDArchitecture && cfg.Spec.Architectures[0] != v1.X86Architecture {
+	if IsNonX86Arch(cfg) {
 		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionFalse, cfg, nonX86)
 		// will ignore errors in non-x86 path, but we at least log them above
 		return nil

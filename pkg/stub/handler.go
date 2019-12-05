@@ -577,6 +577,10 @@ func (h *Handler) Handle(event v1.Event) error {
 		// Every time we see a change to the Config object, update the ClusterOperator status
 		// based on the current conditions of the Config.
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
+		//TODO remove this setting of version once we start getting samples for z or ppc
+		if operatorstatus.IsNonX86Arch(cfg) {
+			cfg.Status.Version = h.version
+		}
 		err := h.cvowrapper.UpdateOperatorStatus(cfg, false)
 		if err != nil {
 			logrus.Errorf("error updating cluster operator status: %v", err)
@@ -614,7 +618,7 @@ func (h *Handler) Handle(event v1.Event) error {
 		}
 
 		//TODO adjust this check as we start getting samples for z or ppc
-		if len(cfg.Spec.Architectures) > 0 && cfg.Spec.Architectures[0] != v1.AMDArchitecture && cfg.Spec.Architectures[0] != v1.X86Architecture {
+		if operatorstatus.IsNonX86Arch(cfg) {
 			logrus.Printf("samples are not installed on non-x86 architectures")
 			return nil
 		}
