@@ -3,7 +3,7 @@
 package v1
 
 import (
-	internalinterfaces "github.com/openshift/cluster-samples-operator/pkg/generated/informers/externalversions/internalinterfaces"
+	internalinterfaces "github.com/openshift/client-go/samples/informers/externalversions/internalinterfaces"
 )
 
 // Interface provides access to all the informers in this group version.

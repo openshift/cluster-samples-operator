@@ -32,7 +32,7 @@ import (
 	imagev1lister "github.com/openshift/client-go/image/listers/image/v1"
 	templatev1client "github.com/openshift/client-go/template/clientset/versioned/typed/template/v1"
 	templatev1lister "github.com/openshift/client-go/template/listers/template/v1"
-	configv1lister "github.com/openshift/cluster-samples-operator/pkg/generated/listers/samples/v1"
+	configv1lister "github.com/openshift/client-go/samples/listers/samples/v1"
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
 	v1 "github.com/openshift/api/samples/v1"
@@ -42,7 +42,7 @@ import (
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 
-	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samples/v1"
+	sampleclientv1 "github.com/openshift/client-go/samples/clientset/versioned/typed/samples/v1"
 )
 
 const (

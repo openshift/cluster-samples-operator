@@ -6,9 +6,9 @@ import (
 	time "time"
 
 	samplesv1 "github.com/openshift/api/samples/v1"
-	versioned "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned"
-	internalinterfaces "github.com/openshift/cluster-samples-operator/pkg/generated/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/cluster-samples-operator/pkg/generated/listers/samples/v1"
+	versioned "github.com/openshift/client-go/samples/clientset/versioned"
+	internalinterfaces "github.com/openshift/client-go/samples/informers/externalversions/internalinterfaces"
+	v1 "github.com/openshift/client-go/samples/listers/samples/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
