@@ -103,11 +103,6 @@
                 "name": "${APPLICATION_NAME}"
             },
             "spec": {
-                "selector": {
-                    "matchLabels": {
-                        "application": "${APPLICATION_NAME}"
-                    }
-                },
                 "replicas": "${{NUMBER_OF_INSTANCES}}",
                 "serviceName": "${APPLICATION_NAME}-ping",
                 "strategy": {
