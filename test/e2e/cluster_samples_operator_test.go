@@ -3,6 +3,7 @@ package e2e
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,7 +37,7 @@ import (
 
 var (
 	kubeConfig     *rest.Config
-	operatorClient *configv1client.ConfigV1Client
+	configClient   *configv1client.ConfigV1Client
 	kubeClient     *kubeset.Clientset
 	imageClient    *imageset.Clientset
 	templateClient *templateset.Clientset
@@ -56,8 +57,8 @@ func setupClients(t *testing.T) {
 			t.Fatalf("%#v", err)
 		}
 	}
-	if operatorClient == nil {
-		operatorClient, err = configv1client.NewForConfig(kubeConfig)
+	if configClient == nil {
+		configClient, err = configv1client.NewForConfig(kubeConfig)
 		if err != nil {
 			t.Fatalf("%#v", err)
 		}
@@ -153,6 +154,49 @@ func verifyX86(t *testing.T) bool {
 	return true
 }
 
+func verifyIPv6(t *testing.T) bool {
+	err := wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+		networkConfig, err := configClient.Networks().Get("cluster", metav1.GetOptions{})
+		if !stub.IsRetryableAPIError(err) && err != nil {
+			t.Logf("verifyIPv6 got unretryable error %s", err.Error())
+			return false, err
+		}
+		if err != nil {
+			t.Logf("verifyIPv6 got retryable error %s", err.Error())
+			return false, nil
+		}
+		if len(networkConfig.Status.ClusterNetwork) == 0 {
+			t.Logf("verifyIPv6 sees no cluster networks in network config yet")
+			return false, nil
+		}
+		for _, entry := range networkConfig.Status.ClusterNetwork {
+			t.Logf("verifyIPv6 looking at CIDR %s", entry.CIDR)
+			if len(entry.CIDR) > 0 {
+				ip, _, err := net.ParseCIDR(entry.CIDR)
+				if err != nil {
+					return false, err
+				}
+				if ip.To4() != nil {
+					t.Logf("verifyIPv6 found ipv4 %s", ip.String())
+					return true, nil
+				}
+				t.Logf("verifyIPv6 IP %s not ipv4", ip.String())
+			}
+		}
+		t.Logf("verifyIPv6 done looping through cluster networks, found no ipv4")
+		if len(networkConfig.Status.ClusterNetwork) == 0 {
+			return false, nil
+		}
+		return false, fmt.Errorf("verifyIPv6 determined this is a IPIv6 env")
+	})
+	if err != nil {
+		t.Logf("verifyIpv6 either could not access network cluster config or ipv6 only: %s", err.Error())
+		return true
+	}
+	t.Logf("verifyIpv6 saying not to abort for ipv6")
+	return false
+}
+
 func verifySecretPresent(t *testing.T) {
 	setupClients(t)
 	secClient := kubeClient.CoreV1().Secrets("openshift")
@@ -211,7 +255,7 @@ func verifyClusterOperatorConditionsComplete(t *testing.T, expectedVersion strin
 	var state *configv1.ClusterOperator
 	var err error
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		state, err = operatorClient.ClusterOperators().Get(operator.ClusterOperatorName, metav1.GetOptions{})
+		state, err = configClient.ClusterOperators().Get(operator.ClusterOperatorName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -485,6 +529,9 @@ func validateContent(t *testing.T, timeToCompare *kapis.Time) {
 	if !verifyX86(t) {
 		return
 	}
+	if verifyIPv6(t) {
+		return
+	}
 
 	contentDir := getContentDir(t)
 	content := getSamplesNames(contentDir, nil, t)
@@ -592,6 +639,9 @@ func verifyDeletedImageStreamNotRecreated(t *testing.T) {
 	if !verifyX86(t) {
 		return
 	}
+	if verifyIPv6(t) {
+		return
+	}
 
 	err := imageClient.ImageV1().ImageStreams("openshift").Delete("jenkins", &metav1.DeleteOptions{})
 	if err != nil {
@@ -651,6 +701,9 @@ func verifyDeletedTemplatesRecreated(t *testing.T) {
 
 func verifyDeletedTemplatesNotRecreated(t *testing.T) {
 	if !verifyX86(t) {
+		return
+	}
+	if verifyIPv6(t) {
 		return
 	}
 
@@ -930,6 +983,9 @@ func TestSkippedProcessing(t *testing.T) {
 	if !verifyX86(t) {
 		return
 	}
+	if verifyIPv6(t) {
+		return
+	}
 
 	err := verifyConditionsCompleteSamplesAdded(t)
 	if err != nil {
@@ -1012,6 +1068,9 @@ func TestSkippedProcessing(t *testing.T) {
 
 func TestRecreateDeletedManagedSample(t *testing.T) {
 	if !verifyX86(t) {
+		return
+	}
+	if verifyIPv6(t) {
 		return
 	}
 

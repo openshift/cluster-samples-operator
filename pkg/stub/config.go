@@ -278,6 +278,9 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		// now actually process removed state
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState ||
 			util.ConditionTrue(cfg, v1.SamplesExist) {
+			//reset bootstrap flag
+			h.tbrCheckFailed = false
+
 			logrus.Println("management state set to removed so deleting samples")
 			err := h.CleanUpOpenshiftNamespaceOnDelete(cfg)
 			if err != nil {
@@ -307,6 +310,9 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		}
 		return false, false, nil
 	case operatorsv1api.Managed:
+		//reset bootstrap flag
+		h.tbrCheckFailed = false
+
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState {
 			logrus.Println("management state set to managed")
 			if util.ConditionFalse(cfg, v1.ImportCredentialsExist) {
@@ -317,6 +323,9 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		// to deal with config change processing
 		return true, false, nil
 	case operatorsv1api.Unmanaged:
+		//reset bootstrap flag
+		h.tbrCheckFailed = false
+
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState {
 			logrus.Println("management state set to unmanaged")
 			cfg.Status.ManagementState = operatorsv1api.Unmanaged
