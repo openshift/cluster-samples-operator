@@ -437,7 +437,7 @@
             "displayName": "Version of NodeJS Image",
             "name": "NODEJS_VERSION",
             "required": true,
-            "value": "8"
+            "value": "10"
         },
         {
             "description": "Version of MongoDB image to be used (3.6 or latest).",
