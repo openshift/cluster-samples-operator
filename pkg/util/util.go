@@ -57,7 +57,7 @@ func ConditionUnknown(s *samplev1.Config, c samplev1.ConfigConditionType) bool {
 	return false
 }
 
-func AnyConditionUnknown(s *samplev1.Config, ) bool {
+func AnyConditionUnknown(s *samplev1.Config) bool {
 	for _, rc := range s.Status.Conditions {
 		if rc.Status == corev1.ConditionUnknown {
 			return true
@@ -150,7 +150,6 @@ const (
 	// numConfigConditionType is a helper constant that captures the number possible conditions
 	// defined above in this const block
 	numconfigConditionType = 7
-
 )
 
 // ClusterOperatorStatusAvailableCondition return values are as follows:
@@ -295,7 +294,7 @@ func ClusterOperatorStatusProgressingCondition(s *samplev1.Config, degradedState
 
 // ClusterNeedsCreds checks the conditions that drive whether the operator complains about
 // needing credentials to import RHEL content
-func ClusterNeedsCreds(s *samplev1.Config, ) bool {
+func ClusterNeedsCreds(s *samplev1.Config) bool {
 	if strings.TrimSpace(s.Spec.SamplesRegistry) != "" &&
 		strings.TrimSpace(s.Spec.SamplesRegistry) != "registry.redhat.io" {
 		return false
