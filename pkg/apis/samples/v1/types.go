@@ -474,7 +474,7 @@ func (s *Config) ClusterOperatorStatusProgressingCondition(degradedState string,
 		return configv1.ConditionTrue, "", fmt.Sprintf(moving, os.Getenv("RELEASE_VERSION"))
 	}
 	if s.ConditionTrue(RemovePending) {
-		return configv1.ConditionTrue, "", fmt.Sprintf(removing, s.Status.Version)
+		return configv1.ConditionTrue, "", fmt.Sprintf(removing, os.Getenv("RELEASE_VERSION"))
 	}
 	if available == configv1.ConditionTrue {
 		msg := fmt.Sprintf(installed, s.Status.Version)
