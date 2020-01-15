@@ -247,13 +247,6 @@ func (h *Handler) processError(opcfg *v1.Config, ctype v1.ConfigConditionType, c
 func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 	switch cfg.Spec.ManagementState {
 	case operatorsv1api.Removed:
-		// first, we will not process a Removed setting if a prior create/update cycle is still in progress;
-		// if still creating/updating, set the remove on hold condition and we'll try the remove once that
-		// is false
-		if util.ConditionTrue(cfg, v1.ImageChangesInProgress) && util.ConditionTrue(cfg, v1.RemovePending) {
-			return false, false, nil
-		}
-
 		if cfg.Status.ManagementState != operatorsv1api.Removed && !util.ConditionTrue(cfg, v1.RemovePending) {
 			now := kapis.Now()
 			condition := util.Condition(cfg, v1.RemovePending)
@@ -261,6 +254,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionTrue
 			util.ConditionUpdate(cfg, condition)
+			logrus.Printf("Attempting stage 1 Removed management state: RemovePending == true")
 			return false, true, nil
 		}
 
@@ -272,6 +266,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionFalse
 			util.ConditionUpdate(cfg, condition)
+			logrus.Printf("Attempting stage 3 Removed management state: RemovePending == false")
 			return false, true, nil
 		}
 
@@ -284,19 +279,24 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			if err != nil {
 				return false, true, h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "The error %v during openshift namespace cleanup has left the samples in an unknown state")
 			}
-			// explicitly reset samples exist and import cred to false since the Config has not
-			// actually been deleted; secret watch ignores events when samples resource is in removed state
+			// explicitly reset exist/inprogress/error to false
 			now := kapis.Now()
-			condition := util.Condition(cfg, v1.SamplesExist)
-			condition.LastTransitionTime = now
-			condition.LastUpdateTime = now
-			condition.Status = corev1.ConditionFalse
-			util.ConditionUpdate(cfg, condition)
+			conditionsToSet := []v1.ConfigConditionType{v1.SamplesExist, v1.ImageChangesInProgress, v1.ImportImageErrorsExist}
+			for _, c := range conditionsToSet {
+				condition := util.Condition(cfg, c)
+				condition.LastTransitionTime = now
+				condition.LastUpdateTime = now
+				condition.Message = ""
+				condition.Reason = ""
+				condition.Status = corev1.ConditionFalse
+				util.ConditionUpdate(cfg, condition)
+			}
 			cfg.Status.ManagementState = operatorsv1api.Removed
 			// after online starter upgrade attempts while this operator was not set to managed,
 			// group arch discussion has decided that we report the latest version
 			cfg.Status.Version = h.version
 			h.ClearStatusConfigForRemoved(cfg)
+			logrus.Printf("Attempting stage 2 Removed management state: Status == Removed")
 			return false, true, nil
 		}
 

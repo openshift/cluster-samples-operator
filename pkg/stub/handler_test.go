@@ -187,38 +187,27 @@ func TestManagementState(t *testing.T) {
 	cfg.ResourceVersion = "3"
 	cfg.Spec.ManagementState = operatorsv1api.Removed
 	err = h.Handle(event)
+	// RemovePending now true
 	statuses[4] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
 	if cfg.Status.ManagementState == operatorsv1api.Removed {
 		t.Fatalf("cfg status set to removed too early %#v", cfg)
 	}
 
-	// verify while we are image in progress and the remove on hold setting is still set to true
-	// if another event comes in
+	// verify while we are image in progress no false and the remove on hold setting is still set to true
 	cfg.ResourceVersion = "4"
 	err = h.Handle(event)
-	validate(true, err, "", cfg, conditions, statuses, t)
-	if cfg.Status.ManagementState == operatorsv1api.Removed {
-		t.Fatalf("cfg status set to removed too early %#v", cfg)
-	}
-
-	// mimic when in progress set to false by imagestream watch
-	// then analyze resulting Config event
-	progressing := util.Condition(cfg, v1.ImageChangesInProgress)
-	progressing.Status = corev1.ConditionFalse
-	progressing.Reason = ""
-	util.ConditionUpdate(cfg, progressing)
-	cfg.ResourceVersion = "5"
-	err = h.Handle(event)
-	// index 0 samples exist should be false
+	// SamplesExists, ImageChangesInProgress, ImportImageErrorsExists all false
 	statuses[0] = corev1.ConditionFalse
-	// in progress should be false
 	statuses[3] = corev1.ConditionFalse
+	statuses[6] = corev1.ConditionFalse
 	validate(true, err, "", cfg, conditions, statuses, t)
 	if cfg.Status.ManagementState != operatorsv1api.Removed {
-		t.Fatalf("cfg status not set to removed %#v", cfg)
+		t.Fatalf("cfg status should have been set to removed %#v", cfg)
 	}
-	cfg.ResourceVersion = "6"
+
+	cfg.ResourceVersion = "5"
+	err = h.Handle(event)
 	// remove pending should be false
 	statuses[4] = corev1.ConditionFalse
 	err = h.Handle(event)
