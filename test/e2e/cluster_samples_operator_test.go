@@ -294,6 +294,13 @@ func verifyClusterOperatorConditionsComplete(t *testing.T, expectedVersion strin
 			reasonOK = true
 		}
 
+		t.Logf("availableOK %v progressingOK %v degradedOK %v versionOK %v reasonOK %v",
+			availableOK,
+			progressingOK,
+			degradedOK,
+			versionOK,
+			reasonOK)
+
 		if availableOK && progressingOK && degradedOK && versionOK && reasonOK {
 			return true, nil
 		}
@@ -1103,7 +1110,7 @@ func coreTestUpgrade(t *testing.T) {
 
 	// update env to trigger upgrade
 	depClient := kubeClient.AppsV1().Deployments(samplesapi.OperatorNamespace)
-	err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
 		dep, err := depClient.Get("cluster-samples-operator", metav1.GetOptions{})
 		if err != nil {
 			t.Logf("error waiting for operator deployment to exist: %v\n", err)
@@ -1113,7 +1120,7 @@ func coreTestUpgrade(t *testing.T) {
 		for i, env := range dep.Spec.Template.Spec.Containers[0].Env {
 			t.Logf("looking at env %s", env.Name)
 			if strings.TrimSpace(env.Name) == "RELEASE_VERSION" {
-				t.Log("updating RELEASE_VERSION env")
+				t.Logf("updating RELEASE_VERSION env to %s", newVersion)
 				dep.Spec.Template.Spec.Containers[0].Env[i].Value = newVersion
 				_, err := depClient.Update(dep)
 				if err == nil {
@@ -1138,7 +1145,7 @@ func coreTestUpgrade(t *testing.T) {
 	}
 
 	if cfg.Status.ManagementState == operatorsv1api.Managed {
-		err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+		err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
 			cfg := verifyOperatorUp(t)
 			if util.ConditionTrue(cfg, samplesapi.MigrationInProgress) {
 				return true, nil
