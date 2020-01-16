@@ -311,7 +311,24 @@ func (h *Handler) tbrInaccessible() bool {
 		// unit test environment
 		return false
 	}
-	err := wait.PollImmediate(5*time.Second, 3*time.Minute, func() (bool, error) {
+	// even with the connection attempt below, we still do the ipv6/proxy checks in case bot ipv6 and proxy
+	// are employed, as we have will return differently here based on which are
+	if util.IsIPv6() {
+		logrus.Print("registry.redhat.io does not support ipv6, bootstrap to removed")
+		return true
+	}
+	// if a proxy is in play, the registry.redhat.io connection attempt during startup is problematic at best;
+	// assume tbr is accessible since a proxy implies external access, and not disconnected
+	proxy, err := h.configclient.Proxies().Get("cluster", metav1.GetOptions{})
+	if err != nil {
+		logrus.Printf("unable to retrieve proxy configuration as part of testing registry.redhat.io connectivity: %s", err.Error())
+	} else {
+		if len(proxy.Status.HTTPSProxy) > 0 || len(proxy.Status.HTTPProxy) > 0 {
+			logrus.Printf("with global proxy configured assuming registry.redhat.io is accessible, bootstrap to Managed")
+			return false
+		}
+	}
+	err = wait.PollImmediate(5*time.Second, 3*time.Minute, func() (bool, error) {
 		tlsConf := &tls.Config{}
 		conn, err := tls.Dial("tcp", "registry.redhat.io:443", tlsConf)
 		if err != nil {
@@ -331,10 +348,11 @@ func (h *Handler) tbrInaccessible() bool {
 	})
 
 	if err == nil {
-		h.tbrCheckFailed = true
+		h.tbrCheckFailed = false
 		return false
 	}
 
+	h.tbrCheckFailed = true
 	logrus.Infof("unable to establish HTTPS connection to registry.redhat.io after 3 minutes, bootstrap to Removed")
 	return true
 }
@@ -419,6 +437,21 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 
 	} else {
 		logrus.Printf("Config %#v found during operator startup", cfg)
+		// after a restart, this means we are beyond a bootstrap; but let's
+		// preserve the state of our initial TBR check
+		h.tbrCheckFailed = false
+		if cfg.Status.ManagementState == operatorsv1api.Removed {
+			op, err := h.cvowrapper.ClusterOperatorWrapper.Get(operatorstatus.ClusterOperatorName)
+			if err == nil {
+				for _, c := range op.Status.Conditions {
+					if c.Reason == operatorstatus.TBR {
+						logrus.Print("Samples operator originally bootstrapped as removed because the TBR was inaccessible")
+						h.tbrCheckFailed = true
+						break
+					}
+				}
+			}
+		}
 	}
 
 	return cfg, nil

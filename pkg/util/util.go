@@ -7,12 +7,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	samplev1 "github.com/openshift/api/samples/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8snet "k8s.io/apimachinery/pkg/util/net"
 )
 
 var (
@@ -330,6 +334,20 @@ func IsNonX86Arch(cfg *samplev1.Config) bool {
 		return true
 	}
 	return false
+}
+
+// IsIPv6 let's us know if this is a ipv6 env (assumes single stack)
+func IsIPv6() bool {
+	ip, err := k8snet.ChooseHostInterface()
+	if err != nil {
+		logrus.Printf("IPv6 determination: ChooseHostInterface err: %s", err.Error())
+		return false
+	}
+	if ip.To4() != nil {
+		return false
+	}
+	logrus.Printf("based on host %s this is an ipv6 cluster", ip.String())
+	return true
 }
 
 type Event struct {
