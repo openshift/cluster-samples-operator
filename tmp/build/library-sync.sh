@@ -29,4 +29,6 @@ git add operator
 rm t.tar
 rm -rf library-master
 
-echo "REMEMBER TO PATCH THE DATAGRID TEMPLATES TO apps/v1 FOR THEIR StatefulSets INSTANCES, and fix openjdk-8-rhel8:1.1 until jboss fixes"
+echo "REMEMBER TO PATCH THE DATAGRID TEMPLATES TO apps/v1 FOR THEIR StatefulSets INSTANCES,"
+echo " and fix openjdk-8-rhel8:1.1 until jboss fixes,"
+echo " and nodejs* templates off of v8"
