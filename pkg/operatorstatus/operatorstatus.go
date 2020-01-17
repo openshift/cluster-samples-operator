@@ -89,12 +89,6 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 		// will ignore errors in delete path, but we at least log them above
 		return nil
 	}
-	if util.IsNonX86Arch(cfg) {
-		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionFalse, cfg, nonX86)
-		// will ignore errors in non-x86 path, but we at least log them above
-		return nil
-
-	}
 	if tbrInaccessible {
 		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionFalse, cfg, TBR)
 		return nil

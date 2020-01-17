@@ -406,10 +406,6 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg.APIVersion = v1.GroupName + "/" + v1.Version
 		cfg = h.updateCfgArch(cfg)
 		switch {
-		// TODO as we gain content for non x86 platforms we can remove the nonx86 check
-		case util.IsNonX86Arch(cfg):
-			cfg.Spec.ManagementState = operatorsv1api.Removed
-			cfg.Status.Version = h.version
 		case h.tbrInaccessible():
 			cfg.Spec.ManagementState = operatorsv1api.Removed
 			cfg.Status.Version = h.version
