@@ -41,3 +41,11 @@ spec:
       annotations:
         message: |
           Samples operator cannot find credentials for 'registry.redhat.io' in the samples pull secret in the openshift namespace.  Unless you have updated the 'samplesRegistry' field in the samples operator config to change which registry the sample ImageStreams are pulled from, you will have failed imports for many of the sample ImageStreams in this case.
+    - alert: SamplesTBRInaccessibleOnBoot
+      expr: openshift_samples_tbr_inaccessible_info == 1
+      for: 2d
+      labels:
+        severity: info
+      annotations:
+        message: |
+          Samples operator could not access regsitry.redhat.io during its initial installation and it boostrapped as removed.

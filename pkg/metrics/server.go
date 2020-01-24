@@ -73,3 +73,11 @@ func ConfigInvalid(inv bool) {
 	}
 	configInvalidStat.Set(0)
 }
+
+func TBRInaccessibleOnBoot(badTBR bool) {
+	if badTBR {
+		tbrInaccessibleOnBootStat.Set(1)
+		return
+	}
+	tbrInaccessibleOnBootStat.Set(0)
+}

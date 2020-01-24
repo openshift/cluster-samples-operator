@@ -97,8 +97,10 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 	}
 	if tbrInaccessible {
 		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionFalse, cfg, TBR)
+		metrics.TBRInaccessibleOnBoot(true)
 		return nil
 	}
+	metrics.TBRInaccessibleOnBoot(false)
 
 	errs := []error{}
 	degraded, degradedReason, degradedDetail := util.ClusterOperatorStatusDegradedCondition(cfg)
