@@ -435,10 +435,6 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg.APIVersion = v1.GroupName + "/" + v1.Version
 		cfg = h.updateCfgArch(cfg)
 		switch {
-		// TODO as we gain content for non x86 platforms we can remove the nonx86 check
-		case util.IsNonX86Arch(cfg):
-			cfg.Spec.ManagementState = operatorsv1api.Removed
-			cfg.Status.Version = h.version
 		case h.tbrInaccessible():
 			cfg.Spec.ManagementState = operatorsv1api.Removed
 			cfg.Status.Version = h.version
@@ -729,6 +725,14 @@ func (h *Handler) Handle(event util.Event) error {
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
+		if len(cfg.Spec.Architectures) > 0 &&
+			cfg.Spec.Architectures[0] != v1.AMDArchitecture &&
+			cfg.Spec.Architectures[0] != v1.X86Architecture &&
+			cfg.Spec.Architectures[0] != v1.S390Architecture &&
+			cfg.Spec.Architectures[0] != v1.PPCArchitecture {
+			logrus.Printf("samples are not installed on an unsupported architecture")
+		}
+
 		h.buildSkipFilters(cfg)
 		configChanged := false
 		configChangeRequiresUpsert := false
@@ -880,13 +884,14 @@ func (h *Handler) Handle(event util.Event) error {
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
-		if !util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
-			// pass in true to force rebuild of maps, which we do here because at this point
-			// we have taken on some form of config change
-			err = h.buildFileMaps(cfg, true)
-			if err != nil {
-				return err
-			}
+		// pass in true to force rebuild of maps, which we do here because at this point
+		// we have taken on some form of config change
+		// we build file maps now in case we are on a platform with no samples
+		err = h.buildFileMaps(cfg, true)
+		if err != nil {
+			return err
+		}
+		if len(h.imagestreamFile) > 0 && !util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
 
 			h.upsertInProgress = true
 			turnFlagOff := func(h *Handler) { h.upsertInProgress = false }

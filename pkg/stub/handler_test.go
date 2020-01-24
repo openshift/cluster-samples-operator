@@ -55,8 +55,9 @@ func TestNoArchOrDist(t *testing.T) {
 	h, cfg, event := setup()
 	processCred(&h, cfg, t)
 	err := h.Handle(event)
-	// image in progress (4th entry, array index 3) should still be false when there is no content ... a la z or ppc
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	// image in progress (4th entry, array index 3) should still be false when there is no content
+	// we not mark available true ... even if we do not install content, the CVO streams are there
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	err = h.Handle(event)
 	// and on a subsequent event, exists should still be false since we did not create any content previously
@@ -67,16 +68,14 @@ func TestWithDist(t *testing.T) {
 	h, cfg, event := setup()
 	processCred(&h, cfg, t)
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
-	err = h.Handle(event)
-	// image in progress (4th entry, array index 3) should still be false when there is no content ... a la z or ppc
-	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	// image in progress (4th entry, array index 3) should still be false when there is no content
+	// we not mark available true ... even if we do not install content, the CVO streams are there
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	mimic(&h, x86OCPContentRootDir)
 	err = h.Handle(event)
 	// with content present, image im progress should now be true
-	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 }
 
@@ -116,7 +115,8 @@ func TestWithArch(t *testing.T) {
 		v1.PPCArchitecture,
 	}
 	err := h.Handle(event)
-	validateArchOverride(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t, v1.PPCArchitecture)
+	// we still say samples exists is true because of CVO installed imagestreams
+	validateArchOverride(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t, v1.PPCArchitecture)
 }
 
 func TestWithBadArch(t *testing.T) {
