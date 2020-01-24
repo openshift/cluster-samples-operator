@@ -273,8 +273,6 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		// now actually process removed state
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState ||
 			util.ConditionTrue(cfg, v1.SamplesExist) {
-			//reset bootstrap flag
-			h.tbrCheckFailed = false
 
 			logrus.Println("management state set to removed so deleting samples")
 			err := h.CleanUpOpenshiftNamespaceOnDelete(cfg)
