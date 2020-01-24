@@ -25,7 +25,7 @@ const (
 	doingDelete         = "DeletionInProgress"
 	nonX86              = "NonX86Platform"
 	ipv6                = "IPv6Platform"
-	tbr                 = "TermsBasedRegistryUnreacahable"
+	TBR                 = "TermsBasedRegistryUnreacahable"
 )
 
 // ClusterOperatorHandler allows for wrappering access to configv1.ClusterOperator
@@ -96,7 +96,8 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 
 	}
 	if tbrInaccessible {
-		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionFalse, cfg, tbr)
+		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionFalse, cfg, TBR)
+		return nil
 	}
 
 	errs := []error{}
