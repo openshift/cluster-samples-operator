@@ -279,6 +279,27 @@ func TestSkipped(t *testing.T) {
 	}
 }
 
+func TestTBRInaccessibleBit(t *testing.T) {
+	h, cfg, event := setup()
+	event.Object = cfg
+	cfg.Spec.ManagementState = operatorsv1api.Removed
+	h.tbrCheckFailed = true
+	// ensure check failed field stays set for all 3 stages
+	// of removed processing
+	i := 0
+	for i < 3 {
+		err := h.Handle(event)
+		if err != nil {
+			t.Fatalf("err %s cfg %#v", err.Error(), cfg)
+		}
+		i++
+	}
+	if !h.tbrCheckFailed {
+		t.Fatalf("TBR bit get reset")
+	}
+
+}
+
 func TestProcessed(t *testing.T) {
 	h, cfg, event := setup()
 	event.Object = cfg
