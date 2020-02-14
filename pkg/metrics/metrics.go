@@ -132,7 +132,9 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 	} else {
 		addCountGauge(ch, invalidSecretDesc, missingSecret, float64(0))
 	}
-	if len(cfg.Spec.SamplesRegistry) > 0 {
+	if len(cfg.Spec.SamplesRegistry) > 0 ||
+		cfg.Spec.ManagementState == operatorv1.Removed ||
+		cfg.Spec.ManagementState == operatorv1.Unmanaged {
 		// we do not flag missing TBR credentials if they have overriden the
 		// samples registry
 		addCountGauge(ch, invalidSecretDesc, missingTBRCredential, float64(0))

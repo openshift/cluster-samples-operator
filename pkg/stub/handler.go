@@ -1,6 +1,7 @@
 package stub
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -38,9 +39,9 @@ import (
 	v1 "github.com/openshift/api/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/cache"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
-	"github.com/openshift/cluster-samples-operator/pkg/util"
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 
 	sampleclientv1 "github.com/openshift/cluster-samples-operator/pkg/generated/clientset/versioned/typed/samples/v1"
 )
@@ -145,6 +146,7 @@ type Handler struct {
 	upsertInProgress bool
 	secretRetryCount int8
 	version          string
+	tbrCheckFailed   bool
 }
 
 // prepSamplesWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
@@ -304,6 +306,57 @@ func (h *Handler) updateCfgArch(cfg *v1.Config) *v1.Config {
 	return cfg
 }
 
+func (h *Handler) tbrInaccessible() bool {
+	if h.configclient == nil {
+		// unit test environment
+		return false
+	}
+	// even with the connection attempt below, we still do the ipv6/proxy checks in case bot ipv6 and proxy
+	// are employed, as we have will return differently here based on which are
+	if util.IsIPv6() {
+		logrus.Print("registry.redhat.io does not support ipv6, bootstrap to removed")
+		return true
+	}
+	// if a proxy is in play, the registry.redhat.io connection attempt during startup is problematic at best;
+	// assume tbr is accessible since a proxy implies external access, and not disconnected
+	proxy, err := h.configclient.Proxies().Get("cluster", metav1.GetOptions{})
+	if err != nil {
+		logrus.Printf("unable to retrieve proxy configuration as part of testing registry.redhat.io connectivity: %s", err.Error())
+	} else {
+		if len(proxy.Status.HTTPSProxy) > 0 || len(proxy.Status.HTTPProxy) > 0 {
+			logrus.Printf("with global proxy configured assuming registry.redhat.io is accessible, bootstrap to Managed")
+			return false
+		}
+	}
+	err = wait.PollImmediate(5*time.Second, 3*time.Minute, func() (bool, error) {
+		tlsConf := &tls.Config{}
+		conn, err := tls.Dial("tcp", "registry.redhat.io:443", tlsConf)
+		if err != nil {
+			logrus.Infof("test connection to registry.redhat.io failed with %s", err.Error())
+			return false, nil
+		}
+		defer conn.Close()
+		err = conn.Handshake()
+		if err != nil {
+			logrus.Infof("test connection to registry.redhat.io experienced SSL handshake error %s", err.Error())
+			// these can be intermittent as well so we'll retry
+			return false, nil
+		}
+		logrus.Infof("test connection to registry.redhat.io successful")
+		return true, nil
+
+	})
+
+	if err == nil {
+		h.tbrCheckFailed = false
+		return false
+	}
+
+	h.tbrCheckFailed = true
+	logrus.Infof("unable to establish HTTPS connection to registry.redhat.io after 3 minutes, bootstrap to Removed")
+	return true
+}
+
 func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, error) {
 	// assume the caller has call lock on the mutex .. out pattern is to have that as
 	// high up the stack as possible ... loc because need to
@@ -354,7 +407,17 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg.Kind = "Config"
 		cfg.APIVersion = v1.GroupName + "/" + v1.Version
 		cfg = h.updateCfgArch(cfg)
-		cfg.Spec.ManagementState = operatorsv1api.Managed
+		switch {
+		// TODO as we gain content for non x86 platforms we can remove the nonx86 check
+		case util.IsNonX86Arch(cfg):
+			cfg.Spec.ManagementState = operatorsv1api.Removed
+			cfg.Status.Version = h.version
+		case h.tbrInaccessible():
+			cfg.Spec.ManagementState = operatorsv1api.Removed
+			cfg.Status.Version = h.version
+		default:
+			cfg.Spec.ManagementState = operatorsv1api.Managed
+		}
 		h.AddFinalizer(cfg)
 		// we should get a watch event for the default pull secret, but just in case
 		// we miss the watch event, as well as reducing churn with not starting the
@@ -374,6 +437,21 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 
 	} else {
 		logrus.Printf("Config %#v found during operator startup", cfg)
+		// after a restart, this means we are beyond a bootstrap; but let's
+		// preserve the state of our initial TBR check
+		h.tbrCheckFailed = false
+		if cfg.Status.ManagementState == operatorsv1api.Removed {
+			op, err := h.cvowrapper.ClusterOperatorWrapper.Get(operatorstatus.ClusterOperatorName)
+			if err == nil {
+				for _, c := range op.Status.Conditions {
+					if c.Reason == operatorstatus.TBR {
+						logrus.Print("Samples operator originally bootstrapped as removed because the TBR was inaccessible")
+						h.tbrCheckFailed = true
+						break
+					}
+				}
+			}
+		}
 	}
 
 	return cfg, nil
@@ -509,11 +587,11 @@ func (h *Handler) Handle(event util.Event) error {
 		// and event delete flag true
 		if event.Deleted {
 			logrus.Info("A previous delete attempt has been successfully completed")
-			h.cvowrapper.UpdateOperatorStatus(cfg, true)
+			h.cvowrapper.UpdateOperatorStatus(cfg, true, h.tbrCheckFailed)
 			return nil
 		}
 		if cfg.DeletionTimestamp != nil {
-			h.cvowrapper.UpdateOperatorStatus(cfg, true)
+			h.cvowrapper.UpdateOperatorStatus(cfg, true, h.tbrCheckFailed)
 			// before we kick off the delete cycle though, we make sure a prior creation
 			// cycle is not still in progress, because we don't want the create adding back
 			// in things we just deleted ... if an upsert is still in progress, return an error;
@@ -588,11 +666,7 @@ func (h *Handler) Handle(event util.Event) error {
 		// Every time we see a change to the Config object, update the ClusterOperator status
 		// based on the current conditions of the Config.
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		//TODO remove this setting of version once we start getting samples for z or ppc
-		if util.IsNonX86Arch(cfg) {
-			cfg.Status.Version = h.version
-		}
-		err := h.cvowrapper.UpdateOperatorStatus(cfg, false)
+		err := h.cvowrapper.UpdateOperatorStatus(cfg, false, h.tbrCheckFailed)
 		if err != nil {
 			logrus.Errorf("error updating cluster operator status: %v", err)
 			return err
@@ -626,12 +700,6 @@ func (h *Handler) Handle(event util.Event) error {
 			dbg := "spec corrected"
 			logrus.Printf("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
-		}
-
-		//TODO adjust this check as we start getting samples for z or ppc
-		if util.IsNonX86Arch(cfg) {
-			logrus.Printf("samples are not installed on non-x86 architectures")
-			return nil
 		}
 
 		h.buildSkipFilters(cfg)

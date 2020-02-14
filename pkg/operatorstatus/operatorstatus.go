@@ -24,6 +24,8 @@ const (
 	ClusterOperatorName = "openshift-samples"
 	doingDelete         = "DeletionInProgress"
 	nonX86              = "NonX86Platform"
+	ipv6                = "IPv6Platform"
+	TBR                 = "TermsBasedRegistryUnreacahable"
 )
 
 // ClusterOperatorHandler allows for wrappering access to configv1.ClusterOperator
@@ -81,7 +83,7 @@ func (o *ClusterOperatorHandler) setOperatorStatusWithoutInterrogatingConfig(pro
 
 }
 
-func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionInProgress bool) error {
+func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionInProgress, tbrInaccessible bool) error {
 	if deletionInProgress {
 		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionTrue, cfg, doingDelete)
 		// will ignore errors in delete path, but we at least log them above
@@ -92,6 +94,10 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 		// will ignore errors in non-x86 path, but we at least log them above
 		return nil
 
+	}
+	if tbrInaccessible {
+		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionFalse, cfg, TBR)
+		return nil
 	}
 
 	errs := []error{}

@@ -7,12 +7,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	samplev1 "github.com/openshift/api/samples/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8snet "k8s.io/apimachinery/pkg/util/net"
 )
 
 var (
@@ -57,7 +61,7 @@ func ConditionUnknown(s *samplev1.Config, c samplev1.ConfigConditionType) bool {
 	return false
 }
 
-func AnyConditionUnknown(s *samplev1.Config, ) bool {
+func AnyConditionUnknown(s *samplev1.Config) bool {
 	for _, rc := range s.Status.Conditions {
 		if rc.Status == corev1.ConditionUnknown {
 			return true
@@ -150,7 +154,6 @@ const (
 	// numConfigConditionType is a helper constant that captures the number possible conditions
 	// defined above in this const block
 	numconfigConditionType = 7
-
 )
 
 // ClusterOperatorStatusAvailableCondition return values are as follows:
@@ -295,7 +298,7 @@ func ClusterOperatorStatusProgressingCondition(s *samplev1.Config, degradedState
 
 // ClusterNeedsCreds checks the conditions that drive whether the operator complains about
 // needing credentials to import RHEL content
-func ClusterNeedsCreds(s *samplev1.Config, ) bool {
+func ClusterNeedsCreds(s *samplev1.Config) bool {
 	if strings.TrimSpace(s.Spec.SamplesRegistry) != "" &&
 		strings.TrimSpace(s.Spec.SamplesRegistry) != "registry.redhat.io" {
 		return false
@@ -331,6 +334,20 @@ func IsNonX86Arch(cfg *samplev1.Config) bool {
 		return true
 	}
 	return false
+}
+
+// IsIPv6 let's us know if this is a ipv6 env (assumes single stack)
+func IsIPv6() bool {
+	ip, err := k8snet.ChooseHostInterface()
+	if err != nil {
+		logrus.Printf("IPv6 determination: ChooseHostInterface err: %s", err.Error())
+		return false
+	}
+	if ip.To4() != nil {
+		return false
+	}
+	logrus.Printf("based on host %s this is an ipv6 cluster", ip.String())
+	return true
 }
 
 type Event struct {
