@@ -72,3 +72,17 @@ spec:
       from:
         kind: DockerImage
         name: quay.io/openshift/origin-must-gather:v4.0
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
+  name: oauth-proxy
+spec:
+  tags:
+  - name: latest
+    importPolicy:
+      scheduled: true
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-oauth-proxy:v4.0
