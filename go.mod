@@ -14,7 +14,6 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.11.3 // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
-	github.com/jteeuwen/go-bindata v3.0.7+incompatible
 	github.com/onsi/ginkgo v1.10.2 // indirect
 	github.com/openshift/api v3.9.1-0.20191112184635-1271508fbe8f+incompatible
 	github.com/openshift/client-go v0.0.0-20191205152420-9faca5198b4f
@@ -32,6 +31,5 @@ require (
 	k8s.io/apimachinery v0.0.0-20191121175448-79c2a76c473a
 	k8s.io/apiserver v0.0.0-20191031110436-8cb875160ee0 // indirect
 	k8s.io/client-go v0.0.0-20191122220542-ed16ecbdf3a0
-	k8s.io/code-generator v0.0.0-20191004115455-8e001e5d1894
 	sigs.k8s.io/controller-tools v0.2.1 // indirect
 )
