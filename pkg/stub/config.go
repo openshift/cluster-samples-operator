@@ -149,7 +149,7 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool, bool,
 	for _, stream := range cfg.Spec.SkippedImagestreams {
 		importErrors := util.Condition(cfg, v1.ImportImageErrorsExist)
 		beforeError := util.NameInReason(cfg, importErrors.Reason, stream)
-		importErrors = h.clearStreamFromImportError(stream, util.Condition(cfg, v1.ImportImageErrorsExist), cfg)
+		h.clearStreamFromImportError(stream, util.Condition(cfg, v1.ImportImageErrorsExist), cfg)
 		if beforeError {
 			clearImageImportErrors = true
 			// we do not break here cause we want to clear out all possible streams

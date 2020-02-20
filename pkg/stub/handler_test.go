@@ -384,6 +384,27 @@ func TestProcessed(t *testing.T) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
 	}
 
+	// make sure registries are updated when switch back to default
+	cfg.ResourceVersion = "3"
+	cfg.Spec.SamplesRegistry = ""
+	// also make sure processing occurs for disruptive config change even if progressing==true
+	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
+	// fake out that the samples completed updating
+	progressing.Status = corev1.ConditionFalse
+	util.ConditionUpdate(cfg, progressing)
+	// reset operator image to clear out previous registry image override
+	mimic(&h, x86OCPContentRootDir)
+
+	err = h.Handle(event)
+	is, _ = fakeisclient.Get("foo")
+	if is == nil || strings.HasPrefix(is.Spec.DockerImageRepository, "bar.io") {
+		t.Fatalf("foo stream repo still has bar.io")
+	}
+	is, _ = fakeisclient.Get("bar")
+	if is == nil || strings.HasPrefix(is.Spec.DockerImageRepository, "bar.io") {
+		t.Fatalf("bar stream repo still has bar.io")
+	}
+
 }
 
 func TestImageStreamEvent(t *testing.T) {
@@ -1062,6 +1083,9 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 	if len(importErr.Reason) > 0 && util.NameInReason(cfg, importErr.Reason, stream.Name) {
 		t.Fatalf("processImageStreamWatchEvent did not set import error reason field %#v", cfg)
 	}
+	if len(importErr.Message) > 0 {
+		t.Fatalf("processImageStreamWatchEvent did not set import error message field %#v", cfg)
+	}
 }
 
 func TestImageImportRequestCreation(t *testing.T) {
@@ -1532,7 +1556,7 @@ func (f *fakeImageStreamClientWrapper) Create(stream *imagev1.ImageStream) (*ima
 	if err != nil {
 		return nil, err
 	}
-	f.streams[stream.Name] = stream
+	f.streams[stream.Name] = stream.DeepCopy()
 	return stream, nil
 }
 
@@ -1602,7 +1626,7 @@ func (f *fakeTemplateClientWrapper) Create(t *templatev1.Template) (*templatev1.
 	if err != nil {
 		return nil, err
 	}
-	f.templates[t.Name] = t
+	f.templates[t.Name] = t.DeepCopy()
 	return t, nil
 }
 
