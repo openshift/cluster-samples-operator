@@ -48,4 +48,4 @@ spec:
         severity: info
       annotations:
         message: |
-          Samples operator could not access regsitry.redhat.io during its initial installation and it boostrapped as removed.
+          Samples operator could not access 'regsitry.redhat.io' during its initial installation and it boostrapped as removed.
