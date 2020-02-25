@@ -60,7 +60,7 @@ var (
 	})
 	tbrInaccessibleOnBootStat = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: tbrInaccessibleOnBootstrapQuery,
-		Help: "Indicates that during its initial installation the samples operator could not access registry.redhat.com and it boostrapped as removed.",
+		Help: "Indicates that during its initial installation the samples operator could not access registry.redhat.io and it boostrapped as removed.",
 	})
 
 	sc         = samplesCollector{}
