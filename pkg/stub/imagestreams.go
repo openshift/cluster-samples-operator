@@ -133,10 +133,6 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		return err
 	}
 
-	if util.ClusterNeedsCreds(cfg) {
-		return fmt.Errorf("cannot upsert imagestream %s because rhel credentials do not exist", is.Name)
-	}
-
 	imagestream, err := h.Fileimagegetter.Get(filePath)
 	if err != nil {
 		// still attempt to report error in status

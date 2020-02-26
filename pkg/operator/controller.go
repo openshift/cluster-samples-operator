@@ -7,7 +7,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metaapi "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,10 +26,10 @@ import (
 	templateinformers "github.com/openshift/client-go/template/informers/externalversions"
 
 	sampopapi "github.com/openshift/api/samples/v1"
-	sampcache "github.com/openshift/cluster-samples-operator/pkg/cache"
-	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	sampleclientv1 "github.com/openshift/client-go/samples/clientset/versioned"
 	sampopinformers "github.com/openshift/client-go/samples/informers/externalversions"
+	sampcache "github.com/openshift/cluster-samples-operator/pkg/cache"
+	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/stub"
@@ -46,19 +45,14 @@ type Controller struct {
 	restconfig *restclient.Config
 	cvowrapper *operatorstatus.ClusterOperatorHandler
 
-	crWorkqueue    workqueue.RateLimitingInterface
-	osSecWorkqueue workqueue.RateLimitingInterface
-	ocSecWorkqueue workqueue.RateLimitingInterface
-	isWorkqueue    workqueue.RateLimitingInterface
-	tWorkqueue     workqueue.RateLimitingInterface
+	crWorkqueue workqueue.RateLimitingInterface
+	isWorkqueue workqueue.RateLimitingInterface
+	tWorkqueue  workqueue.RateLimitingInterface
 
-	crInformer    cache.SharedIndexInformer
-	osSecInformer cache.SharedIndexInformer
-	ocSecInformer cache.SharedIndexInformer
-	isInformer    cache.SharedIndexInformer
-	tInformer     cache.SharedIndexInformer
+	crInformer cache.SharedIndexInformer
+	isInformer cache.SharedIndexInformer
+	tInformer  cache.SharedIndexInformer
 
-	kubeOSNSInformerFactory kubeinformers.SharedInformerFactory
 	kubeOCNSInformerFactory kubeinformers.SharedInformerFactory
 	imageInformerFactory    imageinformers.SharedInformerFactory
 	templateInformerFactory templateinformers.SharedInformerFactory
@@ -81,14 +75,12 @@ func NewController() (*Controller, error) {
 
 	listers := &sampopclient.Listers{}
 	c := &Controller{
-		restconfig:     kubeconfig,
-		cvowrapper:     operatorstatus.NewClusterOperatorHandler(operatorClient),
-		crWorkqueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "samplesconfig-changes"),
-		osSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openshift-secret-changes"),
-		ocSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openshift-config-namespace-secret-changes"),
-		isWorkqueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "imagestream-changes"),
-		tWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "template-changes"),
-		listers:        listers,
+		restconfig:  kubeconfig,
+		cvowrapper:  operatorstatus.NewClusterOperatorHandler(operatorClient),
+		crWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "samplesconfig-changes"),
+		isWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "imagestream-changes"),
+		tWorkqueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "template-changes"),
+		listers:     listers,
 	}
 
 	// Initial event to bootstrap CR if it doesn't exist.
@@ -114,7 +106,6 @@ func NewController() (*Controller, error) {
 		return nil, err
 	}
 
-	c.kubeOSNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, "openshift", nil)
 	c.kubeOCNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, "openshift-config", nil)
 	//TODO - eventually a k8s go-client deps bump will lead to the form below, similar to the image registry operator's kubeinformer initialization,
 	// and similar to what is available with the openshift go-client for imagestreams and templates
@@ -123,12 +114,6 @@ func NewController() (*Controller, error) {
 	c.templateInformerFactory = templateinformers.NewSharedInformerFactoryWithOptions(templateClient, defaultResyncDuration, templateinformers.WithNamespace("openshift"))
 	c.sampopInformerFactory = sampopinformers.NewSharedInformerFactory(sampopClient, defaultResyncDuration)
 
-	c.osSecInformer = c.kubeOSNSInformerFactory.Core().V1().Secrets().Informer()
-	c.osSecInformer.AddEventHandler(c.osSecretInformerEventHandler())
-	c.listers.OpenShiftNamespaceSecrets = c.kubeOSNSInformerFactory.Core().V1().Secrets().Lister().Secrets("openshift")
-
-	c.ocSecInformer = c.kubeOCNSInformerFactory.Core().V1().Secrets().Informer()
-	c.ocSecInformer.AddEventHandler(c.ocSecretInformerEventHandler())
 	c.listers.ConfigNamespaceSecrets = c.kubeOCNSInformerFactory.Core().V1().Secrets().Lister().Secrets("openshift-config")
 
 	c.isInformer = c.imageInformerFactory.Image().V1().ImageStreams().Informer()
@@ -154,20 +139,15 @@ func NewController() (*Controller, error) {
 
 func (c *Controller) Run(stopCh <-chan struct{}) error {
 	defer c.crWorkqueue.ShutDown()
-	defer c.osSecWorkqueue.ShutDown()
-	defer c.ocSecWorkqueue.ShutDown()
 	defer c.isWorkqueue.ShutDown()
 	defer c.tWorkqueue.ShutDown()
 
-	c.kubeOSNSInformerFactory.Start(stopCh)
-	c.kubeOCNSInformerFactory.Start(stopCh)
 	c.imageInformerFactory.Start(stopCh)
 	c.templateInformerFactory.Start(stopCh)
 	c.sampopInformerFactory.Start(stopCh)
 
 	logrus.Println("waiting for informer caches to sync")
-	if !cache.WaitForCacheSync(stopCh, c.osSecInformer.HasSynced, c.ocSecInformer.HasSynced,
-		c.isInformer.HasSynced, c.tInformer.HasSynced, c.crInformer.HasSynced) {
+	if !cache.WaitForCacheSync(stopCh, c.isInformer.HasSynced, c.tInformer.HasSynced, c.crInformer.HasSynced) {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -177,18 +157,6 @@ func (c *Controller) Run(stopCh <-chan struct{}) error {
 		getter:    &crGetter{},
 	}
 	go wait.Until(crQueueWorker.workqueueProcessor, time.Second, stopCh)
-	osSecQueueWorker := queueWorker{
-		c:         c,
-		workQueue: c.osSecWorkqueue,
-		getter:    &osSecretGetter{},
-	}
-	go wait.Until(osSecQueueWorker.workqueueProcessor, time.Second, stopCh)
-	ocSecQueueWorker := queueWorker{
-		c:         c,
-		workQueue: c.ocSecWorkqueue,
-		getter:    &ocSecretGetter{},
-	}
-	go wait.Until(ocSecQueueWorker.workqueueProcessor, time.Second, stopCh)
 	isQueueWorker := queueWorker{
 		c:         c,
 		workQueue: c.isWorkqueue,
@@ -223,18 +191,6 @@ type crGetter struct{}
 
 func (g *crGetter) Get(c *Controller, key string) (runtime.Object, error) {
 	return c.listers.Config.Get(sampopapi.ConfigName)
-}
-
-type osSecretGetter struct{}
-
-func (g *osSecretGetter) Get(c *Controller, key string) (runtime.Object, error) {
-	return c.listers.OpenShiftNamespaceSecrets.Get(key)
-}
-
-type ocSecretGetter struct{}
-
-func (g *ocSecretGetter) Get(c *Controller, key string) (runtime.Object, error) {
-	return c.listers.ConfigNamespaceSecrets.Get(key)
 }
 
 type isGetter struct{}
@@ -297,13 +253,6 @@ type crQueueKeyGen struct{}
 func (c *crQueueKeyGen) Key(o interface{}) string {
 	cr := o.(*sampopapi.Config)
 	return cr.Name
-}
-
-type secretQueueKeyGen struct{}
-
-func (c *secretQueueKeyGen) Key(o interface{}) string {
-	secret := o.(*corev1.Secret)
-	return secret.Name
 }
 
 type imagestreamQueueKeyGen struct{}
@@ -414,14 +363,6 @@ func (c *Controller) commonInformerEventHandler(keygen queueKeyGen, wq workqueue
 
 func (c *Controller) crInformerEventHandler() cache.ResourceEventHandlerFuncs {
 	return c.commonInformerEventHandler(&crQueueKeyGen{}, c.crWorkqueue)
-}
-
-func (c *Controller) osSecretInformerEventHandler() cache.ResourceEventHandlerFuncs {
-	return c.commonInformerEventHandler(&secretQueueKeyGen{}, c.osSecWorkqueue)
-}
-
-func (c *Controller) ocSecretInformerEventHandler() cache.ResourceEventHandlerFuncs {
-	return c.commonInformerEventHandler(&secretQueueKeyGen{}, c.ocSecWorkqueue)
 }
 
 func (c *Controller) imagestreamInformerEventHandler() cache.ResourceEventHandlerFuncs {

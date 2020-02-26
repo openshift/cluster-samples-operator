@@ -149,7 +149,7 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 		addCountGauge(ch, invalidSecretDesc, missingTBRCredential, float64(0))
 		return
 	}
-	secret, err := sc.secrets.Get(configv1.SamplesRegistryCredentials)
+	secret, err := sc.secrets.Get("pull-secret")
 	if err != nil {
 		logrus.Infof("metrics pull secret retrieval failed with: %s", err.Error())
 		addCountGauge(ch, invalidSecretDesc, missingTBRCredential, float64(1))
@@ -189,7 +189,7 @@ func init() {
 }
 
 func InitializeMetricsCollector(listers *client.Listers) {
-	sc.secrets = listers.OpenShiftNamespaceSecrets
+	sc.secrets = listers.ConfigNamespaceSecrets
 	sc.config = listers.Config
 
 	if !registered {
