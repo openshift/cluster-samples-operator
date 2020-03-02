@@ -1,5 +1,7 @@
 # Overview
 
+debug PR
+
 The samples operator manages the sample imagestreams and templates stored in the openshift namespace, and any docker credentials, stored as a secret, needed for the imagestreams to import the images they reference.
 
 On initial startup, the operator will create the default samples resource to initiate the creation of the imagestreams and templates.  The imagestreams are the RHEL based OCP imagestreams pointing to images on registry.redhat.access.com.  Similarly the templates are those categorized as OCP templates.  When details for obtaining the credentials for registry.redhat.io are finalized, we will begin defaulting to that registry for the imagestreams.
