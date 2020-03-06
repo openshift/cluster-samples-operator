@@ -174,16 +174,14 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return nil, "", false, nil
 	}
 
-	if util.ConditionFalse(cfg, v1.ImageChangesInProgress) {
-		// we do no return the cfg in these cases because we do not want to bother with any progress tracking
-		switch cfg.Spec.ManagementState {
-		case operatorsv1api.Removed:
-			logrus.Debugf("Not upserting %s/%s event because operator is in removed state and image changes are not in progress", kind, name)
-			return nil, "", false, nil
-		case operatorsv1api.Unmanaged:
-			logrus.Debugf("Not upserting %s/%s event because operator is in unmanaged state and image changes are not in progress", kind, name)
-			return nil, "", false, nil
-		}
+	// we do not return the cfg in these cases because we do not want to bother with any progress tracking
+	switch cfg.Spec.ManagementState {
+	case operatorsv1api.Removed:
+		logrus.Debugf("Not upserting %s/%s event because operator is in removed state and image changes are not in progress", kind, name)
+		return nil, "", false, nil
+	case operatorsv1api.Unmanaged:
+		logrus.Debugf("Not upserting %s/%s event because operator is in unmanaged state and image changes are not in progress", kind, name)
+		return nil, "", false, nil
 	}
 
 	filePath := ""
@@ -677,7 +675,7 @@ func (h *Handler) Handle(event util.Event) error {
 		if !doit || err != nil {
 			if err != nil || cfgUpdate {
 				// flush status update
-				dbg := "process mgmt update"
+				dbg := fmt.Sprintf("process mgmt update spec %s status %s", string(cfg.Spec.ManagementState), string(cfg.Status.ManagementState))
 				logrus.Printf("CRDUPDATE %s", dbg)
 				return h.crdwrapper.UpdateStatus(cfg, dbg)
 			}
