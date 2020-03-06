@@ -154,34 +154,35 @@ type Handler struct {
 // - cfg: return this if we want to check the status of a prior upsert
 // - filePath: used to the caller to look up the image content for the upsert
 // - doUpsert: whether to do the upsert of not ... not doing the upsert optionally triggers the need for checking status of prior upsert
+// - updateCfgOnly: if we want to update the cfg without any upsert attempts or processing
 // - err: if a problem occurred getting the Config, we return the error to bubble up and initiate a retry
-func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[string]string, deleted bool) (*v1.Config, string, bool, error) {
+func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[string]string, deleted bool) (*v1.Config, string, bool, bool, error) {
 	cfg, err := h.crdwrapper.Get(v1.ConfigName)
 	if cfg == nil || err != nil {
 		// if not found, then this also would mean a deletion event
 		if kerrors.IsNotFound(err) {
 			logrus.Printf("Received watch event %s but not upserting since deletion of the Config is in progress", kind+"/"+name)
-			return nil, "", false, nil
+			return nil, "", false, false, nil
 		}
 		logrus.Printf("Received watch event %s but not upserting since not have the Config yet: %#v %#v", kind+"/"+name, err, cfg)
-		return nil, "", false, err
+		return nil, "", false, false, err
 	}
 
 	if cfg.DeletionTimestamp != nil {
 		// we do no return the cfg in this case because we do not want to bother with any progress tracking
 		logrus.Printf("Received watch event %s but not upserting since deletion of the Config is in progress", kind+"/"+name)
 		// note, the imagestream watch cache gets cleared once the deletion/finalizer processing commences
-		return nil, "", false, nil
+		return nil, "", false, false, nil
 	}
 
 	// we do not return the cfg in these cases because we do not want to bother with any progress tracking
 	switch cfg.Spec.ManagementState {
 	case operatorsv1api.Removed:
 		logrus.Debugf("Not upserting %s/%s event because operator is in removed state and image changes are not in progress", kind, name)
-		return nil, "", false, nil
+		return nil, "", false, false, nil
 	case operatorsv1api.Unmanaged:
 		logrus.Debugf("Not upserting %s/%s event because operator is in unmanaged state and image changes are not in progress", kind, name)
-		return nil, "", false, nil
+		return nil, "", false, false, nil
 	}
 
 	filePath := ""
@@ -204,19 +205,46 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		filePath, inInventory = h.templateFile[name]
 		_, skipped = h.skippedTemplates[name]
 	}
-	if !inInventory {
+	if !inInventory && kind == "imagestream" {
 		logrus.Printf("watch event %s not part of operators inventory", name)
-		return nil, "", false, nil
+		// we now have cases where sample providers are deleting entire imagestreams;
+		// let's make sure there are no stale entries with inprogress / importerror
+		processing := util.Condition(cfg, v1.ImageChangesInProgress)
+		needToUpdate := util.NameInReason(cfg, processing.Reason, name)
+		if needToUpdate {
+			now := kapis.Now()
+			processing.Reason = util.ClearNameInReason(cfg, processing.Reason, name)
+			logrus.Debugf("processing reason now %s", processing.Reason)
+			if len(strings.TrimSpace(processing.Reason)) == 0 {
+				logrus.Println("The last in progress imagestream has completed (removed imagestream check)")
+				processing.Status = corev1.ConditionFalse
+				processing.Reason = ""
+				processing.LastTransitionTime = now
+			}
+			processing.LastUpdateTime = now
+			util.ConditionUpdate(cfg, processing)
+		}
+		importErrors := util.Condition(cfg, v1.ImportImageErrorsExist)
+		needToUpdate2 := util.NameInReason(cfg, importErrors.Reason, name)
+		if needToUpdate2 {
+			h.mapsMutex.Lock()
+			defer h.mapsMutex.Unlock()
+			h.clearStreamFromImportError(name, importErrors, cfg)
+		}
+		if needToUpdate || needToUpdate2 {
+			return cfg, "", false, true, nil
+		}
+		return nil, "", false, false, nil
 	}
 	if skipped {
 		logrus.Printf("watch event %s in skipped list for %s", name, kind)
 		// but return cfg to potentially toggle pending/import error condition
-		return cfg, "", false, nil
+		return cfg, "", false, false, nil
 	}
 
 	if deleted && (kind == "template" || cache.UpsertsAmount() == 0) {
 		logrus.Printf("going to recreate deleted managed sample %s/%s", kind, name)
-		return cfg, filePath, true, nil
+		return cfg, filePath, true, false, nil
 	}
 
 	if util.ConditionFalse(cfg, v1.ImageChangesInProgress) &&
@@ -225,7 +253,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		// finished processing the list
 		// avoid (re)upsert, but check import status
 		logrus.Printf("watch event for %s/%s while migration in progress, image in progress is false; will not update sample because of this event", kind, name)
-		return cfg, "", false, nil
+		return cfg, "", false, false, nil
 	}
 
 	if annotations != nil {
@@ -234,11 +262,11 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		if ok && isv == h.version {
 			logrus.Debugf("Not upserting %s/%s cause operator version matches", kind, name)
 			// but return cfg to potentially toggle pending condition
-			return cfg, "", false, nil
+			return cfg, "", false, false, nil
 		}
 	}
 
-	return cfg, filePath, true, nil
+	return cfg, filePath, true, false, nil
 }
 
 func (h *Handler) GoodConditionUpdate(cfg *v1.Config, newStatus corev1.ConditionStatus, conditionType v1.ConfigConditionType) {

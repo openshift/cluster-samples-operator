@@ -16,7 +16,12 @@ import (
 )
 
 func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted bool) error {
-	cfg, filePath, doUpsert, err := h.prepSamplesWatchEvent("imagestream", is.Name, is.Annotations, deleted)
+	cfg, filePath, doUpsert, updateCfgOnly, err := h.prepSamplesWatchEvent("imagestream", is.Name, is.Annotations, deleted)
+	if cfg != nil && updateCfgOnly {
+		dbg := fmt.Sprintf("clear out removed imagestream %s from progressing/error", is.Name)
+		logrus.Printf("CRDUPDATE %s", dbg)
+		return h.crdwrapper.UpdateStatus(cfg, dbg)
+	}
 	if cfg != nil && util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
 		logrus.Printf("Imagestream %s watch event do upsert %v; no errors in prep %v,  possibly update operator conditions %v", is.Name, doUpsert, err == nil, cfg != nil)
 	} else {
