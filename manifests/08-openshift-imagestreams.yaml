@@ -75,6 +75,20 @@ kind: ImageStream
 apiVersion: image.openshift.io/v1
 metadata:
   namespace: openshift
+  name: tools
+spec:
+  tags:
+  - name: latest
+    importPolicy:
+      scheduled: true
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-tools:v4.0
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
   name: must-gather
 spec:
   tags:
