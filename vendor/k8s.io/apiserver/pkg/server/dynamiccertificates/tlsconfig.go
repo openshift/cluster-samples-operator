@@ -21,11 +21,11 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"sync/atomic"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
-
+	corev1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/events"
@@ -40,7 +40,7 @@ const workItemKey = "key"
 type DynamicServingCertificateController struct {
 	// baseTLSConfig is the static portion of the tlsConfig for serving to clients.  It is copied and the copy is mutated
 	// based on the dynamic cert state.
-	baseTLSConfig tls.Config
+	baseTLSConfig *tls.Config
 
 	// clientCA provides the very latest content of the ca bundle
 	clientCA CAContentProvider
@@ -64,7 +64,7 @@ var _ Listener = &DynamicServingCertificateController{}
 
 // NewDynamicServingCertificateController returns a controller that can be used to keep a TLSConfig up to date.
 func NewDynamicServingCertificateController(
-	baseTLSConfig tls.Config,
+	baseTLSConfig *tls.Config,
 	clientCA CAContentProvider,
 	servingCert CertKeyContentProvider,
 	sniCerts []SNICertKeyContentProvider,
@@ -94,7 +94,28 @@ func (c *DynamicServingCertificateController) GetConfigForClient(clientHello *tl
 		return nil, errors.New("dynamiccertificates: unexpected config type")
 	}
 
-	return tlsConfig.Clone(), nil
+	tlsConfigCopy := tlsConfig.Clone()
+
+	// if the client set SNI information, just use our "normal" SNI flow
+	if len(clientHello.ServerName) > 0 {
+		return tlsConfigCopy, nil
+	}
+
+	// if the client didn't set SNI, then we need to inspect the requested IP so that we can choose
+	// a certificate from our list if we specifically handle that IP.  This can happen when an IP is specifically mapped by name.
+	host, _, err := net.SplitHostPort(clientHello.Conn.LocalAddr().String())
+	if err != nil {
+		return tlsConfigCopy, nil
+	}
+
+	ipCert, ok := tlsConfigCopy.NameToCertificate[host]
+	if !ok {
+		return tlsConfigCopy, nil
+	}
+	tlsConfigCopy.Certificates = []tls.Certificate{*ipCert}
+	tlsConfigCopy.NameToCertificate = nil
+
+	return tlsConfigCopy, nil
 }
 
 // newTLSContent determines the next set of content for overriding the baseTLSConfig.
@@ -103,10 +124,9 @@ func (c *DynamicServingCertificateController) newTLSContent() (*dynamicCertifica
 
 	if c.clientCA != nil {
 		currClientCABundle := c.clientCA.CurrentCABundleContent()
-		// don't remove all content.  The value was configured at one time, so continue using that.
-		if len(currClientCABundle) == 0 {
-			return nil, fmt.Errorf("not loading an empty client ca bundle from %q", c.clientCA.Name())
-		}
+		// we allow removing all client ca bundles because the server is still secure when this happens. it just means
+		// that there isn't a hint to clients about which client-cert to used.  this happens when there is no client-ca
+		// yet known for authentication, which can happen in aggregated apiservers and some kube-apiserver deployment modes.
 		newContent.clientCA = caBundleContent{caBundle: currClientCABundle}
 	}
 
@@ -152,12 +172,12 @@ func (c *DynamicServingCertificateController) syncCerts() error {
 		newClientCAPool := x509.NewCertPool()
 		newClientCAs, err := cert.ParseCertsPEM(newContent.clientCA.caBundle)
 		if err != nil {
-			return fmt.Errorf("unable to load client CA file: %v", err)
+			return fmt.Errorf("unable to load client CA file %q: %v", string(newContent.clientCA.caBundle), err)
 		}
 		for i, cert := range newClientCAs {
 			klog.V(2).Infof("loaded client CA [%d/%q]: %s", i, c.clientCA.Name(), GetHumanCertDetail(cert))
 			if c.eventRecorder != nil {
-				c.eventRecorder.Eventf(nil, nil, v1.EventTypeWarning, "TLSConfigChanged", "CACertificateReload", "loaded client CA [%d/%q]: %s", i, c.clientCA.Name(), GetHumanCertDetail(cert))
+				c.eventRecorder.Eventf(&corev1.ObjectReference{Name: c.clientCA.Name()}, nil, corev1.EventTypeWarning, "TLSConfigChanged", "CACertificateReload", "loaded client CA [%d/%q]: %s", i, c.clientCA.Name(), GetHumanCertDetail(cert))
 			}
 
 			newClientCAPool.AddCert(cert)
@@ -179,7 +199,7 @@ func (c *DynamicServingCertificateController) syncCerts() error {
 
 		klog.V(2).Infof("loaded serving cert [%q]: %s", c.servingCert.Name(), GetHumanCertDetail(x509Cert))
 		if c.eventRecorder != nil {
-			c.eventRecorder.Eventf(nil, nil, v1.EventTypeWarning, "TLSConfigChanged", "ServingCertificateReload", "loaded serving cert [%q]: %s", c.clientCA.Name(), GetHumanCertDetail(x509Cert))
+			c.eventRecorder.Eventf(&corev1.ObjectReference{Name: c.servingCert.Name()}, nil, corev1.EventTypeWarning, "TLSConfigChanged", "ServingCertificateReload", "loaded serving cert [%q]: %s", c.servingCert.Name(), GetHumanCertDetail(x509Cert))
 		}
 
 		newTLSConfigCopy.Certificates = []tls.Certificate{cert}
