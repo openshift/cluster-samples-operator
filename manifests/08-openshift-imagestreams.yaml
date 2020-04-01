@@ -72,3 +72,15 @@ spec:
       from:
         kind: DockerImage
         name: quay.io/openshift/origin-must-gather:v4.0
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
+  name: oauth-proxy
+spec:
+  tags:
+    - name: v4.4
+      from:
+        kind: DockerImage
+        name: quay.io/openshift/origin-oauth-proxy-samples:v4.2 # this image is based on release-4.4 branch, regardless of what the image name is saying.
