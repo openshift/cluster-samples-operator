@@ -1,6 +1,7 @@
 package stub
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io/ioutil"
@@ -345,7 +346,7 @@ func (h *Handler) tbrInaccessible() bool {
 	}
 	// if a proxy is in play, the registry.redhat.io connection attempt during startup is problematic at best;
 	// assume tbr is accessible since a proxy implies external access, and not disconnected
-	proxy, err := h.configclient.Proxies().Get("cluster", metav1.GetOptions{})
+	proxy, err := h.configclient.Proxies().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	if err != nil {
 		logrus.Printf("unable to retrieve proxy configuration as part of testing registry.redhat.io connectivity: %s", err.Error())
 	} else {

@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -22,13 +23,13 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	imageapiv1 "github.com/openshift/api/image/v1"
 	operatorsv1api "github.com/openshift/api/operator/v1"
+	samplesapi "github.com/openshift/api/samples/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	imageset "github.com/openshift/client-go/image/clientset/versioned"
-	templateset "github.com/openshift/client-go/template/clientset/versioned"
-	samplesapi "github.com/openshift/api/samples/v1"
-	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	sampleclientv1 "github.com/openshift/client-go/samples/clientset/versioned"
+	templateset "github.com/openshift/client-go/template/clientset/versioned"
+	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/stub"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
@@ -91,7 +92,7 @@ func setupClients(t *testing.T) {
 
 func dumpPod(t *testing.T) {
 	podClient := kubeClient.CoreV1().Pods(samplesapi.OperatorNamespace)
-	podList, err := podClient.List(metav1.ListOptions{})
+	podList, err := podClient.List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		t.Fatalf("error list pods %v", err)
 	}
@@ -102,7 +103,7 @@ func dumpPod(t *testing.T) {
 			pod.Status.Phase == corev1.PodRunning {
 			for _, container := range pod.Spec.Containers {
 				req := podClient.GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name})
-				readCloser, err := req.Stream()
+				readCloser, err := req.Stream(context.TODO())
 				if err != nil {
 					t.Fatalf("error getting pod logs for container %s: %s", container.Name, err.Error())
 				}
@@ -123,7 +124,7 @@ func verifyOperatorUp(t *testing.T) *samplesapi.Config {
 	var cfg *samplesapi.Config
 	var err error
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -156,7 +157,7 @@ func verifyX86(t *testing.T) bool {
 
 func verifyIPv6(t *testing.T) bool {
 	err := wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
-		networkConfig, err := configClient.Networks().Get("cluster", metav1.GetOptions{})
+		networkConfig, err := configClient.Networks().Get(context.TODO(), "cluster", metav1.GetOptions{})
 		if !stub.IsRetryableAPIError(err) && err != nil {
 			t.Logf("verifyIPv6 got unretryable error %s", err.Error())
 			return false, err
@@ -201,7 +202,7 @@ func verifySecretPresent(t *testing.T) {
 	setupClients(t)
 	secClient := kubeClient.CoreV1().Secrets("openshift")
 	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		_, err := secClient.Get(samplesapi.SamplesRegistryCredentials, metav1.GetOptions{})
+		_, err := secClient.Get(context.TODO(), samplesapi.SamplesRegistryCredentials, metav1.GetOptions{})
 		if err != nil {
 			if !kerrors.IsNotFound(err) {
 				t.Logf("%v", err)
@@ -218,7 +219,7 @@ func verifySecretPresent(t *testing.T) {
 
 func verifyConditionsCompleteSamplesAdded(t *testing.T) error {
 	return wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		cfg, err := crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err := crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -237,7 +238,7 @@ func verifyConditionsCompleteSamplesAdded(t *testing.T) error {
 
 func verifyConditionsCompleteSamplesRemoved(t *testing.T) error {
 	return wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		cfg, err := crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err := crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -255,7 +256,7 @@ func verifyClusterOperatorConditionsComplete(t *testing.T, expectedVersion strin
 	var state *configv1.ClusterOperator
 	var err error
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		state, err = configClient.ClusterOperators().Get(operator.ClusterOperatorName, metav1.GetOptions{})
+		state, err = configClient.ClusterOperators().Get(context.TODO(), operator.ClusterOperatorName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -423,7 +424,7 @@ func verifyImageStreamsPresent(t *testing.T, content map[string]bool, timeToComp
 		var err error
 
 		err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-			is, err = imageClient.ImageV1().ImageStreams("openshift").Get(key, metav1.GetOptions{})
+			is, err = imageClient.ImageV1().ImageStreams("openshift").Get(context.TODO(), key, metav1.GetOptions{})
 			if err != nil {
 				t.Logf("%v", err)
 				return false, nil
@@ -456,7 +457,7 @@ func verifyImageChangesInProgress(t *testing.T) {
 	var cfg *samplesapi.Config
 	var err error
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -473,7 +474,7 @@ func verifyImageStreamsGone(t *testing.T) {
 	content := getSamplesNames(getContentDir(t), nil, t)
 	streams, _ := content[imagestreamsKey]
 	for key := range streams {
-		_, err := imageClient.ImageV1().ImageStreams("openshift").Get(key, metav1.GetOptions{})
+		_, err := imageClient.ImageV1().ImageStreams("openshift").Get(context.TODO(), key, metav1.GetOptions{})
 		if err == nil {
 			dumpPod(t)
 			cfg := verifyOperatorUp(t)
@@ -489,7 +490,7 @@ func verifyTemplatesPresent(t *testing.T, content map[string]bool, timeToCompare
 		var err error
 
 		err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-			template, err = templateClient.TemplateV1().Templates("openshift").Get(key, metav1.GetOptions{})
+			template, err = templateClient.TemplateV1().Templates("openshift").Get(context.TODO(), key, metav1.GetOptions{})
 			if err != nil {
 				t.Logf("%v", err)
 				return false, nil
@@ -523,7 +524,7 @@ func verifyTemplatesGone(t *testing.T) {
 	content := getSamplesNames(getContentDir(t), nil, t)
 	templates, _ := content[templatesKey]
 	for key := range templates {
-		_, err := templateClient.TemplateV1().Templates("openshift").Get(key, metav1.GetOptions{})
+		_, err := templateClient.TemplateV1().Templates("openshift").Get(context.TODO(), key, metav1.GetOptions{})
 		if err == nil {
 			dumpPod(t)
 			cfg := verifyOperatorUp(t)
@@ -550,7 +551,7 @@ func validateContent(t *testing.T, timeToCompare *kapis.Time) {
 
 func verifyConfigurationValid(t *testing.T, status corev1.ConditionStatus) {
 	err := wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, e := crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, e := crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if e != nil {
 			t.Logf("%v", e)
 			return false, nil
@@ -568,7 +569,7 @@ func verifyConfigurationValid(t *testing.T, status corev1.ConditionStatus) {
 }
 
 func verifyDeletedImageStreamRecreated(t *testing.T) {
-	err := imageClient.ImageV1().ImageStreams("openshift").Delete("jenkins", &metav1.DeleteOptions{})
+	err := imageClient.ImageV1().ImageStreams("openshift").Delete(context.TODO(), "jenkins", metav1.DeleteOptions{})
 	if err != nil {
 		dumpPod(t)
 		cfg := verifyOperatorUp(t)
@@ -579,7 +580,7 @@ func verifyDeletedImageStreamRecreated(t *testing.T) {
 	// then make sure the image changes are complete before attempting to fetch deleted IS
 	verifyConditionsCompleteSamplesAdded(t)
 	err = wait.PollImmediate(1*time.Second, 30*time.Second, func() (bool, error) {
-		_, err := imageClient.ImageV1().ImageStreams("openshift").Get("jenkins", metav1.GetOptions{})
+		_, err := imageClient.ImageV1().ImageStreams("openshift").Get(context.TODO(), "jenkins", metav1.GetOptions{})
 		if err == nil {
 			return true, nil
 		}
@@ -598,7 +599,7 @@ func verifyDeletedImageStreamRecreated(t *testing.T) {
 
 func verifySkippedStreamManagedLabel(t *testing.T, value string) {
 	err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
-		stream, err := imageClient.ImageV1().ImageStreams("openshift").Get("jenkins", metav1.GetOptions{})
+		stream, err := imageClient.ImageV1().ImageStreams("openshift").Get(context.TODO(), "jenkins", metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return true, nil
@@ -621,7 +622,7 @@ func verifySkippedStreamManagedLabel(t *testing.T, value string) {
 
 func verifySkippedTemplateManagedLabel(t *testing.T, value string) {
 	err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
-		stream, err := templateClient.TemplateV1().Templates("openshift").Get("jenkins-ephemeral", metav1.GetOptions{})
+		stream, err := templateClient.TemplateV1().Templates("openshift").Get(context.TODO(), "jenkins-ephemeral", metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return true, nil
@@ -650,7 +651,7 @@ func verifyDeletedImageStreamNotRecreated(t *testing.T) {
 		return
 	}
 
-	err := imageClient.ImageV1().ImageStreams("openshift").Delete("jenkins", &metav1.DeleteOptions{})
+	err := imageClient.ImageV1().ImageStreams("openshift").Delete(context.TODO(), "jenkins", metav1.DeleteOptions{})
 	if err != nil {
 		dumpPod(t)
 		cfg := verifyOperatorUp(t)
@@ -659,7 +660,7 @@ func verifyDeletedImageStreamNotRecreated(t *testing.T) {
 	// make sure jenkins imagestream does not appear while unmanaged
 	// first, wait sufficiently to make sure delete has gone though
 	err = wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
-		_, err := imageClient.ImageV1().ImageStreams("openshift").Get("jenkins", metav1.GetOptions{})
+		_, err := imageClient.ImageV1().ImageStreams("openshift").Get(context.TODO(), "jenkins", metav1.GetOptions{})
 		if kerrors.IsNotFound(err) {
 			return true, nil
 		}
@@ -672,7 +673,7 @@ func verifyDeletedImageStreamNotRecreated(t *testing.T) {
 	}
 	// now make sure it has not been recreated
 	time.Sleep(30 * time.Second)
-	_, err = imageClient.ImageV1().ImageStreams("openshift").Get("jenkins", metav1.GetOptions{})
+	_, err = imageClient.ImageV1().ImageStreams("openshift").Get(context.TODO(), "jenkins", metav1.GetOptions{})
 	if err == nil {
 		dumpPod(t)
 		t.Fatalf("imagestream recreated, cfg: %#v", verifyOperatorUp(t))
@@ -681,7 +682,7 @@ func verifyDeletedImageStreamNotRecreated(t *testing.T) {
 }
 
 func verifyDeletedTemplatesRecreated(t *testing.T) {
-	err := templateClient.TemplateV1().Templates("openshift").Delete("jenkins-ephemeral", &metav1.DeleteOptions{})
+	err := templateClient.TemplateV1().Templates("openshift").Delete(context.TODO(), "jenkins-ephemeral", metav1.DeleteOptions{})
 	verifyConditionsCompleteSamplesAdded(t)
 	if err != nil {
 		dumpPod(t)
@@ -689,7 +690,7 @@ func verifyDeletedTemplatesRecreated(t *testing.T) {
 		t.Fatalf("error deleting jenkins imagestream %v samples resource %#v", err, cfg)
 	}
 	err = wait.PollImmediate(1*time.Second, 30*time.Second, func() (bool, error) {
-		_, err := templateClient.TemplateV1().Templates("openshift").Get("jenkins-ephemeral", metav1.GetOptions{})
+		_, err := templateClient.TemplateV1().Templates("openshift").Get(context.TODO(), "jenkins-ephemeral", metav1.GetOptions{})
 		if err == nil {
 			return true, nil
 		}
@@ -714,7 +715,7 @@ func verifyDeletedTemplatesNotRecreated(t *testing.T) {
 		return
 	}
 
-	err := templateClient.TemplateV1().Templates("openshift").Delete("jenkins-ephemeral", &metav1.DeleteOptions{})
+	err := templateClient.TemplateV1().Templates("openshift").Delete(context.TODO(), "jenkins-ephemeral", metav1.DeleteOptions{})
 	if err != nil {
 		dumpPod(t)
 		cfg := verifyOperatorUp(t)
@@ -723,7 +724,7 @@ func verifyDeletedTemplatesNotRecreated(t *testing.T) {
 	// make sure jenkins-ephemeral template does not appear while unmanaged
 	// first, wait sufficiently to make sure delete has gone though
 	err = wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
-		_, err := templateClient.TemplateV1().Templates("openshift").Get("jenkins-ephemeral", metav1.GetOptions{})
+		_, err := templateClient.TemplateV1().Templates("openshift").Get(context.TODO(), "jenkins-ephemeral", metav1.GetOptions{})
 		if kerrors.IsNotFound(err) {
 			return true, nil
 		}
@@ -736,7 +737,7 @@ func verifyDeletedTemplatesNotRecreated(t *testing.T) {
 	}
 	// now make sure it has not been recreated
 	time.Sleep(30 * time.Second)
-	_, err = templateClient.TemplateV1().Templates("openshift").Get("jenkins-ephemeral", metav1.GetOptions{})
+	_, err = templateClient.TemplateV1().Templates("openshift").Get(context.TODO(), "jenkins-ephemeral", metav1.GetOptions{})
 	if err == nil {
 		dumpPod(t)
 		cfg := verifyOperatorUp(t)
@@ -767,7 +768,7 @@ func TestRecreateConfigAfterDelete(t *testing.T) {
 
 		oldTime := cfg.CreationTimestamp
 
-		err := crClient.SamplesV1().Configs().Delete(samplesapi.ConfigName, &metav1.DeleteOptions{})
+		err := crClient.SamplesV1().Configs().Delete(context.TODO(), samplesapi.ConfigName, metav1.DeleteOptions{})
 		if err != nil {
 			dumpPod(t)
 			t.Fatalf("error deleting Config %v", err)
@@ -775,7 +776,7 @@ func TestRecreateConfigAfterDelete(t *testing.T) {
 
 		// make sure the cfg object is recreated vs. just finding the one we  tried to delete
 		err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-			cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+			cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 			if err != nil {
 				return false, nil
 			}
@@ -810,7 +811,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cfg := verifyOperatorUp(t)
 		cfg.Spec.ManagementState = operatorsv1api.Removed
-		cfg, err := crClient.SamplesV1().Configs().Update(cfg)
+		cfg, err := crClient.SamplesV1().Configs().Update(context.TODO(), cfg, metav1.UpdateOptions{})
 		return err
 	})
 	if err != nil {
@@ -818,7 +819,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		t.Fatalf("error updating Config %v and %#v", err, verifyOperatorUp(t))
 	}
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -841,7 +842,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	}
 
 	err = wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -865,7 +866,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cfg = verifyOperatorUp(t)
 		cfg.Spec.ManagementState = operatorsv1api.Managed
-		cfg, err = crClient.SamplesV1().Configs().Update(cfg)
+		cfg, err = crClient.SamplesV1().Configs().Update(context.TODO(), cfg, metav1.UpdateOptions{})
 		return err
 	})
 	if err != nil {
@@ -873,7 +874,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -900,7 +901,7 @@ func TestSpecManagementStateField(t *testing.T) {
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cfg = verifyOperatorUp(t)
 		cfg.Spec.ManagementState = operatorsv1api.Unmanaged
-		cfg, err = crClient.SamplesV1().Configs().Update(cfg)
+		cfg, err = crClient.SamplesV1().Configs().Update(context.TODO(), cfg, metav1.UpdateOptions{})
 		return err
 	})
 	if err != nil {
@@ -908,7 +909,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		t.Fatalf("error updating Config %v", err)
 	}
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -934,7 +935,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		// and confirm all the default samples content exists
 		cfg = verifyOperatorUp(t)
 		cfg.Spec.ManagementState = operatorsv1api.Managed
-		cfg, err = crClient.SamplesV1().Configs().Update(cfg)
+		cfg, err = crClient.SamplesV1().Configs().Update(context.TODO(), cfg, metav1.UpdateOptions{})
 		return err
 	})
 	if err != nil {
@@ -942,7 +943,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		t.Fatalf("error updating Config %v and %#v", err, cfg)
 	}
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -959,7 +960,7 @@ func TestSpecManagementStateField(t *testing.T) {
 
 	// wait for it to get into pending
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -1003,7 +1004,7 @@ func TestSkippedProcessing(t *testing.T) {
 		cfg := verifyOperatorUp(t)
 		cfg.Spec.SkippedImagestreams = append(cfg.Spec.SkippedImagestreams, "jenkins")
 		cfg.Spec.SkippedTemplates = append(cfg.Spec.SkippedTemplates, "jenkins-ephemeral")
-		cfg, err := crClient.SamplesV1().Configs().Update(cfg)
+		cfg, err := crClient.SamplesV1().Configs().Update(context.TODO(), cfg, metav1.UpdateOptions{})
 		return err
 	})
 	if err != nil {
@@ -1033,7 +1034,7 @@ func TestSkippedProcessing(t *testing.T) {
 		cfg := verifyOperatorUp(t)
 		cfg.Spec.SkippedImagestreams = []string{}
 		cfg.Spec.SkippedTemplates = []string{}
-		cfg, err = crClient.SamplesV1().Configs().Update(cfg)
+		cfg, err = crClient.SamplesV1().Configs().Update(context.TODO(), cfg, metav1.UpdateOptions{})
 		return err
 	})
 	if err != nil {
@@ -1042,7 +1043,7 @@ func TestSkippedProcessing(t *testing.T) {
 	}
 	// verify status skipped has been reset
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err := crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err := crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil
@@ -1111,7 +1112,7 @@ func coreTestUpgrade(t *testing.T) {
 	// update env to trigger upgrade
 	depClient := kubeClient.AppsV1().Deployments(samplesapi.OperatorNamespace)
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		dep, err := depClient.Get("cluster-samples-operator", metav1.GetOptions{})
+		dep, err := depClient.Get(context.TODO(), "cluster-samples-operator", metav1.GetOptions{})
 		if err != nil {
 			t.Logf("error waiting for operator deployment to exist: %v\n", err)
 			return false, nil
@@ -1122,7 +1123,7 @@ func coreTestUpgrade(t *testing.T) {
 			if strings.TrimSpace(env.Name) == "RELEASE_VERSION" {
 				t.Logf("updating RELEASE_VERSION env to %s", newVersion)
 				dep.Spec.Template.Spec.Containers[0].Env[i].Value = newVersion
-				_, err := depClient.Update(dep)
+				_, err := depClient.Update(context.TODO(), dep, metav1.UpdateOptions{})
 				if err == nil {
 					return true, nil
 				}
@@ -1179,7 +1180,7 @@ func changeMgmtState(t *testing.T, state operatorsv1api.ManagementState) {
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cfg := verifyOperatorUp(t)
 		cfg.Spec.ManagementState = state
-		cfg, err := crClient.SamplesV1().Configs().Update(cfg)
+		cfg, err := crClient.SamplesV1().Configs().Update(context.TODO(), cfg, metav1.UpdateOptions{})
 		return err
 	})
 	if err != nil {
@@ -1187,7 +1188,7 @@ func changeMgmtState(t *testing.T, state operatorsv1api.ManagementState) {
 		t.Fatalf("error updating Config %v and %#v", err, verifyOperatorUp(t))
 	}
 	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err := crClient.SamplesV1().Configs().Get(samplesapi.ConfigName, metav1.GetOptions{})
+		cfg, err := crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("%v", err)
 			return false, nil

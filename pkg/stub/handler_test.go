@@ -1,17 +1,16 @@
 package stub
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime"
 	"strings"
+	"testing"
 	"time"
 
-	"github.com/openshift/cluster-samples-operator/pkg/cache"
-
-	"testing"
-
 	v1 "github.com/openshift/api/samples/v1"
+	"github.com/openshift/cluster-samples-operator/pkg/cache"
 	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
 
@@ -1626,7 +1625,7 @@ type fakeImageStreamImporter struct {
 	count int
 }
 
-func (f *fakeImageStreamImporter) Create(*imagev1.ImageStreamImport) (*imagev1.ImageStreamImport, error) {
+func (f *fakeImageStreamImporter) Create(ctx context.Context, isi *imagev1.ImageStreamImport, opts metav1.CreateOptions) (*imagev1.ImageStreamImport, error) {
 	f.count++
 	return &imagev1.ImageStreamImport{}, nil
 }

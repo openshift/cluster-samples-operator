@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 
@@ -45,16 +46,16 @@ type defaultClusterStatusWrapper struct {
 }
 
 func (g *defaultClusterStatusWrapper) Get(name string) (*configv1.ClusterOperator, error) {
-	return g.configclient.ClusterOperators().Get(name, metaapi.GetOptions{})
+	return g.configclient.ClusterOperators().Get(context.TODO(), name, metaapi.GetOptions{})
 }
 
 func (g *defaultClusterStatusWrapper) UpdateStatus(state *configv1.ClusterOperator) error {
-	_, err := g.configclient.ClusterOperators().UpdateStatus(state)
+	_, err := g.configclient.ClusterOperators().UpdateStatus(context.TODO(), state, metaapi.UpdateOptions{})
 	return err
 }
 
 func (g *defaultClusterStatusWrapper) Create(state *configv1.ClusterOperator) error {
-	_, err := g.configclient.ClusterOperators().Create(state)
+	_, err := g.configclient.ClusterOperators().Create(context.TODO(), state, metaapi.CreateOptions{})
 	return err
 }
 

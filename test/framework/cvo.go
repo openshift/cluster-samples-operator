@@ -1,11 +1,13 @@
 package framework
 
 import (
+	"context"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	configv1 "github.com/openshift/api/config/v1"
-	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	samplesapi "github.com/openshift/api/samples/v1"
+	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 )
 
 const (
@@ -28,7 +30,7 @@ func addCompomentOverride(overrides []configv1.ComponentOverride, override confi
 
 // DisableCVOForOperator disables the samples operator deployment so we can modify the version env
 func DisableCVOForOperator(operatorClient *configv1client.ConfigV1Client) error {
-	cv, err := operatorClient.ClusterVersions().Get(clusterVersionName, metav1.GetOptions{})
+	cv, err := operatorClient.ClusterVersions().Get(context.TODO(), clusterVersionName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -43,7 +45,7 @@ func DisableCVOForOperator(operatorClient *configv1client.ConfigV1Client) error 
 	if !changed {
 		return nil
 	}
-	if _, err := operatorClient.ClusterVersions().Update(cv); err != nil {
+	if _, err := operatorClient.ClusterVersions().Update(context.TODO(), cv, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
 
