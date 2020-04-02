@@ -1,6 +1,7 @@
 package stub
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"os"
@@ -9,14 +10,14 @@ import (
 	"k8s.io/client-go/util/flowcontrol"
 
 	imagev1 "github.com/openshift/api/image/v1"
+	v1 "github.com/openshift/api/samples/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	imagev1lister "github.com/openshift/client-go/image/listers/image/v1"
-	templatev1lister "github.com/openshift/client-go/template/listers/template/v1"
-	v1 "github.com/openshift/api/samples/v1"
 	sampleclientv1 "github.com/openshift/client-go/samples/clientset/versioned/typed/samples/v1"
 	configv1lister "github.com/openshift/client-go/samples/listers/samples/v1"
+	templatev1lister "github.com/openshift/client-go/template/listers/template/v1"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,24 +48,24 @@ func (g *defaultImageStreamClientWrapper) Get(name string) (*imagev1.ImageStream
 }
 
 func (g *defaultImageStreamClientWrapper) List(opts metav1.ListOptions) (*imagev1.ImageStreamList, error) {
-	return g.h.imageclient.ImageStreams("openshift").List(opts)
+	return g.h.imageclient.ImageStreams("openshift").List(context.TODO(), opts)
 }
 
 func (g *defaultImageStreamClientWrapper) Create(is *imagev1.ImageStream) (*imagev1.ImageStream, error) {
-	return g.h.imageclient.ImageStreams("openshift").Create(is)
+	return g.h.imageclient.ImageStreams("openshift").Create(context.TODO(), is, metav1.CreateOptions{})
 }
 
 func (g *defaultImageStreamClientWrapper) Update(is *imagev1.ImageStream) (*imagev1.ImageStream, error) {
-	return g.h.imageclient.ImageStreams("openshift").Update(is)
+	return g.h.imageclient.ImageStreams("openshift").Update(context.TODO(), is, metav1.UpdateOptions{})
 }
 
 func (g *defaultImageStreamClientWrapper) Delete(name string, opts *metav1.DeleteOptions) error {
-	return g.h.imageclient.ImageStreams("openshift").Delete(name, opts)
+	return g.h.imageclient.ImageStreams("openshift").Delete(context.TODO(), name, *opts)
 }
 
 func (g *defaultImageStreamClientWrapper) Watch() (watch.Interface, error) {
 	opts := metav1.ListOptions{}
-	return g.h.imageclient.ImageStreams("openshift").Watch(opts)
+	return g.h.imageclient.ImageStreams("openshift").Watch(context.TODO(), opts)
 }
 
 func (g *defaultImageStreamClientWrapper) ImageStreamImports(namespace string) imagev1client.ImageStreamImportInterface {
@@ -90,24 +91,24 @@ func (g *defaultTemplateClientWrapper) Get(name string) (*templatev1.Template, e
 }
 
 func (g *defaultTemplateClientWrapper) List(opts metav1.ListOptions) (*templatev1.TemplateList, error) {
-	return g.h.tempclient.Templates("openshift").List(opts)
+	return g.h.tempclient.Templates("openshift").List(context.TODO(), opts)
 }
 
 func (g *defaultTemplateClientWrapper) Create(t *templatev1.Template) (*templatev1.Template, error) {
-	return g.h.tempclient.Templates("openshift").Create(t)
+	return g.h.tempclient.Templates("openshift").Create(context.TODO(), t, metav1.CreateOptions{})
 }
 
 func (g *defaultTemplateClientWrapper) Update(t *templatev1.Template) (*templatev1.Template, error) {
-	return g.h.tempclient.Templates("openshift").Update(t)
+	return g.h.tempclient.Templates("openshift").Update(context.TODO(), t, metav1.UpdateOptions{})
 }
 
 func (g *defaultTemplateClientWrapper) Delete(name string, opts *metav1.DeleteOptions) error {
-	return g.h.tempclient.Templates("openshift").Delete(name, opts)
+	return g.h.tempclient.Templates("openshift").Delete(context.TODO(), name, *opts)
 }
 
 func (g *defaultTemplateClientWrapper) Watch() (watch.Interface, error) {
 	opts := metav1.ListOptions{}
-	return g.h.tempclient.Templates("openshift").Watch(opts)
+	return g.h.tempclient.Templates("openshift").Watch(context.TODO(), opts)
 }
 
 type SecretClientWrapper interface {
@@ -130,19 +131,19 @@ func (g *defaultSecretClientWrapper) Get(namespace, name string) (*corev1.Secret
 	case "openshift":
 		return g.opnshftlister.Get(name)
 	}
-	return g.coreclient.Secrets(namespace).Get(name, metav1.GetOptions{})
+	return g.coreclient.Secrets(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 }
 
 func (g *defaultSecretClientWrapper) Create(namespace string, s *corev1.Secret) (*corev1.Secret, error) {
-	return g.coreclient.Secrets(namespace).Create(s)
+	return g.coreclient.Secrets(namespace).Create(context.TODO(), s, metav1.CreateOptions{})
 }
 
 func (g *defaultSecretClientWrapper) Update(namespace string, s *corev1.Secret) (*corev1.Secret, error) {
-	return g.coreclient.Secrets(namespace).Update(s)
+	return g.coreclient.Secrets(namespace).Update(context.TODO(), s, metav1.UpdateOptions{})
 }
 
 func (g *defaultSecretClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
-	return g.coreclient.Secrets(namespace).Delete(name, opts)
+	return g.coreclient.Secrets(namespace).Delete(context.TODO(), name, *opts)
 }
 
 type ImageStreamFromFileGetter interface {
@@ -255,7 +256,7 @@ type generatedCRDWrapper struct {
 
 func (g *generatedCRDWrapper) UpdateStatus(sr *v1.Config, dbg string) error {
 	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
-		_, err := g.client.UpdateStatus(sr)
+		_, err := g.client.UpdateStatus(context.TODO(), sr, metav1.UpdateOptions{})
 		if err == nil {
 			return true, nil
 		}
@@ -272,7 +273,7 @@ func (g *generatedCRDWrapper) UpdateStatus(sr *v1.Config, dbg string) error {
 
 func (g *generatedCRDWrapper) Update(sr *v1.Config) error {
 	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
-		_, err := g.client.Update(sr)
+		_, err := g.client.Update(context.TODO(), sr, metav1.UpdateOptions{})
 		if err == nil {
 			return true, nil
 		}
@@ -286,7 +287,7 @@ func (g *generatedCRDWrapper) Update(sr *v1.Config) error {
 
 func (g *generatedCRDWrapper) Create(sr *v1.Config) error {
 	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
-		_, err := g.client.Create(sr)
+		_, err := g.client.Create(context.TODO(), sr, metav1.CreateOptions{})
 		if err == nil {
 			return true, nil
 		}

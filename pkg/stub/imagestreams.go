@@ -1,6 +1,7 @@
 package stub
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -445,7 +446,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 						if imgImport == nil {
 							break
 						}
-						imgImport, err = h.imageclientwrapper.ImageStreamImports("openshift").Create(imgImport)
+						imgImport, err = h.imageclientwrapper.ImageStreamImports("openshift").Create(context.TODO(), imgImport, kapis.CreateOptions{})
 						if err != nil {
 							logrus.Warningf("attempted to initiate an imagestreamimport retry for imagestream/tag %s/%s but got err %v; simply moving on", is.Name, statusTag.Tag, err)
 							break

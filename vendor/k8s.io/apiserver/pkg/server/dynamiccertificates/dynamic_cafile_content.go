@@ -126,6 +126,7 @@ func (c *DynamicFileCAContent) loadCABundle() error {
 		return err
 	}
 	c.caBundle.Store(caBundleAndVerifier)
+	klog.V(2).Infof("Loaded a new CA Bundle and Verifier for %q", c.Name())
 
 	for _, listener := range c.listeners {
 		listener.Enqueue()
@@ -170,7 +171,7 @@ func (c *DynamicFileCAContent) Run(workers int, stopCh <-chan struct{}) {
 	go wait.Until(c.runWorker, time.Second, stopCh)
 
 	// start timer that rechecks every minute, just in case.  this also serves to prime the controller quickly.
-	_ = wait.PollImmediateUntil(FileRefreshDuration, func() (bool, error) {
+	go wait.PollImmediateUntil(FileRefreshDuration, func() (bool, error) {
 		c.queue.Add(workItemKey)
 		return false, nil
 	}, stopCh)
@@ -215,8 +216,13 @@ func (c *DynamicFileCAContent) CurrentCABundleContent() (cabundle []byte) {
 }
 
 // VerifyOptions provides verifyoptions compatible with authenticators
-func (c *DynamicFileCAContent) VerifyOptions() x509.VerifyOptions {
-	return c.caBundle.Load().(*caBundleAndVerifier).verifyOptions
+func (c *DynamicFileCAContent) VerifyOptions() (x509.VerifyOptions, bool) {
+	uncastObj := c.caBundle.Load()
+	if uncastObj == nil {
+		return x509.VerifyOptions{}, false
+	}
+
+	return uncastObj.(*caBundleAndVerifier).verifyOptions, true
 }
 
 // newVerifyOptions creates a new verification func from a file.  It reads the content and then fails.
