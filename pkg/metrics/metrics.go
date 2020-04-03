@@ -34,6 +34,8 @@ const (
 	missingSecret        = "missing_secret"
 	missingTBRCredential = "missing_tbr_credential"
 
+	tbrInaccessibleOnBootstrapQuery = "openshift_samples_tbr_inaccessible_info"
+
 	// MetricsPort is the IP port supplied to the HTTP server used for prometheus,
 	// and matches what is specified in the corresponding Service and ServiceMonitor
 	MetricsPort = 60000
@@ -55,6 +57,10 @@ var (
 	configInvalidStat = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: invalidConfigQuery,
 		Help: "Indicates the configuration for the samples operator has an invalid configuration setting.",
+	})
+	tbrInaccessibleOnBootStat = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: tbrInaccessibleOnBootstrapQuery,
+		Help: "Indicates that during its initial installation the samples operator could not access registry.redhat.io and it boostrapped as removed.",
 	})
 
 	sc         = samplesCollector{}
@@ -179,7 +185,7 @@ func addCountGauge(ch chan<- prometheus.Metric, desc *prometheus.Desc, name stri
 }
 
 func init() {
-	prometheus.MustRegister(degradedStat, configInvalidStat)
+	prometheus.MustRegister(degradedStat, configInvalidStat, tbrInaccessibleOnBootStat)
 }
 
 func InitializeMetricsCollector(listers *client.Listers) {

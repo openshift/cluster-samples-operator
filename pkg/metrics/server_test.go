@@ -106,6 +106,10 @@ func TestBinaryMetrics(t *testing.T) {
 			method: ConfigInvalid,
 			query:  invalidConfigQuery,
 		},
+		{
+			method: TBRInaccessibleOnBoot,
+			query: tbrInaccessibleOnBootstrapQuery,
+		},
 	} {
 		for _, tt := range []struct {
 			name string
