@@ -722,6 +722,25 @@ func TestCreateDeleteSecretAfterCR(t *testing.T) {
 
 }
 
+func TestBootstrapRemovedStillHaveSecret(t *testing.T) {
+	h, cfg, event := setup()
+	// mimic result if we bootstrapped as removed
+	cfg.Spec.ManagementState = operatorsv1api.Removed
+	cfg.Status.Version = h.version
+	event.Object = &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      coreosPullSecretName,
+			Namespace: coreosPullSecretNamespace,
+		},
+	}
+	h.secretclientwrapper.(*fakeSecretClientWrapper).err = nil
+	h.Handle(event)
+	importCred := util.Condition(cfg, v1.ImportCredentialsExist)
+	if importCred.Status != corev1.ConditionTrue {
+		t.Fatalf("import creds false: %#v", cfg)
+	}
+}
+
 func setup() (Handler, *v1.Config, util.Event) {
 	h := NewTestHandler()
 	cfg, _ := h.CreateDefaultResourceIfNeeded(nil)

@@ -144,20 +144,20 @@ func (h *Handler) processSecretEvent(cfg *v1.Config, dockercfgSecret *corev1.Sec
 		return fmt.Errorf("retry secret event because in the middle of an sample upsert cycle")
 	}
 
-	removedState := false
 	deleted := event.Deleted
 	switch cfg.Spec.ManagementState {
 	case operatorsv1api.Removed:
 		// So we allow the processing of the secret event while in removed state to
 		// facilitate the imagestreams like cli, must-gather, that are installed from the
 		// payload via this operator's manifest, but are not managed by this operator
-		logrus.Printf("processing secret watch event while in Removed state; deletion event: %v", event.Deleted)
-		removedState = true
+		logrus.Printf("processing secret watch event %s/%s while in Removed state; deletion event: %v",
+			dockercfgSecret.Namespace, dockercfgSecret.Name, event.Deleted)
 	case operatorsv1api.Unmanaged:
 		logrus.Debugln("Ignoring secret event because samples resource is in unmanaged state")
 		return nil
 	case operatorsv1api.Managed:
-		logrus.Printf("processing secret watch event while in Managed state; deletion event: %v", event.Deleted)
+		logrus.Printf("processing secret watch event %s/%s while in Managed state; deletion event: %v",
+			dockercfgSecret.Namespace, dockercfgSecret.Name, event.Deleted)
 	default:
 		logrus.Printf("processing secret watch event like we are in Managed state, even though it is set to %v; deletion event %v", cfg.Spec.ManagementState, event.Deleted)
 	}
@@ -196,22 +196,10 @@ func (h *Handler) processSecretEvent(cfg *v1.Config, dockercfgSecret *corev1.Sec
 				return err
 			}
 		}
-		if removedState {
-			logrus.Println("deletion of credential in openshift namespace for removed state recognized")
-			cfg = h.refetchCfgMinimizeConflicts(cfg)
-			h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImportCredentialsExist)
-			dbg := "secret deletion recognized"
-			logrus.Printf("CRDUPDATE %s", dbg)
-			return h.crdwrapper.UpdateStatus(cfg, dbg)
-		}
-		// otherwise move on to possibly recreate via manageDockerCfgSecret call below
 	}
 	h.secretRetryCount = 0
-	if removedState {
-		// ignore any stray non-delete events while in removed state
-		return nil
-	}
 	beforeStatus := util.Condition(cfg, v1.ImportCredentialsExist).Status
+	logrus.Infof("current ImportCredentialsExist status: %v", beforeStatus)
 	err := h.manageDockerCfgSecret(deleted, cfg, dockercfgSecret)
 	dbg := ""
 	if err != nil {
