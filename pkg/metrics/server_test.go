@@ -11,11 +11,18 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"sync"
 	"testing"
 
 	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 )
+
+var testMetricLock sync.Mutex
+
+func init() {
+	testMetricLock = sync.Mutex{}
+}
 
 func TestMain(m *testing.M) {
 	var err error
@@ -74,6 +81,8 @@ func generateTempCertificates() (string, string, error) {
 }
 
 func TestRun(t *testing.T) {
+	testMetricLock.Lock()
+	defer testMetricLock.Unlock()
 	ch := make(chan struct{})
 	defer close(ch)
 	srv := BuildServer(6789)
@@ -90,6 +99,8 @@ func TestRun(t *testing.T) {
 }
 
 func TestBinaryMetrics(t *testing.T) {
+	testMetricLock.Lock()
+	defer testMetricLock.Unlock()
 	ch := make(chan struct{})
 	defer close(ch)
 	srv := BuildServer(6789)
@@ -108,7 +119,7 @@ func TestBinaryMetrics(t *testing.T) {
 		},
 		{
 			method: TBRInaccessibleOnBoot,
-			query: tbrInaccessibleOnBootstrapQuery,
+			query:  tbrInaccessibleOnBootstrapQuery,
 		},
 	} {
 		for _, tt := range []struct {
