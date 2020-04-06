@@ -265,8 +265,35 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 	return nil
 }
 
+func (h *Handler) skipRegistryOverride(oldies []string, imagestream *imagev1.ImageStream, cfg *v1.Config) bool {
+	overrideWithStandardRegistry := false
+	for _, reg := range oldies {
+		if cfg.Spec.SamplesRegistry == reg {
+			overrideWithStandardRegistry = true
+			break
+		}
+	}
+	jenkinsFromPayloadStream := false
+	switch imagestream.Name {
+	case "jenkins":
+		jenkinsFromPayloadStream = true
+	case "jenkins-agent-maven":
+		jenkinsFromPayloadStream = true
+	case "jenkins-agent-nodejs":
+		jenkinsFromPayloadStream = true
+	}
+	if jenkinsFromPayloadStream && overrideWithStandardRegistry {
+		logrus.Warningf("OVERRIDING THE REGISTRY USED FOR JENKINS RELATED IMAGESTREAMS FROM INSTALL PAYLOAD WITH %s NOT ALLOWED AND WILL NOT BE PROCESSED", cfg.Spec.SamplesRegistry)
+		return true
+	}
+	return false
+}
+
 func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.ImageStream, opcfg *v1.Config) {
 	logrus.Debugf("updateDockerPullSpec stream %s has repo %s", imagestream.Name, imagestream.Spec.DockerImageRepository)
+	if h.skipRegistryOverride(oldies, imagestream, opcfg) {
+		return
+	}
 	// don't mess with deprecated field unless it is actually set with something
 	if len(imagestream.Spec.DockerImageRepository) > 0 &&
 		!strings.HasPrefix(imagestream.Spec.DockerImageRepository, opcfg.Spec.SamplesRegistry) {
