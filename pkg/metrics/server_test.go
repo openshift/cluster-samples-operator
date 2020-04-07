@@ -6,23 +6,19 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math/big"
+	mr "math/rand"
 	"net/http"
 	"os"
-	"sync"
 	"testing"
+	"time"
 
 	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 )
-
-var testMetricLock sync.Mutex
-
-func init() {
-	testMetricLock = sync.Mutex{}
-}
 
 func TestMain(m *testing.M) {
 	var err error
@@ -41,6 +37,11 @@ func TestMain(m *testing.M) {
 	os.Remove(tlsKey)
 	os.Remove(tlsCRT)
 	os.Exit(code)
+}
+
+func generatePort() int {
+	mr.Seed(time.Now().UnixNano())
+	return mr.Intn(4000) + 6000
 }
 
 func generateTempCertificates() (string, string, error) {
@@ -81,14 +82,13 @@ func generateTempCertificates() (string, string, error) {
 }
 
 func TestRun(t *testing.T) {
-	testMetricLock.Lock()
-	defer testMetricLock.Unlock()
 	ch := make(chan struct{})
 	defer close(ch)
-	srv := BuildServer(6789)
+	port := generatePort()
+	srv := BuildServer(port)
 	go RunServer(srv, ch)
 
-	resp, err := http.Get("https://localhost:6789/metrics")
+	resp, err := http.Get(fmt.Sprintf("https://localhost:%d/metrics", port))
 	if err != nil {
 		t.Fatalf("error requesting metrics server: %v", err)
 	}
@@ -99,11 +99,10 @@ func TestRun(t *testing.T) {
 }
 
 func TestBinaryMetrics(t *testing.T) {
-	testMetricLock.Lock()
-	defer testMetricLock.Unlock()
 	ch := make(chan struct{})
 	defer close(ch)
-	srv := BuildServer(6789)
+	port := generatePort()
+	srv := BuildServer(port)
 	go RunServer(srv, ch)
 	for _, t1 := range []struct {
 		method func(bool)
@@ -158,7 +157,7 @@ func TestBinaryMetrics(t *testing.T) {
 					t1.method(tt.val)
 				}
 
-				resp, err := http.Get("https://localhost:6789/metrics")
+				resp, err := http.Get(fmt.Sprintf("https://localhost:%d/metrics", port))
 				if err != nil {
 					t.Fatalf("error requesting metrics server: %v", err)
 				}
