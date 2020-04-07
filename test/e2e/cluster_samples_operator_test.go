@@ -860,6 +860,7 @@ func TestSpecManagementStateField(t *testing.T) {
 
 	verifyImageStreamsGone(t)
 	verifyTemplatesGone(t)
+	verifySecretPresent(t)
 
 	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version, cfg.Status.ManagementState)
 
