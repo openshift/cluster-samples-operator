@@ -261,6 +261,16 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 
 func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.ImageStream, opcfg *v1.Config) {
 	logrus.Debugf("updateDockerPullSpec stream %s has repo %s", imagestream.Name, imagestream.Spec.DockerImageRepository)
+	// we always want to leave the jenkins images as using the payload set to the IMAGE* env's;
+	switch imagestream.Name {
+	case "jenkins":
+		return
+	case "jenkins-agent-nodejs":
+		return
+	case "jenkins-agent-maven":
+		return
+	}
+
 	// don't mess with deprecated field unless it is actually set with something
 	if len(imagestream.Spec.DockerImageRepository) > 0 &&
 		!strings.HasPrefix(imagestream.Spec.DockerImageRepository, opcfg.Spec.SamplesRegistry) {
