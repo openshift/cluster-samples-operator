@@ -53,7 +53,6 @@ func TestWrongSampleResourceName(t *testing.T) {
 
 func TestNoArchOrDist(t *testing.T) {
 	h, cfg, event := setup()
-	processCred(&h, cfg, t)
 	err := h.Handle(event)
 	// image in progress (4th entry, array index 3) should still be false when there is no content ... a la z or ppc
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -65,7 +64,6 @@ func TestNoArchOrDist(t *testing.T) {
 
 func TestWithDist(t *testing.T) {
 	h, cfg, event := setup()
-	processCred(&h, cfg, t)
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
@@ -82,7 +80,6 @@ func TestWithDist(t *testing.T) {
 
 func TestWithArchDist(t *testing.T) {
 	h, cfg, event := setup()
-	processCred(&h, cfg, t)
 	if len(cfg.Spec.Architectures) == 0 {
 		t.Errorf("arch not set on bootstrap")
 	}
@@ -110,7 +107,6 @@ func TestWithArchDist(t *testing.T) {
 
 func TestWithArch(t *testing.T) {
 	h, cfg, event := setup()
-	processCred(&h, cfg, t)
 	// without a mimic call this simulates our current PPC/390 stories of no samples content
 	cfg.Spec.Architectures = []string{
 		v1.PPCArchitecture,
@@ -130,7 +126,6 @@ func TestWithBadArch(t *testing.T) {
 
 func TestManagementState(t *testing.T) {
 	h, cfg, event := setup()
-	processCred(&h, cfg, t)
 	iskeys := getISKeys()
 	tkeys := getTKeys()
 	mimic(&h, x86OCPContentRootDir)
@@ -215,7 +210,6 @@ func TestManagementState(t *testing.T) {
 
 func TestSkipped(t *testing.T) {
 	h, cfg, event := setup()
-	processCred(&h, cfg, t)
 	iskeys := getISKeys()
 	tkeys := getTKeys()
 	cfg.Spec.SkippedImagestreams = iskeys
@@ -306,7 +300,6 @@ func TestProcessed(t *testing.T) {
 	tkeys := getTKeys()
 
 	mimic(&h, x86OCPContentRootDir)
-	processCred(&h, cfg, t)
 
 	err := h.Handle(event)
 	validate(true, err, "", cfg,
@@ -396,7 +389,6 @@ func TestProcessed(t *testing.T) {
 
 func TestImageStreamEvent(t *testing.T) {
 	h, cfg, event := setup()
-	processCred(&h, cfg, t)
 	mimic(&h, x86OCPContentRootDir)
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -495,7 +487,6 @@ func TestImageStreamEvent(t *testing.T) {
 
 func TestImageStreamErrorRetry(t *testing.T) {
 	h, cfg, event := setup()
-	processCred(&h, cfg, t)
 	mimic(&h, x86OCPContentRootDir)
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -611,7 +602,6 @@ func TestImageStreamErrorRetry(t *testing.T) {
 
 func TestTemplateEvent(t *testing.T) {
 	h, cfg, event := setup()
-	processCred(&h, cfg, t)
 	mimic(&h, x86OCPContentRootDir)
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -637,173 +627,13 @@ func TestTemplateEvent(t *testing.T) {
 
 }
 
-func TestCreateDeleteSecretBeforeCR(t *testing.T) {
-	h, cfg, event := setup()
-	h.crdwrapper.(*fakeCRDWrapper).cfg = nil
-	event.Object = &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      v1.SamplesRegistryCredentials,
-			Namespace: "openshift",
-			Annotations: map[string]string{
-				v1.SamplesVersionAnnotation: h.version,
-			},
-			ResourceVersion: "a",
-		},
-	}
-	mimic(&h, x86OCPContentRootDir)
-
-	err := h.Handle(event)
-	validate(false, err, "Received secret samples-registry-credentials but do not have the Config yet", cfg,
-		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-	event.Deleted = true
-	err = h.Handle(event)
-	validate(false, err, "Received secret samples-registry-credentials but do not have the Config yet", cfg,
-		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-
-	event.Deleted = false
-	event.Object = cfg
-	h.crdwrapper.(*fakeCRDWrapper).cfg = cfg
-	err = h.Handle(event)
-	validate(true, err, "", cfg,
-		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-	processCred(&h, cfg, t)
-	err = h.Handle(event)
-	validate(true, err, "", cfg,
-		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-	err = h.Handle(event)
-	validate(true, err, "", cfg,
-		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-
-}
-
-func TestCreateDeleteSecretAfterCR(t *testing.T) {
-	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
-	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
-	processCred(&h, cfg, t)
-	statuses[1] = corev1.ConditionTrue
-	validate(true, err, "", cfg, conditions, statuses, t)
-
-	h.secretRetryCount = 3 // bypass retry on CR update race
-	cfg.Spec.ManagementState = operatorsv1api.Removed
-	statuses[1] = corev1.ConditionTrue
-	statuses[4] = corev1.ConditionTrue
-	err = h.Handle(event)
-	// import cred should be true if from removed, remove pending true, since we don't delete on removed
-	validate(true, err, "", cfg, conditions, statuses, t)
-	// call again to mimic event after RemovePending updated and to see status changed to Removed
-	err = h.Handle(event)
-	validate(true, err, "", cfg, conditions, statuses, t)
-	if cfg.Status.ManagementState != operatorsv1api.Removed {
-		t.Fatalf("mgmt state status should be removed %#v", cfg)
-	}
-
-	// set back to mgmt
-	cfg.Spec.ManagementState = operatorsv1api.Managed
-	h.secretRetryCount = 3
-	err = h.Handle(event)
-	statuses[3] = corev1.ConditionTrue
-	statuses[4] = corev1.ConditionFalse
-	// with secret still present, we should start import images
-	validate(true, err, "", cfg, conditions, statuses, t)
-	if cfg.Status.ManagementState != operatorsv1api.Managed {
-		t.Fatalf("mgmt state status should be managed %#v", cfg)
-	}
-
-}
-
-func TestBootstrapRemovedStillHaveSecret(t *testing.T) {
-	h, cfg, event := setup()
-	// mimic result if we bootstrapped as removed
-	cfg.Spec.ManagementState = operatorsv1api.Removed
-	cfg.Status.Version = h.version
-	event.Object = &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      coreosPullSecretName,
-			Namespace: coreosPullSecretNamespace,
-		},
-	}
-	h.secretclientwrapper.(*fakeSecretClientWrapper).err = nil
-	h.Handle(event)
-	importCred := util.Condition(cfg, v1.ImportCredentialsExist)
-	if importCred.Status != corev1.ConditionTrue {
-		t.Fatalf("import creds false: %#v", cfg)
-	}
-}
-
 func setup() (Handler, *v1.Config, util.Event) {
 	h := NewTestHandler()
 	cfg, _ := h.CreateDefaultResourceIfNeeded(nil)
 	cfg = h.initConditions(cfg)
-	fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
-	fakesecretclient.err = kerrors.NewNotFound(schema.GroupResource{}, v1.SamplesRegistryCredentials)
 	h.crdwrapper.(*fakeCRDWrapper).cfg = cfg
 	cache.ClearUpsertsCache()
 	return h, cfg, util.Event{Object: cfg}
-}
-
-func processCred(h *Handler, cfg *v1.Config, t *testing.T) {
-	if !util.ConditionFalse(cfg, v1.ImportCredentialsExist) {
-		t.Fatalf("import cred exists unexpectedly true: %#v", cfg)
-	}
-	h.secretclientwrapper.(*fakeSecretClientWrapper).err = nil
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      v1.SamplesRegistryCredentials,
-			Namespace: "openshift",
-			Annotations: map[string]string{
-				v1.SamplesVersionAnnotation: h.version,
-			},
-			ResourceVersion: "a",
-		},
-	}
-	credEvent := util.Event{Object: secret}
-	err := h.Handle(credEvent)
-	if !util.ConditionTrue(cfg, v1.ImportCredentialsExist) {
-		t.Fatalf("secret event did not set import cred to true; err: %v, cfg: %#v", err, cfg)
-	}
-}
-
-func TestSameSecret(t *testing.T) {
-	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
-	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
-	processCred(&h, cfg, t)
-	statuses[1] = corev1.ConditionTrue
-	validate(true, err, "", cfg, conditions, statuses, t)
-
-	err = h.Handle(event)
-	statuses[3] = corev1.ConditionTrue
-	validate(true, err, "", cfg, conditions, statuses, t)
-}
-
-func TestSecretAPIError(t *testing.T) {
-	h, cfg, event := setup()
-	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
-
-	event.Object = &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            coreosPullSecretName,
-			Namespace:       coreosPullSecretNamespace,
-			ResourceVersion: "a",
-		},
-	}
-	fakesecretclient := h.secretclientwrapper.(*fakeSecretClientWrapper)
-	fakesecretclient.err = fmt.Errorf("problemchangingsecret")
-	err = h.Handle(event)
-	statuses[1] = corev1.ConditionUnknown
-	validate(true, err, "", cfg, conditions, statuses, t)
 }
 
 func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
@@ -870,7 +700,6 @@ func TestImageGetError(t *testing.T) {
 	}
 	for _, iserr := range errors {
 		h, cfg, event := setup()
-		processCred(&h, cfg, t)
 
 		mimic(&h, x86OCPContentRootDir)
 
@@ -1197,7 +1026,6 @@ func TestTemplateGetEreror(t *testing.T) {
 	}
 	for _, terr := range errors {
 		h, cfg, event := setup()
-		processCred(&h, cfg, t)
 
 		mimic(&h, x86OCPContentRootDir)
 
@@ -1220,14 +1048,13 @@ func TestDeletedCR(t *testing.T) {
 	h, cfg, event := setup()
 	event.Deleted = true
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 }
 
 func TestSameCR(t *testing.T) {
 	h, cfg, event := setup()
 	mimic(&h, x86OCPContentRootDir)
-	processCred(&h, cfg, t)
 	cfg.ResourceVersion = "a"
 
 	// first pass on the resource creates the samples, exists (first entry, index 0) is still false
@@ -1248,7 +1075,6 @@ func TestSameCR(t *testing.T) {
 
 func TestBadTopDirList(t *testing.T) {
 	h, cfg, event := setup()
-	processCred(&h, cfg, t)
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
 	fakefinder.errors = map[string]error{x86OCPContentRootDir: fmt.Errorf("badtopdir")}
 	err := h.Handle(event)
@@ -1258,7 +1084,6 @@ func TestBadTopDirList(t *testing.T) {
 
 func TestBadSubDirList(t *testing.T) {
 	h, cfg, event := setup()
-	processCred(&h, cfg, t)
 	mimic(&h, x86OCPContentRootDir)
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
 	fakefinder.errors = map[string]error{x86OCPContentRootDir + "/imagestreams": fmt.Errorf("badsubdir")}
@@ -1270,7 +1095,6 @@ func TestBadSubDirList(t *testing.T) {
 func TestBadTopLevelStatus(t *testing.T) {
 	h, cfg, event := setup()
 	mimic(&h, x86OCPContentRootDir)
-	processCred(&h, cfg, t)
 	fakestatus := h.crdwrapper.(*fakeCRDWrapper)
 	fakestatus.updateerr = fmt.Errorf("badsdkupdate")
 	err := h.Handle(event)
@@ -1484,7 +1308,6 @@ func NewTestHandler() Handler {
 		listerrors:   map[string]error{},
 		upserterrors: map[string]error{},
 	}
-	h.secretclientwrapper = &fakeSecretClientWrapper{}
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
@@ -1701,33 +1524,6 @@ func (f *fakeTemplateClientWrapper) Delete(name string, opts *metav1.DeleteOptio
 
 func (f *fakeTemplateClientWrapper) Watch() (watch.Interface, error) {
 	return nil, nil
-}
-
-type fakeSecretClientWrapper struct {
-	s   *corev1.Secret
-	err error
-}
-
-func (f *fakeSecretClientWrapper) Create(namespace string, s *corev1.Secret) (*corev1.Secret, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	return s, nil
-}
-
-func (f *fakeSecretClientWrapper) Update(namespace string, s *corev1.Secret) (*corev1.Secret, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	return s, nil
-}
-
-func (f *fakeSecretClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
-	return f.err
-}
-
-func (f *fakeSecretClientWrapper) Get(namespace, name string) (*corev1.Secret, error) {
-	return f.s, f.err
 }
 
 type fakeInClusterInitter struct{}

@@ -313,9 +313,6 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState {
 			logrus.Println("management state set to managed")
-			if util.ConditionFalse(cfg, v1.ImportCredentialsExist) {
-				h.copyDefaultClusterPullSecret(nil)
-			}
 		}
 		// will set status state to managed at top level caller
 		// to deal with config change processing

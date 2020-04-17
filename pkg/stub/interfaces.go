@@ -19,12 +19,10 @@ import (
 	configv1lister "github.com/openshift/client-go/samples/listers/samples/v1"
 	templatev1lister "github.com/openshift/client-go/template/listers/template/v1"
 	"github.com/sirupsen/logrus"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
-	corev1lister "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
 )
 
@@ -109,41 +107,6 @@ func (g *defaultTemplateClientWrapper) Delete(name string, opts *metav1.DeleteOp
 func (g *defaultTemplateClientWrapper) Watch() (watch.Interface, error) {
 	opts := metav1.ListOptions{}
 	return g.h.tempclient.Templates("openshift").Watch(context.TODO(), opts)
-}
-
-type SecretClientWrapper interface {
-	Get(namespace, name string) (*corev1.Secret, error)
-	Create(namespace string, s *corev1.Secret) (*corev1.Secret, error)
-	Update(namespace string, s *corev1.Secret) (*corev1.Secret, error)
-	Delete(namespace, name string, opts *metav1.DeleteOptions) error
-}
-
-type defaultSecretClientWrapper struct {
-	coreclient    *corev1client.CoreV1Client
-	opnshftlister corev1lister.SecretNamespaceLister
-	cfglister     corev1lister.SecretNamespaceLister
-}
-
-func (g *defaultSecretClientWrapper) Get(namespace, name string) (*corev1.Secret, error) {
-	switch namespace {
-	case "openshift-config":
-		return g.cfglister.Get(name)
-	case "openshift":
-		return g.opnshftlister.Get(name)
-	}
-	return g.coreclient.Secrets(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-}
-
-func (g *defaultSecretClientWrapper) Create(namespace string, s *corev1.Secret) (*corev1.Secret, error) {
-	return g.coreclient.Secrets(namespace).Create(context.TODO(), s, metav1.CreateOptions{})
-}
-
-func (g *defaultSecretClientWrapper) Update(namespace string, s *corev1.Secret) (*corev1.Secret, error) {
-	return g.coreclient.Secrets(namespace).Update(context.TODO(), s, metav1.UpdateOptions{})
-}
-
-func (g *defaultSecretClientWrapper) Delete(namespace, name string, opts *metav1.DeleteOptions) error {
-	return g.coreclient.Secrets(namespace).Delete(context.TODO(), name, *opts)
 }
 
 type ImageStreamFromFileGetter interface {

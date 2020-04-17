@@ -227,11 +227,6 @@ func ClusterOperatorStatusDegradedCondition(s *samplev1.Config) (configv1.Condit
 			"InvalidConfiguration",
 			fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), Condition(s, samplev1.ConfigurationValid).Message)
 	}
-	if ClusterNeedsCreds(s) {
-		return trueRC,
-			"ImagePullCredentialsNeeded",
-			fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), Condition(s, samplev1.ImportCredentialsExist).Message)
-	}
 	// report degraded if img import error exists for 2 hrs
 	impErrCon := Condition(s, samplev1.ImportImageErrorsExist)
 	if impErrCon.Status == corev1.ConditionTrue {
@@ -294,38 +289,6 @@ func ClusterOperatorStatusProgressingCondition(s *samplev1.Config, degradedState
 		return configv1.ConditionFalse, reason, msg
 	}
 	return configv1.ConditionFalse, "", ""
-}
-
-// ClusterNeedsCreds checks the conditions that drive whether the operator complains about
-// needing credentials to import RHEL content
-func ClusterNeedsCreds(s *samplev1.Config) bool {
-	if strings.TrimSpace(s.Spec.SamplesRegistry) != "" &&
-		strings.TrimSpace(s.Spec.SamplesRegistry) != "registry.redhat.io" {
-		return false
-	}
-
-	if s.Spec.ManagementState == operatorv1.Removed ||
-		s.Spec.ManagementState == operatorv1.Unmanaged {
-		return false
-	}
-	if s.Status.Conditions == nil {
-		return true
-	}
-
-	// some timing paths can lead to only the  config valid condition existing,
-	// so explicitly check it the import creds condition is even there yet
-	foundImportCred := false
-	for _, rc := range s.Status.Conditions {
-		if rc.Type == samplev1.ImportCredentialsExist {
-			foundImportCred = true
-			break
-		}
-	}
-	if !foundImportCred {
-		return true
-	}
-
-	return ConditionFalse(s, samplev1.ImportCredentialsExist)
 }
 
 // IsNonX86Arch let's us know if this is something other than x86_64/amd like s390x or ppc

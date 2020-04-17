@@ -77,7 +77,6 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config,
 	h.crdlister = listers.Config
 	h.streamlister = listers.ImageStreams
 	h.tplstore = listers.Templates
-	h.opshiftsecretlister = listers.OpenShiftNamespaceSecrets
 	h.cfgsecretlister = listers.ConfigNamespaceSecrets
 
 	h.Fileimagegetter = &DefaultImageStreamFromFileGetter{}
@@ -86,7 +85,6 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config,
 
 	h.imageclientwrapper = &defaultImageStreamClientWrapper{h: h, lister: listers.ImageStreams}
 	h.templateclientwrapper = &defaultTemplateClientWrapper{h: h, lister: listers.Templates}
-	h.secretclientwrapper = &defaultSecretClientWrapper{coreclient: h.coreclient, opnshftlister: listers.OpenShiftNamespaceSecrets, cfglister: listers.ConfigNamespaceSecrets}
 	h.cvowrapper = operatorstatus.NewClusterOperatorHandler(h.configclient)
 
 	h.skippedImagestreams = make(map[string]bool)
@@ -121,12 +119,10 @@ type Handler struct {
 
 	imageclientwrapper    ImageStreamClientWrapper
 	templateclientwrapper TemplateClientWrapper
-	secretclientwrapper   SecretClientWrapper
 
 	crdlister           configv1lister.ConfigLister
 	streamlister        imagev1lister.ImageStreamNamespaceLister
 	tplstore            templatev1lister.TemplateNamespaceLister
-	opshiftsecretlister corev1lister.SecretNamespaceLister
 	cfgsecretlister     corev1lister.SecretNamespaceLister
 	opersecretlister    corev1lister.SecretNamespaceLister
 
@@ -446,12 +442,6 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 			cfg.Spec.ManagementState = operatorsv1api.Managed
 		}
 		h.AddFinalizer(cfg)
-		// we should get a watch event for the default pull secret, but just in case
-		// we miss the watch event, as well as reducing churn with not starting the
-		// imagestream creates until we get the event, we'll do a one time copy attempt
-		// here ... we don't track errors cause if it doen't work with this one time,
-		// we'll then fall back on the watch events, sync intervals, etc.
-		h.copyDefaultClusterPullSecret(nil)
 		logrus.Println("creating default Config")
 		err = h.crdwrapper.Create(cfg)
 		if err != nil {
@@ -487,7 +477,15 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 func (h *Handler) initConditions(cfg *v1.Config) *v1.Config {
 	now := kapis.Now()
 	util.Condition(cfg, v1.SamplesExist)
-	util.Condition(cfg, v1.ImportCredentialsExist)
+	creds := util.Condition(cfg, v1.ImportCredentialsExist)
+	// image registry operator now handles making TBR creds available
+	// for imagestreams
+	if creds.Status != corev1.ConditionTrue {
+		creds.Status = corev1.ConditionTrue
+		creds.LastTransitionTime = now
+		creds.LastUpdateTime = now
+		util.ConditionUpdate(cfg, creds)
+	}
 	valid := util.Condition(cfg, v1.ConfigurationValid)
 	// our default config is valid; since Condition sets new conditions to false
 	// if we get false here this is the first pass through; invalid configs
@@ -582,26 +580,6 @@ func (h *Handler) Handle(event util.Event) error {
 		err := h.processTemplateWatchEvent(t, event.Deleted)
 		return err
 
-	case *corev1.Secret:
-		dockercfgSecret, _ := event.Object.(*corev1.Secret)
-		if !secretsWeCareAbout(dockercfgSecret) {
-			return nil
-		}
-
-		// if we miss a delete event in the openshift namespace (since we cannot
-		// add a finalizer in our namespace secret), we our watch
-		// on the openshift-config pull secret should still repopulate;
-		// if that gets deleted, the whole cluster is hosed; plus, there is talk
-		// of moving data like that to a special config namespace that is somehow
-		// protected
-
-		cfg, _ := h.crdwrapper.Get(v1.ConfigName)
-		if cfg != nil {
-			return h.processSecretEvent(cfg, dockercfgSecret, event)
-		} else {
-			return fmt.Errorf("Received secret %s but do not have the Config yet, requeuing", dockercfgSecret.Name)
-		}
-
 	case *v1.Config:
 		cfg, _ := event.Object.(*v1.Config)
 
@@ -675,19 +653,6 @@ func (h *Handler) Handle(event util.Event) error {
 				}()
 			}
 			return nil
-		}
-
-		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		if util.ConditionUnknown(cfg, v1.ImportCredentialsExist) {
-			// retry the default cred copy if it failed previously
-			err := h.copyDefaultClusterPullSecret(nil)
-			if err == nil {
-				cfg = h.refetchCfgMinimizeConflicts(cfg)
-				h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.ImportCredentialsExist)
-				dbg := "cleared import cred unknown"
-				logrus.Printf("CRDUPDATE %s", dbg)
-				return h.crdwrapper.UpdateStatus(cfg, dbg)
-			}
 		}
 
 		// Every time we see a change to the Config object, update the ClusterOperator status
@@ -793,25 +758,6 @@ func (h *Handler) Handle(event util.Event) error {
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionFalse
 			util.ConditionUpdate(cfg, condition)
-		}
-
-		// if trying to do rhel to the default registry.redhat.io registry requires the secret
-		// be in place since registry.redhat.io requires auth to pull; if it is not ready
-		// error state will be logged by WaitingForCredential
-		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		stillWaitingForSecret, callSDKToUpdate := h.WaitingForCredential(cfg)
-		if callSDKToUpdate {
-			// flush status update ... the only error generated by WaitingForCredential, not
-			// by api obj access
-			dbg := "Config update ignored since need the RHEL credential"
-			logrus.Printf("CRDUPDATE %s", dbg)
-			// if update to set import cred condition to false fails, return that error
-			// to requeue
-			return h.crdwrapper.UpdateStatus(cfg, dbg)
-		}
-		if stillWaitingForSecret {
-			// means we previously udpated cfg but nothing has changed wrt the secret's presence
-			return nil
 		}
 
 		cfg = h.refetchCfgMinimizeConflicts(cfg)

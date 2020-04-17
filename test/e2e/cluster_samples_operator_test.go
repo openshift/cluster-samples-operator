@@ -198,25 +198,6 @@ func verifyIPv6(t *testing.T) bool {
 	return false
 }
 
-func verifySecretPresent(t *testing.T) {
-	setupClients(t)
-	secClient := kubeClient.CoreV1().Secrets("openshift")
-	err := wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
-		_, err := secClient.Get(context.TODO(), samplesapi.SamplesRegistryCredentials, metav1.GetOptions{})
-		if err != nil {
-			if !kerrors.IsNotFound(err) {
-				t.Logf("%v", err)
-			}
-			return false, nil
-		}
-		return true, nil
-	})
-	if err != nil {
-		dumpPod(t)
-		t.Fatalf("timeout for secret getting created cfg %#v", verifyOperatorUp(t))
-	}
-}
-
 func verifyConditionsCompleteSamplesAdded(t *testing.T) error {
 	return wait.PollImmediate(1*time.Second, 10*time.Minute, func() (bool, error) {
 		cfg, err := crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
@@ -754,7 +735,6 @@ func TestImageStreamInOpenshiftNamespace(t *testing.T) {
 		dumpPod(t)
 		t.Fatalf("Config did not stabilize on startup %#v", verifyOperatorUp(t))
 	}
-	verifySecretPresent(t)
 	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version, cfg.Status.ManagementState)
 	t.Logf("Config after TestImageStreamInOpenshiftNamespace: %#v", verifyOperatorUp(t))
 }
@@ -860,7 +840,6 @@ func TestSpecManagementStateField(t *testing.T) {
 
 	verifyImageStreamsGone(t)
 	verifyTemplatesGone(t)
-	verifySecretPresent(t)
 
 	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version, cfg.Status.ManagementState)
 
