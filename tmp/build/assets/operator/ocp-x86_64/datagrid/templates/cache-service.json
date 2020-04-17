@@ -104,6 +104,11 @@
             },
             "spec": {
                 "replicas": "${{NUMBER_OF_INSTANCES}}",
+                "selector": {
+                    "matchLabels": {
+                        "application": "${APPLICATION_NAME}"
+                    }
+                },
                 "serviceName": "${APPLICATION_NAME}-ping",
                 "strategy": {
                     "rollingParams": {
