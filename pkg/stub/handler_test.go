@@ -107,7 +107,6 @@ func TestWithArchDist(t *testing.T) {
 		conditions,
 		statuses, t)
 
-
 }
 
 func TestWithArch(t *testing.T) {
@@ -604,7 +603,6 @@ func TestImageStreamErrorRetry(t *testing.T) {
 		}
 	}
 
-
 	h.processImageStreamWatchEvent(is, false)
 
 	if util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
@@ -788,6 +786,63 @@ func TestSecretAPIError(t *testing.T) {
 	err = h.Handle(event)
 	statuses[1] = corev1.ConditionUnknown
 	validate(true, err, "", cfg, conditions, statuses, t)
+}
+
+func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
+	h, cfg, _ := setup()
+	mimic(&h, x86OCPContentRootDir)
+	progressing := util.Condition(cfg, v1.ImageChangesInProgress)
+	progressing.Reason = "foo "
+	errors := util.Condition(cfg, v1.ImportImageErrorsExist)
+	errors.Reason = "bar "
+	util.ConditionUpdate(cfg, progressing)
+	util.ConditionUpdate(cfg, errors)
+	fakefile := h.Filefinder.(*fakeResourceFileLister)
+	fakefile.files = map[string][]fakeFileInfo{}
+	tagVersion := int64(1)
+	is := &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+			Annotations: map[string]string{
+				v1.SamplesVersionAnnotation: h.version,
+			},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			Tags: []imagev1.TagReference{
+				{
+					Name:       "foo",
+					Generation: &tagVersion,
+				},
+			},
+		},
+		Status: imagev1.ImageStreamStatus{
+			Tags: []imagev1.NamedTagEventList{
+				{
+					Tag: "foo",
+					Items: []imagev1.TagEvent{
+						{
+							Generation: tagVersion,
+						},
+					},
+				},
+			},
+		},
+	}
+	err := h.processImageStreamWatchEvent(is, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
+	if strings.Contains(progressing.Reason, "foo") {
+		t.Fatal("progressing still has foo after it was no longer in payload")
+	}
+	is.Name = "bar"
+	err = h.processImageStreamWatchEvent(is, false)
+	errors = util.Condition(cfg, v1.ImportImageErrorsExist)
+	if strings.Contains(errors.Reason, "bar") {
+		t.Fatal("import errors still has bar after it was no longer in payload")
+	}
+
 }
 
 func TestImageGetError(t *testing.T) {
@@ -1365,7 +1420,6 @@ func validateArchOverride(succeed bool, err error, errstr string, cfg *v1.Config
 func validate(succeed bool, err error, errstr string, cfg *v1.Config, statuses []v1.ConfigConditionType, conditions []corev1.ConditionStatus, t *testing.T) {
 	validateArchOverride(succeed, err, errstr, cfg, statuses, conditions, t, runtime.GOARCH)
 }
-
 
 func NewTestHandler() Handler {
 	h := Handler{}
