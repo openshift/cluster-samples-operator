@@ -788,6 +788,23 @@ func TestSecretAPIError(t *testing.T) {
 	validate(true, err, "", cfg, conditions, statuses, t)
 }
 
+func TestTemplateRemovedFromPayload(t *testing.T) {
+	h, _, _ := setup()
+	mimic(&h, x86OCPContentRootDir)
+
+	_, filePath, doUpsert, updateCfgOnly, err := h.prepSamplesWatchEvent("template", "no-longer-exists", map[string]string{}, false)
+	switch {
+	case len(filePath) > 0:
+		t.Fatalf("should not have returned a file path")
+	case doUpsert:
+		t.Fatalf("do upsert should not be true")
+	case updateCfgOnly:
+		t.Fatalf("update cfg only should not be true")
+	case err != nil:
+		t.Fatalf("got unexpected err %s", err.Error())
+	}
+}
+
 func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 	h, cfg, _ := setup()
 	mimic(&h, x86OCPContentRootDir)
