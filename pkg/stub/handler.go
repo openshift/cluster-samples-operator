@@ -120,11 +120,11 @@ type Handler struct {
 	imageclientwrapper    ImageStreamClientWrapper
 	templateclientwrapper TemplateClientWrapper
 
-	crdlister           configv1lister.ConfigLister
-	streamlister        imagev1lister.ImageStreamNamespaceLister
-	tplstore            templatev1lister.TemplateNamespaceLister
-	cfgsecretlister     corev1lister.SecretNamespaceLister
-	opersecretlister    corev1lister.SecretNamespaceLister
+	crdlister        configv1lister.ConfigLister
+	streamlister     imagev1lister.ImageStreamNamespaceLister
+	tplstore         templatev1lister.TemplateNamespaceLister
+	cfgsecretlister  corev1lister.SecretNamespaceLister
+	opersecretlister corev1lister.SecretNamespaceLister
 
 	Fileimagegetter    ImageStreamFromFileGetter
 	Filetemplategetter TemplateFromFileGetter
@@ -184,8 +184,9 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 
 	filePath := ""
 	// on pod restarts samples watch events come in before the first
-	// Config event, or we might not get an event at all if there were no changes,
-	// so build list here
+	// Config event, or we might not get an event at all if there were no changes;
+	// restarts as part of migrations also make things interesting because existing
+	// samples may have been deleted on disk, but we'll address that below
 	force := metrics.StreamsEmpty()
 	h.buildFileMaps(cfg, force)
 
@@ -197,42 +198,49 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 	switch kind {
 	case "imagestream":
 		filePath, inInventory = h.imagestreamFile[name]
+		if !inInventory {
+			logrus.Printf("watch stream event %s not part of operators inventory", name)
+			// we now have cases where sample providers are deleting entire imagestreams;
+			// let's make sure there are no stale entries with inprogress / importerror
+			processing := util.Condition(cfg, v1.ImageChangesInProgress)
+			needToUpdate := util.NameInReason(cfg, processing.Reason, name)
+			if needToUpdate {
+				now := kapis.Now()
+				processing.Reason = util.ClearNameInReason(cfg, processing.Reason, name)
+				logrus.Debugf("processing reason now %s", processing.Reason)
+				if len(strings.TrimSpace(processing.Reason)) == 0 {
+					logrus.Println("The last in progress imagestream has completed (removed imagestream check)")
+					processing.Status = corev1.ConditionFalse
+					processing.Reason = ""
+					processing.LastTransitionTime = now
+				}
+				processing.LastUpdateTime = now
+				util.ConditionUpdate(cfg, processing)
+			}
+			importErrors := util.Condition(cfg, v1.ImportImageErrorsExist)
+			needToUpdate2 := util.NameInReason(cfg, importErrors.Reason, name)
+			if needToUpdate2 {
+				h.mapsMutex.Lock()
+				defer h.mapsMutex.Unlock()
+				h.clearStreamFromImportError(name, importErrors, cfg)
+			}
+			if needToUpdate || needToUpdate2 {
+				return cfg, "", false, true, nil
+			}
+			return nil, "", false, false, nil
+		}
 		_, skipped = h.skippedImagestreams[name]
 	case "template":
 		filePath, inInventory = h.templateFile[name]
+		if !inInventory {
+			// in the case of templates we can just ignore content from prior releases that is no longer
+			// part of the current release
+			logrus.Printf("watch template event %s not part of operators inventory", name)
+			return nil, "", false, false, nil
+		}
 		_, skipped = h.skippedTemplates[name]
 	}
-	if !inInventory && kind == "imagestream" {
-		logrus.Printf("watch event %s not part of operators inventory", name)
-		// we now have cases where sample providers are deleting entire imagestreams;
-		// let's make sure there are no stale entries with inprogress / importerror
-		processing := util.Condition(cfg, v1.ImageChangesInProgress)
-		needToUpdate := util.NameInReason(cfg, processing.Reason, name)
-		if needToUpdate {
-			now := kapis.Now()
-			processing.Reason = util.ClearNameInReason(cfg, processing.Reason, name)
-			logrus.Debugf("processing reason now %s", processing.Reason)
-			if len(strings.TrimSpace(processing.Reason)) == 0 {
-				logrus.Println("The last in progress imagestream has completed (removed imagestream check)")
-				processing.Status = corev1.ConditionFalse
-				processing.Reason = ""
-				processing.LastTransitionTime = now
-			}
-			processing.LastUpdateTime = now
-			util.ConditionUpdate(cfg, processing)
-		}
-		importErrors := util.Condition(cfg, v1.ImportImageErrorsExist)
-		needToUpdate2 := util.NameInReason(cfg, importErrors.Reason, name)
-		if needToUpdate2 {
-			h.mapsMutex.Lock()
-			defer h.mapsMutex.Unlock()
-			h.clearStreamFromImportError(name, importErrors, cfg)
-		}
-		if needToUpdate || needToUpdate2 {
-			return cfg, "", false, true, nil
-		}
-		return nil, "", false, false, nil
-	}
+
 	if skipped {
 		logrus.Printf("watch event %s in skipped list for %s", name, kind)
 		// but return cfg to potentially toggle pending/import error condition
@@ -728,10 +736,9 @@ func (h *Handler) Handle(event util.Event) error {
 					return h.crdwrapper.UpdateStatus(cfg, dbg)
 				}
 
-				// in case this is a bring up after initial install, we take a pass
-				// and see if any samples were deleted while samples operator was down
-				force := metrics.StreamsEmpty()
-				h.buildFileMaps(cfg, force)
+				// migration inevitably means we need to refresh the file cache as samples are added and
+				// deleted between releases, so force file map building
+				h.buildFileMaps(cfg, true)
 				// passing in false means if the samples is present, we leave it alone
 				_, err = h.createSamples(cfg, false, registryChanged, unskippedStreams, unskippedTemplates)
 				return err
