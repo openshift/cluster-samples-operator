@@ -291,7 +291,7 @@ func ClusterOperatorStatusProgressingCondition(s *samplev1.Config, degradedState
 	return configv1.ConditionFalse, "", ""
 }
 
-// IsUnsupportedArch let's us know if this is something other than x86_64/amd/s390x like ppc
+// IsUnsupportedArch let's us know if this is something other than x86_64/amd/s390x/ppc
 func IsUnsupportedArch(cfg *samplev1.Config) bool {
 	if len(cfg.Spec.Architectures) == 0 {
 		return false
@@ -302,6 +302,8 @@ func IsUnsupportedArch(cfg *samplev1.Config) bool {
 	case samplev1.X86Architecture:
 		return false
 	case samplev1.S390Architecture:
+		return false
+	case samplev1.PPCArchitecture:
 		return false
 	default:
 		return true
