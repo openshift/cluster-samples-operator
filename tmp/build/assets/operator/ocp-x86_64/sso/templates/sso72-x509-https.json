@@ -23,6 +23,20 @@
     "objects": [
         {
             "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "description": "ConfigMap providing service ca bundle.",
+                    "service.beta.openshift.io/inject-cabundle": "true"
+                },
+                "labels": {
+                    "application": "${APPLICATION_NAME}"
+                },
+                "name": "${APPLICATION_NAME}-service-ca"
+            }
+        },
+        {
+            "apiVersion": "v1",
             "kind": "Service",
             "metadata": {
                 "annotations": {
@@ -149,7 +163,7 @@
                                     },
                                     {
                                         "name": "X509_CA_BUNDLE",
-                                        "value": "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+                                        "value": "/var/run/configmaps/service-ca/service-ca.crt"
                                     },
                                     {
                                         "name": "JGROUPS_CLUSTER_PASSWORD",
@@ -234,6 +248,11 @@
                                         "mountPath": "/etc/x509/https",
                                         "name": "sso-x509-https-volume",
                                         "readOnly": true
+                                    },
+                                    {
+                                        "mountPath": "/var/run/configmaps/service-ca",
+                                        "name": "service-ca",
+                                        "readOnly": true
                                     }
                                 ]
                             }
@@ -244,6 +263,10 @@
                                 "name": "sso-x509-https-volume",
                                 "secret": {
                                     "secretName": "sso-x509-https-secret"
+                                },
+                                "name": "service-ca",
+                                "configMap": {
+                                    "configMapName": "${APPLICATION_NAME}-service-ca"
                                 }
                             }
                         ]

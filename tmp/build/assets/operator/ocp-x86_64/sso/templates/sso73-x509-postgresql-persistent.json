@@ -23,6 +23,20 @@
     "objects": [
         {
             "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "annotations": {
+                    "description": "ConfigMap providing service ca bundle.",
+                    "service.beta.openshift.io/inject-cabundle": "true"
+                },
+                "labels": {
+                    "application": "${APPLICATION_NAME}"
+                },
+                "name": "${APPLICATION_NAME}-service-ca"
+            }
+        },
+        {
+            "apiVersion": "v1",
             "kind": "Service",
             "metadata": {
                 "annotations": {
@@ -203,7 +217,7 @@
                                     },
                                     {
                                         "name": "X509_CA_BUNDLE",
-                                        "value": "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt /var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                                        "value": "/var/run/configmaps/service-ca/service-ca.crt /var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
                                     },
                                     {
                                         "name": "JGROUPS_CLUSTER_PASSWORD",
@@ -289,6 +303,11 @@
                                         "mountPath": "/etc/x509/jgroups",
                                         "name": "sso-x509-jgroups-volume",
                                         "readOnly": true
+                                    },
+                                    {
+                                        "mountPath": "/var/run/configmaps/service-ca",
+                                        "name": "service-ca",
+                                        "readOnly": true
                                     }
                                 ]
                             }
@@ -305,6 +324,11 @@
                                 "name": "sso-x509-jgroups-volume",
                                 "secret": {
                                     "secretName": "sso-x509-jgroups-secret"
+                                }
+                            },
+                                "name": "service-ca",
+                                "configMap": {
+                                    "configMapName": "${APPLICATION_NAME}-service-ca"
                                 }
                             }
                         ]
