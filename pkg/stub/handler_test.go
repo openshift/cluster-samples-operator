@@ -881,6 +881,20 @@ func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 
 }
 
+func TestImageStreamCreateErrorDegradedReason(t *testing.T) {
+	err := kerrors.NewServiceUnavailable("BadService")
+	h, cfg, event := setup()
+	mimic(&h, x86OCPContentRootDir)
+	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
+	fakeisclient.geterrors = map[string]error{"foo": err}
+	h.Handle(event)
+	_, reason := util.AnyConditionUnknown(cfg)
+	if reason != "APIServerServiceUnavailableError" {
+		t.Fatalf("unexpected reason %s", reason)
+	}
+
+}
+
 func TestImageGetError(t *testing.T) {
 	errors := []error{
 		fmt.Errorf("getstreamerror"),
@@ -1283,6 +1297,10 @@ func TestBadSubDirList(t *testing.T) {
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(false, err, "badsubdir", cfg, conditions, statuses, t)
+	_, reason := util.AnyConditionUnknown(cfg)
+	if reason != "FileSystemError" {
+		t.Fatalf("incorrect reason %s", reason)
+	}
 }
 
 func TestBadTopLevelStatus(t *testing.T) {
