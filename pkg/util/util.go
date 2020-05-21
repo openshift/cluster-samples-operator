@@ -61,13 +61,13 @@ func ConditionUnknown(s *samplev1.Config, c samplev1.ConfigConditionType) bool {
 	return false
 }
 
-func AnyConditionUnknown(s *samplev1.Config) bool {
+func AnyConditionUnknown(s *samplev1.Config) (bool, string) {
 	for _, rc := range s.Status.Conditions {
 		if rc.Status == corev1.ConditionUnknown {
-			return true
+			return true, rc.Reason
 		}
 	}
-	return false
+	return false, ""
 }
 
 func ConditionsMessages(s *samplev1.Config) string {
@@ -243,8 +243,8 @@ func ClusterOperatorStatusDegradedCondition(s *samplev1.Config) (configv1.Condit
 	// Conversely, those errors result in a ConditionUnknown setting on one
 	// of the conditions;
 	// If for some reason that ever changes, we'll need to adjust this
-	if AnyConditionUnknown(s) {
-		return trueRC, "APIServerError", ConditionsMessages(s)
+	if exists, reason := AnyConditionUnknown(s); exists {
+		return trueRC, reason, ConditionsMessages(s)
 	}
 	// return the initial state, don't set any messages.
 	return configv1.ConditionFalse, "", ""
