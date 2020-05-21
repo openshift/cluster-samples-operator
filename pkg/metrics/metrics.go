@@ -97,6 +97,12 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 		logrus.Infof("metrics sample config retrieval failed with: %s", err.Error())
 		return
 	}
+
+	if cfg.Spec.ManagementState == operatorv1.Removed ||
+		cfg.Spec.ManagementState == operatorv1.Unmanaged {
+		return
+	}
+
 	for _, skip := range cfg.Spec.SkippedImagestreams {
 		skips[skip] = true
 	}
@@ -106,10 +112,9 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 	importFailuresReason := importFailures.Reason
 	for _, stream := range streams {
 		_, skipped := skips[stream]
-		dontCare := cfg.Status.ManagementState == operatorv1.Removed || cfg.Status.ManagementState == operatorv1.Unmanaged
 
-		if skipped || dontCare {
-			// unmanaged/removed/skipping-an-imagestream means we consider the metric as 0 since we don't care if it failed import
+		if skipped {
+			// skipping-an-imagestream means we consider the metric as 0 since we don't care if it failed import
 			addCountGauge(ch, importsFailedDesc, stream, float64(0))
 			continue
 		}
@@ -132,9 +137,7 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 	} else {
 		addCountGauge(ch, invalidSecretDesc, missingSecret, float64(0))
 	}
-	if len(cfg.Spec.SamplesRegistry) > 0 ||
-		cfg.Spec.ManagementState == operatorv1.Removed ||
-		cfg.Spec.ManagementState == operatorv1.Unmanaged {
+	if len(cfg.Spec.SamplesRegistry) > 0 {
 		// we do not flag missing TBR credentials if they have overriden the
 		// samples registry
 		addCountGauge(ch, invalidSecretDesc, missingTBRCredential, float64(0))
