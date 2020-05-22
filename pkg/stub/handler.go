@@ -663,6 +663,17 @@ func (h *Handler) Handle(event util.Event) error {
 			return nil
 		}
 
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
+		validArch, _ := h.IsValidArch(cfg)
+		if validArch && util.IsNonX86Arch(cfg) && cfg.Spec.ManagementState == operatorsv1api.Managed {
+			// we did not bootstrap as removed in 4.2 for s390/ppc; we just reported complete
+			// clean that up to facilitate our mode of operation for those platforms
+			cfg.Spec.ManagementState = operatorsv1api.Removed
+			dbg := fmt.Sprintf("switch management state to removed for %s", cfg.Spec.Architectures[0])
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.Update(cfg)
+		}
+
 		// Every time we see a change to the Config object, update the ClusterOperator status
 		// based on the current conditions of the Config.
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
@@ -738,9 +749,11 @@ func (h *Handler) Handle(event util.Event) error {
 
 				// migration inevitably means we need to refresh the file cache as samples are added and
 				// deleted between releases, so force file map building
-				h.buildFileMaps(cfg, true)
-				// passing in false means if the samples is present, we leave it alone
-				_, err = h.createSamples(cfg, false, registryChanged, unskippedStreams, unskippedTemplates)
+				if !util.IsNonX86Arch(cfg) {
+					h.buildFileMaps(cfg, true)
+					// passing in false means if the samples is present, we leave it alone
+					_, err = h.createSamples(cfg, false, registryChanged, unskippedStreams, unskippedTemplates)
+				}
 				return err
 			}
 			// if config changed requiring an upsert, but a prior config action is still in progress,
