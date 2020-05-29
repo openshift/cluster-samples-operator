@@ -2,6 +2,7 @@ package stub
 
 import (
 	"github.com/openshift/api/samples/v1"
+
 	"github.com/openshift/cluster-samples-operator/pkg/util"
 )
 

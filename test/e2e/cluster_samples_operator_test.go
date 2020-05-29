@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/client-go/util/retry"
-
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	kubeset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/retry"
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageapiv1 "github.com/openshift/api/image/v1"
@@ -29,11 +29,11 @@ import (
 	imageset "github.com/openshift/client-go/image/clientset/versioned"
 	sampleclientv1 "github.com/openshift/client-go/samples/clientset/versioned"
 	templateset "github.com/openshift/client-go/template/clientset/versioned"
+
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/stub"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
-	kubeset "k8s.io/client-go/kubernetes"
 )
 
 var (

@@ -9,11 +9,6 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/openshift/api/samples/v1"
-	"github.com/openshift/cluster-samples-operator/pkg/cache"
-	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
-	"github.com/openshift/cluster-samples-operator/pkg/util"
-
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,9 +19,13 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	operatorsv1api "github.com/openshift/api/operator/v1"
+	v1 "github.com/openshift/api/samples/v1"
 	templatev1 "github.com/openshift/api/template/v1"
-
 	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
+
+	"github.com/openshift/cluster-samples-operator/pkg/cache"
+	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 )
 
 const (

@@ -4,16 +4,16 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/openshift/cluster-samples-operator/pkg/metrics"
-	"github.com/openshift/cluster-samples-operator/pkg/operator"
-	"github.com/openshift/cluster-samples-operator/pkg/signals"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
 	"github.com/openshift/library-go/pkg/operator/watchdog"
 
-	"github.com/spf13/cobra"
-
-	"github.com/sirupsen/logrus"
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"github.com/openshift/cluster-samples-operator/pkg/metrics"
+	"github.com/openshift/cluster-samples-operator/pkg/operator"
+	"github.com/openshift/cluster-samples-operator/pkg/signals"
 )
 
 func printVersion() {

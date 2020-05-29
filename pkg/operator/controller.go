@@ -2,7 +2,6 @@ package operator
 
 import (
 	"fmt"
-	"github.com/openshift/cluster-samples-operator/pkg/util"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -19,23 +18,21 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	imagev1 "github.com/openshift/api/image/v1"
+	sampopapi "github.com/openshift/api/samples/v1"
+	templatev1 "github.com/openshift/api/template/v1"
+	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	imageset "github.com/openshift/client-go/image/clientset/versioned"
 	imageinformers "github.com/openshift/client-go/image/informers/externalversions"
-
-	templatev1 "github.com/openshift/api/template/v1"
+	sampleclientv1 "github.com/openshift/client-go/samples/clientset/versioned"
+	sampopinformers "github.com/openshift/client-go/samples/informers/externalversions"
 	templateset "github.com/openshift/client-go/template/clientset/versioned"
 	templateinformers "github.com/openshift/client-go/template/informers/externalversions"
 
-	sampopapi "github.com/openshift/api/samples/v1"
-	sampleclientv1 "github.com/openshift/client-go/samples/clientset/versioned"
-	sampopinformers "github.com/openshift/client-go/samples/informers/externalversions"
 	sampcache "github.com/openshift/cluster-samples-operator/pkg/cache"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
-
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/stub"
-
-	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 )
 
 const (

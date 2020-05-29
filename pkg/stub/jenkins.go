@@ -3,8 +3,9 @@ package stub
 import (
 	"os"
 
-	imagev1 "github.com/openshift/api/image/v1"
 	"github.com/sirupsen/logrus"
+
+	imagev1 "github.com/openshift/api/image/v1"
 )
 
 func tagInPayload(tag, env string, stream *imagev1.ImageStream) *imagev1.ImageStream {
