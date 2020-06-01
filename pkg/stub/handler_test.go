@@ -887,6 +887,12 @@ func TestImageStreamCreateErrorDegradedReason(t *testing.T) {
 	mimic(&h, x86OCPContentRootDir)
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	fakeisclient.geterrors = map[string]error{"foo": err}
+
+	// fake out the fact the creds are there, so we can zero in
+	// on the API server error.
+	h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.ImportCredentialsExist)
+	h.secretclientwrapper.(*fakeSecretClientWrapper).err = nil
+
 	h.Handle(event)
 	_, reason := util.AnyConditionUnknown(cfg)
 	if reason != "APIServerServiceUnavailableError" {
