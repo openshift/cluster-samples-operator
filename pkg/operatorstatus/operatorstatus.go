@@ -7,16 +7,15 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	metaapi "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/apimachinery/pkg/api/errors"
+	metaapi "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/retry"
 
 	configv1 "github.com/openshift/api/config/v1"
+	v1 "github.com/openshift/api/samples/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
-	v1 "github.com/openshift/api/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
 )

@@ -7,6 +7,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/util/flowcontrol"
 
 	imagev1 "github.com/openshift/api/image/v1"
@@ -18,12 +25,6 @@ import (
 	sampleclientv1 "github.com/openshift/client-go/samples/clientset/versioned/typed/samples/v1"
 	configv1lister "github.com/openshift/client-go/samples/listers/samples/v1"
 	templatev1lister "github.com/openshift/client-go/template/listers/template/v1"
-	"github.com/sirupsen/logrus"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/apimachinery/pkg/watch"
-	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
-	restclient "k8s.io/client-go/rest"
 )
 
 type ImageStreamClientWrapper interface {

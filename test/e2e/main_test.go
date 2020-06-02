@@ -21,13 +21,15 @@ import (
 	"testing"
 	"time"
 
-	samplesapi "github.com/openshift/api/samples/v1"
-	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
-	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
-	"github.com/openshift/cluster-samples-operator/test/framework"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeset "k8s.io/client-go/kubernetes"
+
+	samplesapi "github.com/openshift/api/samples/v1"
+	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+
+	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
+	"github.com/openshift/cluster-samples-operator/test/framework"
 )
 
 func TestMain(m *testing.M) {

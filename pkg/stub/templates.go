@@ -1,11 +1,13 @@
 package stub
 
 import (
-	templatev1 "github.com/openshift/api/template/v1"
-	v1 "github.com/openshift/api/samples/v1"
 	"github.com/sirupsen/logrus"
+
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+
+	v1 "github.com/openshift/api/samples/v1"
+	templatev1 "github.com/openshift/api/template/v1"
 )
 
 func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool) error {

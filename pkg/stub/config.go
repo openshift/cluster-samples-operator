@@ -4,14 +4,17 @@ import (
 	"fmt"
 	"strings"
 
-	operatorsv1api "github.com/openshift/api/operator/v1"
-	v1 "github.com/openshift/api/samples/v1"
-	"github.com/openshift/cluster-samples-operator/pkg/metrics"
-	"github.com/openshift/cluster-samples-operator/pkg/util"
 	"github.com/sirupsen/logrus"
+
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	operatorsv1api "github.com/openshift/api/operator/v1"
+	v1 "github.com/openshift/api/samples/v1"
+
+	"github.com/openshift/cluster-samples-operator/pkg/metrics"
+	"github.com/openshift/cluster-samples-operator/pkg/util"
 )
 
 func (h *Handler) ClearStatusConfigForRemoved(cfg *v1.Config) {

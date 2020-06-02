@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	imagev1 "github.com/openshift/api/image/v1"
 	corev1 "k8s.io/api/core/v1"
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	imagev1 "github.com/openshift/api/image/v1"
 )
 
 // The importTag related functions are for our import image retry and are
