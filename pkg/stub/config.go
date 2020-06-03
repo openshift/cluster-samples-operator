@@ -18,6 +18,20 @@ func (h *Handler) ClearStatusConfigForRemoved(cfg *v1.Config) {
 	cfg.Status.Architectures = []string{}
 }
 
+func (h *Handler) IsValidArch(cfg *v1.Config) (bool, string) {
+	for _, arch := range cfg.Spec.Architectures {
+		switch arch {
+		case v1.X86Architecture:
+		case v1.AMDArchitecture:
+		case v1.PPCArchitecture:
+		case v1.S390Architecture:
+		default:
+			return false, arch
+		}
+	}
+	return true, ""
+}
+
 func (h *Handler) StoreCurrentValidConfig(cfg *v1.Config) {
 	cfg.Status.SamplesRegistry = cfg.Spec.SamplesRegistry
 	cfg.Status.Architectures = cfg.Spec.Architectures
@@ -29,16 +43,9 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 	// the first thing this should do is check that all the config values
 	// are "valid" (the architecture name is known, the distribution name is known, etc)
 	// if that fails, we should immediately error out and set ConfigValid to false.
-	for _, arch := range cfg.Spec.Architectures {
-		switch arch {
-		case v1.X86Architecture:
-		case v1.AMDArchitecture:
-		case v1.PPCArchitecture:
-		case v1.S390Architecture:
-		default:
-			err := fmt.Errorf("architecture %s unsupported; only support %s", arch, strings.Join([]string{v1.X86Architecture, v1.AMDArchitecture, v1.PPCArchitecture, v1.S390Architecture}, ","))
-			return h.processError(cfg, v1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
-		}
+	if valid, badArch := h.IsValidArch(cfg); !valid {
+		err := fmt.Errorf("architecture %s unsupported; only support %s", badArch, strings.Join([]string{v1.X86Architecture, v1.AMDArchitecture, v1.PPCArchitecture, v1.S390Architecture}, ","))
+		return h.processError(cfg, v1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
 
 	// only if the values being requested are valid, should we then proceed to check
