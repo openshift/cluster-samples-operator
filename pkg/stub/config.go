@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/cluster-samples-operator/pkg/util"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -231,6 +232,19 @@ func (h *Handler) processError(opcfg *v1.Config, ctype v1.ConfigConditionType, c
 		}
 		status.Status = cstatus
 		status.Message = log
+
+		// most reasons for degraded status are handled in ClusterOperatorStatusDegradedCondition based on
+		// state in the opcfg correlated with other factors; but when the error should directly drive the
+		// reason text, we set the reason here; at this time, that means either API Server errors or
+		// errors accessing the local file system
+		reason := kerrors.ReasonForError(err)
+		switch {
+		case len(reason) > 0 && reason != kapis.StatusReasonUnknown:
+			status.Reason = fmt.Sprintf("APIServer%sError", reason)
+		case cstatus == corev1.ConditionUnknown && ctype == v1.SamplesExist:
+			status.Reason = "FileSystemError"
+		}
+
 		util.ConditionUpdate(opcfg, status)
 	}
 
