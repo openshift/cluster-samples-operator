@@ -41,7 +41,7 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 		// still attempt to report error in status
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
-		dbg := "event temp udpate err"
+		dbg := "event temp update err"
 		logrus.Printf("CRDUPDATE %s", dbg)
 		h.crdwrapper.UpdateStatus(cfg, dbg)
 		// if we get this, don't bother retrying
