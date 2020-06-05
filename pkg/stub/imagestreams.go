@@ -323,13 +323,13 @@ func (h *Handler) coreUpdateDockerPullSpec(oldreg, newreg string, oldies []strin
 			if strings.HasPrefix(oldreg, old) {
 				oldreg = strings.Replace(oldreg, old, newreg, 1)
 				logrus.Debugf("coreUpdatePull hasReg1 reg now %s", oldreg)
-			} else {
-				// the content from openshift/library has something odd in in ... replace the registry piece
-				parts := strings.Split(oldreg, "/")
-				oldreg = newreg + "/" + parts[1] + "/" + parts[2]
-				logrus.Debugf("coreUpdatePull hasReg2 reg now %s", oldreg)
+				return oldreg
 			}
 		}
+		// the content from openshift/library has something odd in in ... replace the registry piece
+		parts := strings.Split(oldreg, "/")
+		oldreg = newreg + "/" + parts[1] + "/" + parts[2]
+		logrus.Debugf("coreUpdatePull hasReg2 reg now %s", oldreg)
 	} else {
 		oldreg = newreg + "/" + oldreg
 		logrus.Debugf("coreUpdatePull no hasReg reg now %s", oldreg)
