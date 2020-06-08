@@ -331,6 +331,10 @@ func TestProcessed(t *testing.T) {
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
 	}
+	is, _ = fakeisclient.Get("baz")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
 
 	faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 	for _, key := range tkeys {
@@ -362,9 +366,66 @@ func TestProcessed(t *testing.T) {
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
 	}
+	is, _ = fakeisclient.Get("baz")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
 
-	// make sure registries are updated when switch back to default
+	// make sure registries are updated when sampleRegistry is the form of host/path
+	cfg.Spec.SamplesRegistry = "foo.io/bar"
 	cfg.ResourceVersion = "3"
+	// fake out that the samples completed updating
+	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
+	progressing.Status = corev1.ConditionFalse
+	util.ConditionUpdate(cfg, progressing)
+	// reset operator image to clear out previous registry image override
+	mimic(&h, x86OCPContentRootDir)
+
+	err = h.Handle(event)
+	validate(true, err, "", cfg,
+		conditions,
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	is, _ = fakeisclient.Get("foo")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	is, _ = fakeisclient.Get("bar")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	is, _ = fakeisclient.Get("baz")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+
+	// make sure registries are updated when sampleRegistry is the form of host:port/path
+	cfg.Spec.SamplesRegistry = "foo.io:1111/bar"
+	cfg.ResourceVersion = "4"
+	// fake out that the samples completed updating
+	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
+	progressing.Status = corev1.ConditionFalse
+	util.ConditionUpdate(cfg, progressing)
+	// reset operator image to clear out previous registry image override
+	mimic(&h, x86OCPContentRootDir)
+
+	err = h.Handle(event)
+	validate(true, err, "", cfg,
+		conditions,
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	is, _ = fakeisclient.Get("foo")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	is, _ = fakeisclient.Get("bar")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	is, _ = fakeisclient.Get("baz")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	// make sure registries are updated when switch back to default
+	cfg.ResourceVersion = "5"
 	cfg.Spec.SamplesRegistry = ""
 	// also make sure processing occurs for disruptive config change even if progressing==true
 	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
@@ -383,7 +444,10 @@ func TestProcessed(t *testing.T) {
 	if is == nil || strings.HasPrefix(is.Spec.DockerImageRepository, "bar.io") {
 		t.Fatalf("bar stream repo still has bar.io")
 	}
-
+	is, _ = fakeisclient.Get("baz")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
 }
 
 func TestImageStreamEvent(t *testing.T) {
