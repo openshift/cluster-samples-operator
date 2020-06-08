@@ -481,6 +481,35 @@ func TestImageStreamEvent(t *testing.T) {
 		},
 	}
 	h.processImageStreamWatchEvent(is, false)
+	is = &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "baz",
+			Annotations: map[string]string{
+				v1.SamplesVersionAnnotation: h.version,
+			},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			Tags: []imagev1.TagReference{
+				{
+					Name:       "baz",
+					Generation: &tagVersion,
+				},
+			},
+		},
+		Status: imagev1.ImageStreamStatus{
+			Tags: []imagev1.NamedTagEventList{
+				{
+					Tag: "baz",
+					Items: []imagev1.TagEvent{
+						{
+							Generation: tagVersion,
+						},
+					},
+				},
+			},
+		},
+	}
+	h.processImageStreamWatchEvent(is, false)
 	validate(true, err, "", cfg, conditions, statuses, t)
 }
 
