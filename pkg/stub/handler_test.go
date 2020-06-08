@@ -1148,7 +1148,7 @@ func invalidConfig(t *testing.T, msg string, cfgValid *v1.ConfigCondition) {
 }
 
 func getISKeys() []string {
-	return []string{"foo", "bar"}
+	return []string{"foo", "bar", "baz"}
 }
 
 func getTKeys() []string {
@@ -1178,6 +1178,10 @@ func mimic(h *Handler, topdir string) {
 			},
 			{
 				name: "bar",
+				dir:  false,
+			},
+			{
+				name: "baz",
 				dir:  false,
 			},
 		},
@@ -1227,11 +1231,30 @@ func mimic(h *Handler, topdir string) {
 			},
 		},
 	}
+	baz := &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "baz",
+			Labels: map[string]string{},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			DockerImageRepository: registry2,
+			Tags: []imagev1.TagReference{
+				{
+					From: &corev1.ObjectReference{
+						Name: registry2 + "/repo/image:1.0",
+						Kind: "DockerImage",
+					},
+				},
+			},
+		},
+	}
 	fakeisgetter.streams = map[string]*imagev1.ImageStream{
 		topdir + "/imagestreams/foo": foo,
 		topdir + "/imagestreams/bar": bar,
+		topdir + "/imagestreams/baz": baz,
 		"foo":                        foo,
 		"bar":                        bar,
+		"baz":                        baz,
 	}
 	faketempgetter := h.Filetemplategetter.(*fakeTemplateFromFileGetter)
 	bo := &templatev1.Template{
