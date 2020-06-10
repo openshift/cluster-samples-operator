@@ -16,6 +16,7 @@ import (
 	v1 "github.com/openshift/api/samples/v1"
 
 	"github.com/openshift/cluster-samples-operator/pkg/cache"
+	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
 )
 
@@ -467,6 +468,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 							logrus.Warningf("attempted to initiate an imagestreamimport retry for imagestream/tag %s/%s but got err %v; simply moving on", is.Name, statusTag.Tag, err)
 							break
 						}
+						metrics.ImageStreamImportRetry()
 						logrus.Printf("initiated an imagestreamimport retry for imagestream/tag %s/%s", is.Name, statusTag.Tag)
 
 					}

@@ -81,3 +81,7 @@ func TBRInaccessibleOnBoot(badTBR bool) {
 	}
 	tbrInaccessibleOnBootStat.Set(0)
 }
+
+func ImageStreamImportRetry() {
+	importRetryStat.Inc()
+}
