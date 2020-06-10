@@ -331,6 +331,10 @@ func TestProcessed(t *testing.T) {
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
 	}
+	is, _ = fakeisclient.Get("baz")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
 
 	faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 	for _, key := range tkeys {
@@ -362,9 +366,66 @@ func TestProcessed(t *testing.T) {
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
 	}
+	is, _ = fakeisclient.Get("baz")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
 
-	// make sure registries are updated when switch back to default
+	// make sure registries are updated when sampleRegistry is the form of host/path
+	cfg.Spec.SamplesRegistry = "foo.io/bar"
 	cfg.ResourceVersion = "3"
+	// fake out that the samples completed updating
+	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
+	progressing.Status = corev1.ConditionFalse
+	util.ConditionUpdate(cfg, progressing)
+	// reset operator image to clear out previous registry image override
+	mimic(&h, x86OCPContentRootDir)
+
+	err = h.Handle(event)
+	validate(true, err, "", cfg,
+		conditions,
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	is, _ = fakeisclient.Get("foo")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	is, _ = fakeisclient.Get("bar")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	is, _ = fakeisclient.Get("baz")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+
+	// make sure registries are updated when sampleRegistry is the form of host:port/path
+	cfg.Spec.SamplesRegistry = "foo.io:1111/bar"
+	cfg.ResourceVersion = "4"
+	// fake out that the samples completed updating
+	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
+	progressing.Status = corev1.ConditionFalse
+	util.ConditionUpdate(cfg, progressing)
+	// reset operator image to clear out previous registry image override
+	mimic(&h, x86OCPContentRootDir)
+
+	err = h.Handle(event)
+	validate(true, err, "", cfg,
+		conditions,
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	is, _ = fakeisclient.Get("foo")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	is, _ = fakeisclient.Get("bar")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	is, _ = fakeisclient.Get("baz")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
+	// make sure registries are updated when switch back to default
+	cfg.ResourceVersion = "5"
 	cfg.Spec.SamplesRegistry = ""
 	// also make sure processing occurs for disruptive config change even if progressing==true
 	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
@@ -383,7 +444,10 @@ func TestProcessed(t *testing.T) {
 	if is == nil || strings.HasPrefix(is.Spec.DockerImageRepository, "bar.io") {
 		t.Fatalf("bar stream repo still has bar.io")
 	}
-
+	is, _ = fakeisclient.Get("baz")
+	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
+		t.Fatalf("stream repo not updated %#v, %#v", is, h)
+	}
 }
 
 func TestImageStreamEvent(t *testing.T) {
@@ -471,6 +535,35 @@ func TestImageStreamEvent(t *testing.T) {
 			Tags: []imagev1.NamedTagEventList{
 				{
 					Tag: "bar",
+					Items: []imagev1.TagEvent{
+						{
+							Generation: tagVersion,
+						},
+					},
+				},
+			},
+		},
+	}
+	h.processImageStreamWatchEvent(is, false)
+	is = &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "baz",
+			Annotations: map[string]string{
+				v1.SamplesVersionAnnotation: h.version,
+			},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			Tags: []imagev1.TagReference{
+				{
+					Name:       "baz",
+					Generation: &tagVersion,
+				},
+			},
+		},
+		Status: imagev1.ImageStreamStatus{
+			Tags: []imagev1.NamedTagEventList{
+				{
+					Tag: "baz",
 					Items: []imagev1.TagEvent{
 						{
 							Generation: tagVersion,
@@ -1148,7 +1241,7 @@ func invalidConfig(t *testing.T, msg string, cfgValid *v1.ConfigCondition) {
 }
 
 func getISKeys() []string {
-	return []string{"foo", "bar"}
+	return []string{"foo", "bar", "baz"}
 }
 
 func getTKeys() []string {
@@ -1178,6 +1271,10 @@ func mimic(h *Handler, topdir string) {
 			},
 			{
 				name: "bar",
+				dir:  false,
+			},
+			{
+				name: "baz",
 				dir:  false,
 			},
 		},
@@ -1227,11 +1324,30 @@ func mimic(h *Handler, topdir string) {
 			},
 		},
 	}
+	baz := &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "baz",
+			Labels: map[string]string{},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			DockerImageRepository: registry2,
+			Tags: []imagev1.TagReference{
+				{
+					From: &corev1.ObjectReference{
+						Name: registry2 + "/repo/image:1.0",
+						Kind: "DockerImage",
+					},
+				},
+			},
+		},
+	}
 	fakeisgetter.streams = map[string]*imagev1.ImageStream{
 		topdir + "/imagestreams/foo": foo,
 		topdir + "/imagestreams/bar": bar,
+		topdir + "/imagestreams/baz": baz,
 		"foo":                        foo,
 		"bar":                        bar,
+		"baz":                        baz,
 	}
 	faketempgetter := h.Filetemplategetter.(*fakeTemplateFromFileGetter)
 	bo := &templatev1.Template{
