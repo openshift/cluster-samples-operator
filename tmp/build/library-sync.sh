@@ -13,19 +13,18 @@ pushd library-master
 rm -rf arch community* .git* hack import_content.py LICENSE Makefile official* OWNERS requirements.txt .travis.yml
 pushd operator
 rm -rf okd-x86_64
-rm -rf ocp-ppc64le # remove this line when we support ppc and uncomment the ppc lines below
 pushd ocp-x86_64
 pushd official
 mv * ..
 popd # official
 rmdir official
 popd # ocp-x86_64
-#pushd ocp-ppc64le
-#pushd official
-#mv * ..
-#popd # official
-#rmdir official
-#popd #ocp-ppc64le
+pushd ocp-ppc64le
+pushd official
+mv * ..
+popd # official
+rmdir official
+popd #ocp-ppc64le
 pushd ocp-s390x
 pushd official
 mv * ..

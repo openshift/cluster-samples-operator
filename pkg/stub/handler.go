@@ -749,8 +749,8 @@ func (h *Handler) Handle(event util.Event) error {
 		if len(cfg.Spec.Architectures) > 0 &&
 			cfg.Spec.Architectures[0] != v1.AMDArchitecture &&
 			cfg.Spec.Architectures[0] != v1.X86Architecture &&
-			cfg.Spec.Architectures[0] != v1.S390Architecture { // &&
-			//cfg.Spec.Architectures[0] != v1.PPCArchitecture {
+			cfg.Spec.Architectures[0] != v1.S390Architecture &&
+			cfg.Spec.Architectures[0] != v1.PPCArchitecture {
 			logrus.Printf("samples are not installed on an unsupported architecture")
 		}
 
