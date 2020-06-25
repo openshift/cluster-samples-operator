@@ -23,7 +23,7 @@ import (
 const (
 	ClusterOperatorName = "openshift-samples"
 	doingDelete         = "DeletionInProgress"
-	nonX86              = "NonX86Platform"
+	unsuppArch              = "UnsupportHWArchitecture"
 	ipv6                = "IPv6Platform"
 	TBR                 = "TermsBasedRegistryUnreacahable"
 )
@@ -89,9 +89,9 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 		// will ignore errors in delete path, but we at least log them above
 		return nil
 	}
-	if util.IsNonX86Arch(cfg) {
-		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionFalse, cfg, nonX86)
-		// will ignore errors in non-x86 path, but we at least log them above
+	if util.IsUnsupportedArch(cfg) {
+		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionFalse, cfg, unsuppArch)
+		// will ignore errors in unsupported arch path, but we at least log them above
 		return nil
 
 	}

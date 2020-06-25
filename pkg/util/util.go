@@ -328,12 +328,21 @@ func ClusterNeedsCreds(s *samplev1.Config) bool {
 	return ConditionFalse(s, samplev1.ImportCredentialsExist)
 }
 
-// IsNonX86Arch let's us know if this is something other than x86_64/amd like s390x or ppc
-func IsNonX86Arch(cfg *samplev1.Config) bool {
-	if len(cfg.Spec.Architectures) > 0 && cfg.Spec.Architectures[0] != samplev1.AMDArchitecture && cfg.Spec.Architectures[0] != samplev1.X86Architecture {
+// IsUnsupportedArch let's us know if this is something other than x86_64/amd/s390x like ppc
+func IsUnsupportedArch(cfg *samplev1.Config) bool {
+	if len(cfg.Spec.Architectures) == 0 {
+		return false
+	}
+	switch cfg.Spec.Architectures[0] {
+	case samplev1.AMDArchitecture:
+		return false
+	case samplev1.X86Architecture:
+		return false
+	case samplev1.S390Architecture:
+		return false
+	default:
 		return true
 	}
-	return false
 }
 
 // IsIPv6 let's us know if this is a ipv6 env (assumes single stack)

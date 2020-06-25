@@ -443,7 +443,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg = h.updateCfgArch(cfg)
 		switch {
 		// TODO as we gain content for non x86 platforms we can remove the nonx86 check
-		case util.IsNonX86Arch(cfg):
+		case util.IsUnsupportedArch(cfg):
 			cfg.Spec.ManagementState = operatorsv1api.Removed
 			cfg.Status.Version = h.version
 		case h.tbrInaccessible():
@@ -698,7 +698,7 @@ func (h *Handler) Handle(event util.Event) error {
 		}
 
 		validArch, _ := h.IsValidArch(cfg)
-		if validArch && util.IsNonX86Arch(cfg) && cfg.Spec.ManagementState == operatorsv1api.Managed {
+		if validArch && util.IsUnsupportedArch(cfg) && cfg.Spec.ManagementState == operatorsv1api.Managed {
 			// we did not bootstrap as removed in 4.2 for s390/ppc; we just reported complete
 			// clean that up to facilitate our mode of operation for those platforms
 			cfg.Spec.ManagementState = operatorsv1api.Removed
@@ -746,6 +746,14 @@ func (h *Handler) Handle(event util.Event) error {
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
+		if len(cfg.Spec.Architectures) > 0 &&
+			cfg.Spec.Architectures[0] != v1.AMDArchitecture &&
+			cfg.Spec.Architectures[0] != v1.X86Architecture &&
+			cfg.Spec.Architectures[0] != v1.S390Architecture { // &&
+			//cfg.Spec.Architectures[0] != v1.PPCArchitecture {
+			logrus.Printf("samples are not installed on an unsupported architecture")
+		}
+
 		h.buildSkipFilters(cfg)
 		configChanged := false
 		configChangeRequiresUpsert := false
@@ -782,7 +790,7 @@ func (h *Handler) Handle(event util.Event) error {
 
 				// migration inevitably means we need to refresh the file cache as samples are added and
 				// deleted between releases, so force file map building
-				if !util.IsNonX86Arch(cfg) {
+				if !util.IsUnsupportedArch(cfg) {
 					h.buildFileMaps(cfg, true)
 					// passing in false means if the samples is present, we leave it alone
 					_, err = h.createSamples(cfg, false, registryChanged, unskippedStreams, unskippedTemplates)
