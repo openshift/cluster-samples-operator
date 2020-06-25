@@ -137,7 +137,7 @@ func verifyOperatorUp(t *testing.T) *samplesapi.Config {
 	return cfg
 }
 
-func verifyX86(t *testing.T) bool {
+func verifySupportedArch(t *testing.T) bool {
 	err := wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
 		cfg := verifyOperatorUp(t)
 		if len(cfg.Status.Architectures) == 0 {
@@ -149,7 +149,10 @@ func verifyX86(t *testing.T) bool {
 	if err != nil {
 		t.Fatalf("architecture field was not set after 1 minute: %#v", cfg)
 	}
-	if cfg.Status.Architectures[0] != samplesapi.X86Architecture && cfg.Status.Architectures[0] != samplesapi.AMDArchitecture {
+	if cfg.Status.Architectures[0] != samplesapi.X86Architecture &&
+		cfg.Status.Architectures[0] != samplesapi.AMDArchitecture &&
+		cfg.Status.Architectures[0] != samplesapi.S390Architecture &&
+		cfg.Status.Architectures[0] != samplesapi.PPCArchitecture {
 		return false
 	}
 	return true
@@ -515,7 +518,7 @@ func verifyTemplatesGone(t *testing.T) {
 }
 
 func validateContent(t *testing.T, timeToCompare *kapis.Time) {
-	if !verifyX86(t) {
+	if !verifySupportedArch(t) {
 		return
 	}
 	if verifyIPv6(t) {
@@ -625,7 +628,7 @@ func verifySkippedTemplateManagedLabel(t *testing.T, value string) {
 }
 
 func verifyDeletedImageStreamNotRecreated(t *testing.T) {
-	if !verifyX86(t) {
+	if !verifySupportedArch(t) {
 		return
 	}
 	if verifyIPv6(t) {
@@ -689,7 +692,7 @@ func verifyDeletedTemplatesRecreated(t *testing.T) {
 }
 
 func verifyDeletedTemplatesNotRecreated(t *testing.T) {
-	if !verifyX86(t) {
+	if !verifySupportedArch(t) {
 		return
 	}
 	if verifyIPv6(t) {
@@ -968,7 +971,7 @@ func TestSpecManagementStateField(t *testing.T) {
 }
 
 func TestSkippedProcessing(t *testing.T) {
-	if !verifyX86(t) {
+	if !verifySupportedArch(t) {
 		return
 	}
 	if verifyIPv6(t) {
@@ -1055,7 +1058,7 @@ func TestSkippedProcessing(t *testing.T) {
 }
 
 func TestRecreateDeletedManagedSample(t *testing.T) {
-	if !verifyX86(t) {
+	if !verifySupportedArch(t) {
 		return
 	}
 	if verifyIPv6(t) {

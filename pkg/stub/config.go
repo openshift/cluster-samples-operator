@@ -188,8 +188,9 @@ func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 	defer h.mapsMutex.Unlock()
 	if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 || forceRebuild {
 		for _, arch := range cfg.Spec.Architectures {
-			if util.IsNonX86Arch(cfg) {
-				// file list error will occur below until we have samples for s390x/ppc64le
+			//TODO GGM remove if continue when pull ppc in
+			if util.IsUnsupportedArch(cfg) {
+				// file list error will occur below until we have samples for ppc64le
 				// callers to code appropriately no-op out as needed when no file system content
 				// exists for a given template/imagestream
 				continue

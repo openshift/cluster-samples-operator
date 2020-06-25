@@ -29,7 +29,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		logrus.Debugf("Imagestream %s watch event do upsert %v; no errors in prep %v,  possibly update operator conditions %v", is.Name, doUpsert, err == nil, cfg != nil)
 	}
 	if cfg != nil {
-		if util.IsNonX86Arch(cfg) {
+		if util.IsUnsupportedArch(cfg) {
 			logrus.Printf("ignoring watch event for imagestream %s ignored because we are on %s",
 				is.Name, cfg.Spec.Architectures[0])
 			return nil
