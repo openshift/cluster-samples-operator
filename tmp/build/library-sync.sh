@@ -1,16 +1,14 @@
 #!/bin/bash
 
-# utility script to store template/imagesteram content from https://github.com/openshift/library
-# and store in this repo (cannot access other repos with dist git, and advised against git submodules
+# utility script to gather template/imagestream content from https://github.com/openshift/library
+# and store it in this repo (cannot access other repos with dist git, and advised against git submodules
 
 pushd assets
 wget https://github.com/openshift/library/archive/master.zip -O library.zip
 unzip library.zip
 rm library.zip
-find . -name README.md -exec rm {} \;
-find . -name index.json -exec rm -f {} \;
 pushd library-master
-rm -rf arch community* .git* hack import_content.py LICENSE Makefile official* OWNERS requirements.txt .travis.yml
+rm -rf api arch cmd community* .git* hack official* vendor Dockerfile LICENSE Makefile OWNERS README.md go.* main.go
 pushd operator
 rm -rf okd-x86_64
 pushd ocp-x86_64
