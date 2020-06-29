@@ -24,6 +24,9 @@ const (
 	// we went with the _info suffix vs. the _total suffix
 	failedImportsQuery = "openshift_samples_failed_imagestream_import_info"
 
+	// the one current exception to the _info classficiation
+	importRetryQuery = "openshift_samples_retry_imagestream_import_total"
+
 	degradedQuery = "openshift_samples_degraded_info"
 
 	invalidConfigQuery = "openshift_samples_invalidconfig_info"
@@ -60,6 +63,15 @@ var (
 	tbrInaccessibleOnBootStat = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: tbrInaccessibleOnBootstrapQuery,
 		Help: "Indicates that during its initial installation the samples operator could not access registry.redhat.io and it boostrapped as removed.",
+	})
+	// looked into a imagestream name label on this metric but various prometheus guidance dissuaded that approach;
+	// looked into a constant metric like importsFailedDesc, but that requires more invasive changes to track the
+	// retry in our CRD;
+	// for now, with the failedImport metric having the name label, and this sanity check, we should get a sufficient validation that we
+	// are retrying - we can re-evaluate based on need and adoption in telemetry / OTA analysis / insights etc.
+	importRetryStat = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: importRetryQuery,
+		Help: "Indicates the number of retries on imagestream import.",
 	})
 
 	sc         = samplesCollector{}
@@ -184,7 +196,7 @@ func addCountGauge(ch chan<- prometheus.Metric, desc *prometheus.Desc, name stri
 }
 
 func init() {
-	prometheus.MustRegister(degradedStat, configInvalidStat, tbrInaccessibleOnBootStat)
+	prometheus.MustRegister(degradedStat, configInvalidStat, tbrInaccessibleOnBootStat, importRetryStat)
 }
 
 func InitializeMetricsCollector(listers *client.Listers) {
