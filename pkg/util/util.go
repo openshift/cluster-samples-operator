@@ -2,12 +2,10 @@ package util
 
 import (
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"os"
 	"strings"
 	"sync"
-	"time"
-
-	"github.com/sirupsen/logrus"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -227,17 +225,7 @@ func ClusterOperatorStatusDegradedCondition(s *samplev1.Config) (configv1.Condit
 			"InvalidConfiguration",
 			fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), Condition(s, samplev1.ConfigurationValid).Message)
 	}
-	// report degraded if img import error exists for 2 hrs
-	impErrCon := Condition(s, samplev1.ImportImageErrorsExist)
-	if impErrCon.Status == corev1.ConditionTrue {
-		now := metav1.Now()
-		twoHrsAgo := now.Time.Add(-2 * time.Hour)
-		if impErrCon.LastTransitionTime.Time.Before(twoHrsAgo) {
-			msg := fmt.Sprintf(doneImportsFailed, s.Status.Version, impErrCon.Reason, impErrCon.LastUpdateTime.String())
-			return trueRC, failedImageImports, msg
-		}
 
-	}
 	// right now, any condition being unknown is indicative of a failure
 	// condition, either api server interaction or file system interaction;
 	// Conversely, those errors result in a ConditionUnknown setting on one
@@ -272,9 +260,6 @@ func ClusterOperatorStatusProgressingCondition(s *samplev1.Config, degradedState
 	if len(degradedState) > 0 {
 		return configv1.ConditionTrue, "", fmt.Sprintf(noInstallDetailed, os.Getenv("RELEASE_VERSION"), degradedState)
 	}
-	if ConditionTrue(s, samplev1.ImageChangesInProgress) {
-		return configv1.ConditionTrue, "", fmt.Sprintf(moving, os.Getenv("RELEASE_VERSION"))
-	}
 	if ConditionTrue(s, samplev1.RemovePending) {
 		return configv1.ConditionTrue, "", fmt.Sprintf(removing, os.Getenv("RELEASE_VERSION"))
 	}
@@ -287,6 +272,9 @@ func ClusterOperatorStatusProgressingCondition(s *samplev1.Config, degradedState
 			reason = failedImageImports
 		}
 		return configv1.ConditionFalse, reason, msg
+	}
+	if ConditionTrue(s, samplev1.ImageChangesInProgress) {
+		return configv1.ConditionTrue, "", fmt.Sprintf(moving, os.Getenv("RELEASE_VERSION"))
 	}
 	return configv1.ConditionFalse, "", ""
 }

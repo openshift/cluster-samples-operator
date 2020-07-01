@@ -240,7 +240,7 @@ func TestImageStreamImportRetry(t *testing.T) {
 	ch, port := runServer(t)
 	defer close(ch)
 	for i := 1; i < 3; i++ {
-		ImageStreamImportRetry()
+		ImageStreamImportRetry("foo")
 		testQueryCounterMetric(t, port, i, importRetryQuery)
 	}
 }

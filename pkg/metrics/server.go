@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 )
@@ -82,6 +83,6 @@ func TBRInaccessibleOnBoot(badTBR bool) {
 	tbrInaccessibleOnBootStat.Set(0)
 }
 
-func ImageStreamImportRetry() {
-	importRetryStat.Inc()
+func ImageStreamImportRetry(imagestreamName string) {
+	importRetryStat.With(prometheus.Labels{"imagestreamname": imagestreamName}).Inc()
 }

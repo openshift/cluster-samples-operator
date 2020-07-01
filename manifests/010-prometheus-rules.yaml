@@ -9,6 +9,40 @@ spec:
   groups:
   - name: SamplesOperator
     rules:
+    - alert: SamplesRetriesMissingOnImagestreamImportFailing
+      expr: sum(openshift_samples_failed_imagestream_import_info) > sum(openshift_samples_retry_imagestream_import_total) - sum(openshift_samples_retry_imagestream_import_total offset 30m)
+      for: 2h
+      labels:
+        severity: warning
+      annotations:
+        message: |
+          Samples operator is detecting problems with imagestream image imports, and the periodic retries of those
+          imports are not occurring.  Contact support.  You can look at the "openshift-samples" ClusterOperator object
+          for details. Most likely there are issues with the external image registry hosting the images that need to
+          be investigated.  The list of ImageStreams that have failing imports are:
+          {{ range query "openshift_samples_failed_imagestream_import_info > 0" }}
+            {{ .Labels.name }}
+          {{ end }}
+          However, the list of ImageStreams for which samples operator is retrying imports is:
+          retrying imports:
+          {{ range query "openshift_samples_retry_imagestream_import_total > 0" }}
+             {{ .Labels.imagestreamname }}
+          {{ end }}
+    - alert: SamplesImagestreamImportFailing
+      expr: sum(openshift_samples_retry_imagestream_import_total) - sum(openshift_samples_retry_imagestream_import_total offset 30m) > sum(openshift_samples_failed_imagestream_import_info)
+      for: 2h
+      labels:
+        severity: warning
+      annotations:
+        message: |
+          Samples operator is detecting problems with imagestream image imports.  You can look at the "openshift-samples"
+          ClusterOperator object for details. Most likely there are issues with the external image registry hosting
+          the images that needs to be investigated.  Or you can consider marking samples opertaor Removed if you do not
+          care about having sample imagestreams available.  The list of ImageStreams for which samples operator is
+          retrying imports:
+          {{ range query "openshift_samples_retry_imagestream_import_total > 0" }}
+             {{ .Labels.imagestreamname }}
+          {{ end }}
     - alert: SamplesDegraded
       expr: openshift_samples_degraded_info == 1
       for: 2h
@@ -16,7 +50,7 @@ spec:
         severity: warning
       annotations:
         message: |
-          Samples could not be deployed and are in Degraded status. You can look at the "openshift-samples" ClusterOperator object for details. You can also query 'openshift_samples_failed_imagestream_import_info' to see if ImageStreams do not import. The samples operator reports itself Degraded if an ImageStream import continues to fail for 2 hours.
+          Samples could not be deployed and the operator is degraded. Review the "openshift-samples" ClusterOperator object for further details.
     - alert: SamplesInvalidConfig
       expr: openshift_samples_invalidconfig_info == 1
       for: 2h
@@ -40,7 +74,7 @@ spec:
         severity: warning
       annotations:
         message: |
-          Samples operator cannot find credentials for 'registry.redhat.io' in the samples pull secret in the openshift namespace.  Unless you have updated the 'samplesRegistry' field in the samples operator config to change which registry the sample ImageStreams are pulled from, you will have failed imports for many of the sample ImageStreams in this case.
+          The samples operator cannot find credentials for 'registry.redhat.io'. Many of the sample ImageStreams will fail to import unless the 'samplesRegistry' in the operator configuration is changed.
     - alert: SamplesTBRInaccessibleOnBoot
       expr: openshift_samples_tbr_inaccessible_info == 1
       for: 2d
