@@ -918,12 +918,30 @@ func TestImageGetError(t *testing.T) {
 		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		err := h.Handle(event)
 		if !kerrors.IsNotFound(iserr) {
-			statuses[3] = corev1.ConditionUnknown
+			statuses[0] = corev1.ConditionUnknown
+			statuses[3] = corev1.ConditionFalse
 			validate(false, err, "getstreamerror", cfg, conditions, statuses, t)
 		} else {
 			validate(true, err, "", cfg, conditions, statuses, t)
 		}
 	}
+
+}
+
+func TestImageUpdateError(t *testing.T) {
+
+	h, cfg, event := setup()
+
+	mimic(&h, x86OCPContentRootDir)
+
+	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
+	fakeisclient.upserterrors = map[string]error{"foo": kerrors.NewServiceUnavailable("upsertstreamerror")}
+
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	err := h.Handle(event)
+	statuses[0] = corev1.ConditionUnknown
+	statuses[3] = corev1.ConditionFalse
+	validate(false, err, "upsertstreamerror", cfg, conditions, statuses, t)
 
 }
 
@@ -1228,7 +1246,7 @@ func TestImageImportRequestCreation(t *testing.T) {
 	}
 }
 
-func TestTemplateGetEreror(t *testing.T) {
+func TestTemplateGetError(t *testing.T) {
 	errors := []error{
 		fmt.Errorf("gettemplateerror"),
 		kerrors.NewNotFound(schema.GroupResource{}, "gettemplateerror"),
@@ -1245,13 +1263,29 @@ func TestTemplateGetEreror(t *testing.T) {
 		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		err := h.Handle(event)
 		if !kerrors.IsNotFound(terr) {
-			statuses[3] = corev1.ConditionUnknown
+			statuses[0] = corev1.ConditionUnknown
+			statuses[3] = corev1.ConditionFalse
 			validate(false, err, "gettemplateerror", cfg, conditions, statuses, t)
 		} else {
 			validate(true, err, "", cfg, conditions, statuses, t)
 		}
 	}
 
+}
+
+func TestTemplateUpsertError(t *testing.T) {
+	h, cfg, event := setup()
+
+	mimic(&h, x86OCPContentRootDir)
+
+	faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
+	faketclient.upserterrors = map[string]error{"bo": kerrors.NewServiceUnavailable("upsertstreamerror")}
+
+	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	err := h.Handle(event)
+	statuses[0] = corev1.ConditionUnknown
+	statuses[3] = corev1.ConditionFalse
+	validate(false, err, "upsertstreamerror", cfg, conditions, statuses, t)
 }
 
 func TestDeletedCR(t *testing.T) {
