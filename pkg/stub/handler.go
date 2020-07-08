@@ -933,8 +933,8 @@ func (h *Handler) Handle(event util.Event) error {
 
 			if err != nil {
 				cfg = h.refetchCfgMinimizeConflicts(cfg)
-				h.processError(cfg, v1.ImageChangesInProgress, corev1.ConditionUnknown, err, "error creating samples: %v")
-				dbg := "setting in progress to unknown"
+				h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error creating samples: %v")
+				dbg := "setting samples exists to unknown"
 				logrus.Printf("CRDUPDATE %s", dbg)
 				e := h.crdwrapper.UpdateStatus(cfg, dbg)
 				if e != nil {
