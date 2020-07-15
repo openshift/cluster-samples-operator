@@ -49,7 +49,7 @@ var (
 		[]string{"name"},
 		nil)
 	invalidSecretDesc = prometheus.NewDesc(invalidSecretQuery,
-		"Indicates if the pull secret is functional in the openshift namespace.  If not functional, the reason supplied either points to it missing in the openshift namesapce, or if it is missing credentials for registry.redhat.io when they should exist (1 == not functional, 0 == functional).",
+		"Indicates if the install pull secret is valid for pulling images from registry.redhat.io.  If invalid, the reason supplied either points to it being inaccessible, or if it is missing credentials for registry.redhat.io when they should exist (1 == not functional, 0 == functional).",
 		[]string{"reason"},
 		nil)
 	degradedStat = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -69,10 +69,10 @@ var (
 	// retry in our CRD;
 	// for now, with the failedImport metric having the name label, and this sanity check, we should get a sufficient validation that we
 	// are retrying - we can re-evaluate based on need and adoption in telemetry / OTA analysis / insights etc.
-	importRetryStat = prometheus.NewCounter(prometheus.CounterOpts{
+	importRetryStat = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: importRetryQuery,
 		Help: "Indicates the number of retries on imagestream import.",
-	})
+	}, []string{"imagestreamname"})
 
 	sc         = samplesCollector{}
 	registered = false
