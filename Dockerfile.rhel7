@@ -8,7 +8,7 @@ COPY --from=builder /go/src/github.com/openshift/cluster-samples-operator/cluste
 RUN ln -f /usr/bin/cluster-samples-operator /usr/bin/cluster-samples-operator-watch
 COPY manifests/image-references manifests/0* /manifests/
 COPY vendor/github.com/openshift/api/samples/v1/0000_10_samplesconfig.crd.yaml /manifests/
-COPY tmp/build/assets /opt/openshift/
+COPY assets /opt/openshift/
 RUN useradd cluster-samples-operator
 USER cluster-samples-operator
 ENTRYPOINT []

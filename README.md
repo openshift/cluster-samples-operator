@@ -121,6 +121,5 @@ If there is a bug in the samples operator deletion logic, to reset the samples o
 
 # Update the content in this repository from https://github.com/OpenShift/library
 - Create a git branch in your local copy of this repository
-- cd tmp/build
 - ./library-sync.sh
 - Commit the changes and create a PR
