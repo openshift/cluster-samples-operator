@@ -70,7 +70,7 @@ func TestWithDist(t *testing.T) {
 	// image in progress (4th entry, array index 3) should still be false when there is no content ... a la z or ppc
 	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	err = h.Handle(event)
 	// with content present, image im progress should now be true
 	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -90,7 +90,7 @@ func TestWithArchDist(t *testing.T) {
 		t.Errorf("arch set to %s instead of %s", cfg.Spec.Architectures[0], runtime.GOARCH)
 	}
 
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg,
@@ -127,7 +127,7 @@ func TestManagementState(t *testing.T) {
 	h, cfg, event := setup()
 	iskeys := getISKeys()
 	tkeys := getTKeys()
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	cfg.Spec.ManagementState = operatorsv1api.Unmanaged
 
 	err := h.Handle(event)
@@ -216,7 +216,7 @@ func TestSkipped(t *testing.T) {
 	cfg.Status.SkippedImagestreams = iskeys
 	cfg.Status.SkippedTemplates = tkeys
 
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 
 	err := h.Handle(event)
 	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
@@ -298,7 +298,7 @@ func TestProcessed(t *testing.T) {
 	iskeys := getISKeys()
 	tkeys := getTKeys()
 
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 
 	err := h.Handle(event)
 	validate(true, err, "", cfg,
@@ -379,7 +379,7 @@ func TestProcessed(t *testing.T) {
 	progressing.Status = corev1.ConditionFalse
 	util.ConditionUpdate(cfg, progressing)
 	// reset operator image to clear out previous registry image override
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
@@ -406,7 +406,7 @@ func TestProcessed(t *testing.T) {
 	progressing.Status = corev1.ConditionFalse
 	util.ConditionUpdate(cfg, progressing)
 	// reset operator image to clear out previous registry image override
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
@@ -433,7 +433,7 @@ func TestProcessed(t *testing.T) {
 	progressing.Status = corev1.ConditionFalse
 	util.ConditionUpdate(cfg, progressing)
 	// reset operator image to clear out previous registry image override
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 
 	err = h.Handle(event)
 	is, _ = fakeisclient.Get("foo")
@@ -452,7 +452,7 @@ func TestProcessed(t *testing.T) {
 
 func TestImageStreamEvent(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
@@ -579,7 +579,7 @@ func TestImageStreamEvent(t *testing.T) {
 
 func TestImageStreamErrorRetry(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
@@ -694,7 +694,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 
 func TestTemplateEvent(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
@@ -730,7 +730,7 @@ func setup() (Handler, *v1.Config, util.Event) {
 
 func TestTemplateRemovedFromPayload(t *testing.T) {
 	h, _, _ := setup()
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 
 	_, filePath, doUpsert, updateCfgOnly, err := h.prepSamplesWatchEvent("template", "no-longer-exists", map[string]string{}, false)
 	switch {
@@ -747,7 +747,7 @@ func TestTemplateRemovedFromPayload(t *testing.T) {
 
 func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 	h, cfg, _ := setup()
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	progressing := util.Condition(cfg, v1.ImageChangesInProgress)
 	progressing.Reason = "foo "
 	errors := util.Condition(cfg, v1.ImportImageErrorsExist)
@@ -805,7 +805,7 @@ func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 func TestImageStreamCreateErrorDegradedReason(t *testing.T) {
 	err := kerrors.NewServiceUnavailable("BadService")
 	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	fakeisclient.geterrors = map[string]error{"foo": err}
 	h.Handle(event)
@@ -824,7 +824,7 @@ func TestImageGetError(t *testing.T) {
 	for _, iserr := range errors {
 		h, cfg, event := setup()
 
-		mimic(&h, x86OCPContentRootDir)
+		mimic(&h, x86ContentRootDir)
 
 		fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 		fakeisclient.geterrors = map[string]error{"foo": iserr}
@@ -846,7 +846,7 @@ func TestImageUpdateError(t *testing.T) {
 
 	h, cfg, event := setup()
 
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	fakeisclient.upserterrors = map[string]error{"foo": kerrors.NewServiceUnavailable("upsertstreamerror")}
@@ -1010,7 +1010,7 @@ func TestImageStreamImportError(t *testing.T) {
 	}
 	for _, is := range streams {
 		h, cfg, _ := setup()
-		mimic(&h, x86OCPContentRootDir)
+		mimic(&h, x86ContentRootDir)
 		dir := h.GetBaseDir(v1.X86Architecture, cfg)
 		files, _ := h.Filefinder.List(dir)
 		h.processFiles(dir, files, cfg)
@@ -1080,7 +1080,7 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 		},
 	}
 	h, cfg, _ := setup()
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	dir := h.GetBaseDir(v1.X86Architecture, cfg)
 	files, _ := h.Filefinder.List(dir)
 	h.processFiles(dir, files, cfg)
@@ -1153,7 +1153,7 @@ func TestTemplateGetError(t *testing.T) {
 	for _, terr := range errors {
 		h, cfg, event := setup()
 
-		mimic(&h, x86OCPContentRootDir)
+		mimic(&h, x86ContentRootDir)
 
 		faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 		faketclient.geterrors = map[string]error{"bo": terr}
@@ -1174,7 +1174,7 @@ func TestTemplateGetError(t *testing.T) {
 func TestTemplateUpsertError(t *testing.T) {
 	h, cfg, event := setup()
 
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 
 	faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 	faketclient.upserterrors = map[string]error{"bo": kerrors.NewServiceUnavailable("upsertstreamerror")}
@@ -1196,7 +1196,7 @@ func TestDeletedCR(t *testing.T) {
 
 func TestSameCR(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	cfg.ResourceVersion = "a"
 
 	// first pass on the resource creates the samples, exists (first entry, index 0) is still false
@@ -1218,7 +1218,7 @@ func TestSameCR(t *testing.T) {
 func TestBadTopDirList(t *testing.T) {
 	h, cfg, event := setup()
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
-	fakefinder.errors = map[string]error{x86OCPContentRootDir: fmt.Errorf("badtopdir")}
+	fakefinder.errors = map[string]error{x86ContentRootDir: fmt.Errorf("badtopdir")}
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(false, err, "badtopdir", cfg, conditions, statuses, t)
@@ -1226,9 +1226,9 @@ func TestBadTopDirList(t *testing.T) {
 
 func TestBadSubDirList(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
-	fakefinder.errors = map[string]error{x86OCPContentRootDir + "/imagestreams": fmt.Errorf("badsubdir")}
+	fakefinder.errors = map[string]error{x86ContentRootDir + "/imagestreams": fmt.Errorf("badsubdir")}
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(false, err, "badsubdir", cfg, conditions, statuses, t)
@@ -1240,7 +1240,7 @@ func TestBadSubDirList(t *testing.T) {
 
 func TestBadTopLevelStatus(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86OCPContentRootDir)
+	mimic(&h, x86ContentRootDir)
 	fakestatus := h.crdwrapper.(*fakeCRDWrapper)
 	fakestatus.updateerr = fmt.Errorf("badsdkupdate")
 	err := h.Handle(event)

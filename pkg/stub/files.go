@@ -8,8 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/openshift/api/samples/v1"
-
+	v1 "github.com/openshift/api/samples/v1"
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 )
 
@@ -59,13 +58,13 @@ func (h *Handler) GetBaseDir(arch string, opcfg *v1.Config) (dir string) {
 	// invalid settings have already been sorted out by SpecValidation
 	switch arch {
 	case v1.X86Architecture:
-		dir = x86OCPContentRootDir
+		dir = x86ContentRootDir
 	case v1.AMDArchitecture:
-		dir = x86OCPContentRootDir
+		dir = x86ContentRootDir
 	case v1.PPCArchitecture:
-		dir = ppcOCPContentRootDir
+		dir = ppcContentRootDir
 	case v1.S390Architecture:
-		dir = zOCPContentRootDir
+		dir = zContentRootDir
 	default:
 	}
 	return dir
