@@ -10,7 +10,6 @@ rm library.zip
 pushd library-master
 rm -rf api arch cmd community* .git* hack official* vendor Dockerfile LICENSE Makefile OWNERS README.md go.* main.go
 pushd operator
-rm -rf okd-x86_64
 pushd ocp-x86_64
 pushd official
 mv * ..
@@ -29,6 +28,12 @@ mv * ..
 popd # official
 rmdir official
 popd #ocp-s390x
+pushd okd-x86_64
+pushd community
+mv * ..
+popd # community
+rmdir official community
+popd #okd-x86_64
 popd # operator
 tar cvf ../t.tar operator
 popd # library-master

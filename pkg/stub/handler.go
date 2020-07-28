@@ -44,13 +44,13 @@ import (
 )
 
 const (
-	x86OCPContentRootDir = "/opt/openshift/operator/ocp-x86_64"
-	ppcOCPContentRootDir = "/opt/openshift/operator/ocp-ppc64le"
-	zOCPContentRootDir   = "/opt/openshift/operator/ocp-s390x"
-	installtypekey       = "keyForInstallTypeField"
-	regkey               = "keyForSamplesRegistryField"
-	skippedstreamskey    = "keyForSkippedImageStreamsField"
-	skippedtempskey      = "keyForSkippedTemplatesField"
+	x86ContentRootDir = "/opt/openshift/operator/x86_64"
+	ppcContentRootDir = "/opt/openshift/operator/ppc64le"
+	zContentRootDir   = "/opt/openshift/operator/s390x"
+	installtypekey    = "keyForInstallTypeField"
+	regkey            = "keyForSamplesRegistryField"
+	skippedstreamskey = "keyForSkippedImageStreamsField"
+	skippedtempskey   = "keyForSkippedTemplatesField"
 )
 
 func NewSamplesOperatorHandler(kubeconfig *restclient.Config,
