@@ -43,6 +43,6 @@ git add operator
 rm t.tar
 rm -rf library-master
 
-echo "REMEMBER TO PATCH THE DATAGRID TEMPLATES TO apps/v1 FOR THEIR StatefulSets INSTANCES,"
-echo " and fix openjdk-8-rhel8:1.1 until jboss fixes,"
-echo " and nodejs* templates off of v8"
+echo "REMEMBER TO PATCH THE CAKEPHP TEMPLATES with MYSQL_DEFAULT_AUTHENTICATION_PLUGIN until"
+echo "https://github.com/sclorg/cakephp-ex/pull/116 merges and is picked up here in order to fix"
+echo "https://bugzilla.redhat.com/show_bug.cgi?id=1793116"
