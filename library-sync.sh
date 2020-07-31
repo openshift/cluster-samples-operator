@@ -32,7 +32,11 @@ pushd okd-x86_64
 pushd community
 mv * ..
 popd # community
-rmdir official community
+rmdir community
+pushd official
+cp -r * ..
+popd # official
+rm -rf official
 popd #okd-x86_64
 popd # operator
 tar cvf ../t.tar operator
