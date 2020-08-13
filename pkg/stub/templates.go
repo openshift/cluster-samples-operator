@@ -25,7 +25,7 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 		}
 	}
 
-	cfg, filePath, doUpsert, _, err := h.prepSamplesWatchEvent("template", t.Name, t.Annotations, deleted)
+	cfg, filePath, doUpsert, err := h.prepSamplesWatchEvent("template", t.Name, t.Annotations, deleted)
 	if err != nil {
 		return err
 	}
