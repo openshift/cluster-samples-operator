@@ -394,7 +394,7 @@
 							],
 							"from": {
 								"kind": "ImageStreamTag",
-								"name": "postgresql:9.5",
+								"name": "postgresql:9.6-ubi8",
 								"namespace": "openshift"
 							}
 						},
@@ -440,7 +440,7 @@
 			"name": "DOTNET_IMAGE_STREAM_TAG",
 			"displayName": ".NET builder",
 			"description": "The image stream tag which is used to build the code.",
-			"value": "dotnet:2.1",
+			"value": "dotnet:2.1-ubi8",
 			"required": true
 		},
 		{

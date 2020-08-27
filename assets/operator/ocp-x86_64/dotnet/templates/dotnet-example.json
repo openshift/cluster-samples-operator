@@ -257,7 +257,7 @@
 			"name": "DOTNET_IMAGE_STREAM_TAG",
 			"displayName": ".NET builder",
 			"description": "The image stream tag which is used to build the code.",
-			"value": "dotnet:3.0",
+			"value": "dotnet:3.1-ubi8",
 			"required": true
 		},
 		{
@@ -278,7 +278,7 @@
 			"name": "SOURCE_REPOSITORY_REF",
 			"displayName": "Git Reference",
 			"description": "Set this to a branch name, tag or other ref of your repository if you are not using the default branch.",
-			"value": "dotnetcore-3.0"
+			"value": "dotnetcore-3.1"
 		},
 		{
 			"name": "CONTEXT_DIR",
