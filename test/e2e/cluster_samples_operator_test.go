@@ -317,8 +317,13 @@ func getContentDir(t *testing.T) string {
 		startDir = filepath.Dir(startDir)
 	}
 	contentDir := ""
+	suffix := "ocp-x86_64"
+	_, present := os.LookupEnv("OKD")
+	if present {
+		suffix = "okd-x86_64"
+	}
 	_ = filepath.Walk(startDir, func(path string, info os.FileInfo, err error) error {
-		if strings.HasSuffix(strings.TrimSpace(path), "ocp-x86_64") {
+		if strings.HasSuffix(strings.TrimSpace(path), suffix) {
 			contentDir = path
 			return fmt.Errorf("found contentDir %s", contentDir)
 		}
