@@ -20,6 +20,9 @@ test-unit:
 test-e2e:
 	KUBERNETES_CONFIG=${KUBECONFIG} go test -parallel 1 -timeout 30m -v ./test/e2e/...
 
+test-e2e-okd:
+	OKD=yes KUBERNETES_CONFIG=${KUBECONFIG} go test -parallel 1 -timeout 30m -v ./test/e2e/...
+
 clean:
 	rm -f cluster-samples-operator
 	rm -rf _output/
