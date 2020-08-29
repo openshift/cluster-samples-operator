@@ -47,6 +47,3 @@ git add operator
 rm t.tar
 rm -rf library-master
 
-echo "REMEMBER TO PATCH THE CAKEPHP TEMPLATES with MYSQL_DEFAULT_AUTHENTICATION_PLUGIN until"
-echo "https://github.com/sclorg/cakephp-ex/pull/116 merges and is picked up here in order to fix"
-echo "https://bugzilla.redhat.com/show_bug.cgi?id=1793116"
