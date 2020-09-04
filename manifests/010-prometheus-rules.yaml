@@ -83,3 +83,9 @@ spec:
       annotations:
         message: |
           Samples operator could not access 'registry.redhat.io' during its initial installation and it boostrapped as removed.
+          If this is expected, and stems from installing in a restricted network environment, please note that if you
+          plan on mirroring images associated with sample imagestreams into a registry available in your restricted
+          network environment, and subsequently moving samples operator back to 'Managed' state, a list of the images
+          associated with each image stream tag from the samples catalog is
+          provided in the 'imagestreamtag-to-image' config map in the 'openshift-cluster-samples-operator' namespace to
+          assist the mirroring process.

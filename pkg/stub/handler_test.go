@@ -353,6 +353,9 @@ func TestProcessed(t *testing.T) {
 	progressing := util.Condition(cfg, v1.ImageChangesInProgress)
 	progressing.Status = corev1.ConditionFalse
 	util.ConditionUpdate(cfg, progressing)
+	// in conjuction, clear out config map tracking
+	fakecfgmapclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
+	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
@@ -378,6 +381,8 @@ func TestProcessed(t *testing.T) {
 	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
 	progressing.Status = corev1.ConditionFalse
 	util.ConditionUpdate(cfg, progressing)
+	// in conjuction, clear out config map tracking
+	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	// reset operator image to clear out previous registry image override
 	mimic(&h, x86ContentRootDir)
 
@@ -405,6 +410,8 @@ func TestProcessed(t *testing.T) {
 	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
 	progressing.Status = corev1.ConditionFalse
 	util.ConditionUpdate(cfg, progressing)
+	// in conjuction, clear out config map tracking
+	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	// reset operator image to clear out previous registry image override
 	mimic(&h, x86ContentRootDir)
 
@@ -432,6 +439,8 @@ func TestProcessed(t *testing.T) {
 	// fake out that the samples completed updating
 	progressing.Status = corev1.ConditionFalse
 	util.ConditionUpdate(cfg, progressing)
+	// in conjuction, clear out config map tracking
+	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	// reset operator image to clear out previous registry image override
 	mimic(&h, x86ContentRootDir)
 
@@ -1456,6 +1465,10 @@ func NewTestHandler() Handler {
 	h.cvowrapper = operator.NewClusterOperatorHandler(nil)
 	h.cvowrapper.ClusterOperatorWrapper = &cvowrapper
 
+	h.configmapclientwrapper = &fakeConfigMapClientWrapper{
+		configMaps: map[string]*corev1.ConfigMap{},
+	}
+
 	h.skippedImagestreams = make(map[string]bool)
 	h.skippedTemplates = make(map[string]bool)
 
@@ -1480,6 +1493,7 @@ func NewTestHandler() Handler {
 
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
+	h.imagestreatagToImage = make(map[string]string)
 	h.imagestreamRetry = make(map[string]metav1.Time)
 	h.version = TestVersion
 
@@ -1639,6 +1653,40 @@ type fakeImageStreamImporter struct {
 func (f *fakeImageStreamImporter) Create(ctx context.Context, isi *imagev1.ImageStreamImport, opts metav1.CreateOptions) (*imagev1.ImageStreamImport, error) {
 	f.count++
 	return &imagev1.ImageStreamImport{}, nil
+}
+
+type fakeConfigMapClientWrapper struct {
+	configMaps map[string]*corev1.ConfigMap
+}
+
+func (g *fakeConfigMapClientWrapper) Get(name string) (*corev1.ConfigMap, error) {
+	cm, ok := g.configMaps[name]
+	if !ok {
+		return nil, kerrors.NewNotFound(corev1.Resource("configmap"), name)
+	}
+	return cm, nil
+}
+
+func (g *fakeConfigMapClientWrapper) List() ([]*corev1.ConfigMap, error) {
+	cmList := []*corev1.ConfigMap{}
+	for _, cm := range g.configMaps {
+		cmList = append(cmList, cm)
+	}
+	return cmList, nil
+}
+
+func (g *fakeConfigMapClientWrapper) Create(cm *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	g.configMaps[cm.Name] = cm
+	return cm, nil
+}
+
+func (g *fakeConfigMapClientWrapper) Update(cm *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	return g.Create(cm)
+}
+
+func (g *fakeConfigMapClientWrapper) Delete(name string) error {
+	delete(g.configMaps, name)
+	return nil
 }
 
 type fakeTemplateClientWrapper struct {

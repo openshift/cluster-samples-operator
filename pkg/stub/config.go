@@ -191,7 +191,6 @@ func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 	defer h.mapsMutex.Unlock()
 	if len(h.imagestreamFile) == 0 || len(h.templateFile) == 0 || forceRebuild {
 		for _, arch := range cfg.Spec.Architectures {
-			//TODO GGM remove if continue when pull ppc in
 			if util.IsUnsupportedArch(cfg) {
 				// file list error will occur below until we have samples for ppc64le
 				// callers to code appropriately no-op out as needed when no file system content
@@ -220,7 +219,23 @@ func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 			}
 		}
 	}
-	return nil
+
+	cm, err := h.configmapclientwrapper.Get(util.IST2ImageMap)
+	if kerrors.IsNotFound(err) {
+		cm = &corev1.ConfigMap{}
+		cm.Name = util.IST2ImageMap
+		cm.Namespace = v1.OperatorNamespace
+		cm.Data = map[string]string{}
+		for key, value := range h.imagestreatagToImage {
+			cm.Data[key] = value
+		}
+		_, err = h.configmapclientwrapper.Create(cm)
+		if err != nil {
+			return err
+		}
+	}
+
+	return err
 }
 
 func (h *Handler) processError(opcfg *v1.Config, ctype v1.ConfigConditionType, cstatus corev1.ConditionStatus, err error, msg string, args ...interface{}) error {

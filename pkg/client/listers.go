@@ -13,4 +13,5 @@ type Listers struct {
 	ImageStreams           imagelisters.ImageStreamNamespaceLister
 	Templates              templatelisters.TemplateNamespaceLister
 	Config                 sampoplisters.ConfigLister
+	ConfigMaps             corelisters.ConfigMapNamespaceLister
 }
