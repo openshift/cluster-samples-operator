@@ -163,6 +163,7 @@ func verifySupportedArch(t *testing.T) bool {
 	}
 	if cfg.Status.Architectures[0] != samplesapi.X86Architecture &&
 		cfg.Status.Architectures[0] != samplesapi.AMDArchitecture &&
+		cfg.Status.Architectures[0] != samplesapi.ARMArchitecture &&
 		cfg.Status.Architectures[0] != samplesapi.S390Architecture &&
 		cfg.Status.Architectures[0] != samplesapi.PPCArchitecture {
 		return false

@@ -69,6 +69,8 @@ func (h *Handler) GetBaseDir(arch string, opcfg *v1.Config) (dir string) {
 		dir = x86ContentRootDir
 	case v1.AMDArchitecture:
 		dir = x86ContentRootDir
+	case v1.ARMArchitecture:
+		dir = armContentRootDir
 	case v1.PPCArchitecture:
 		dir = ppcContentRootDir
 	case v1.S390Architecture:

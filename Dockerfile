@@ -11,6 +11,7 @@ COPY vendor/github.com/openshift/api/samples/v1/0000_10_samplesconfig.crd.yaml /
 COPY assets/operator/ocp-x86_64 /opt/openshift/operator/x86_64
 COPY assets/operator/ocp-s390x /opt/openshift/operator/s390x
 COPY assets/operator/ocp-ppc64le /opt/openshift/operator/ppc64le
+COPY assets/operator/ocp-aarch64 /opt/openshift/operator/aarch64
 RUN useradd cluster-samples-operator
 USER cluster-samples-operator
 ENTRYPOINT []

@@ -26,6 +26,7 @@ func (h *Handler) IsValidArch(cfg *v1.Config) (bool, string) {
 		switch arch {
 		case v1.X86Architecture:
 		case v1.AMDArchitecture:
+		case v1.ARMArchitecture:
 		case v1.PPCArchitecture:
 		case v1.S390Architecture:
 		default:
@@ -47,7 +48,7 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 	// are "valid" (the architecture name is known, the distribution name is known, etc)
 	// if that fails, we should immediately error out and set ConfigValid to false.
 	if valid, badArch := h.IsValidArch(cfg); !valid {
-		err := fmt.Errorf("architecture %s unsupported; only support %s", badArch, strings.Join([]string{v1.X86Architecture, v1.AMDArchitecture, v1.PPCArchitecture, v1.S390Architecture}, ","))
+		err := fmt.Errorf("architecture %s unsupported; only support %s", badArch, strings.Join([]string{v1.X86Architecture, v1.AMDArchitecture, v1.ARMArchitecture, v1.PPCArchitecture, v1.S390Architecture}, ","))
 		return h.processError(cfg, v1.ConfigurationValid, corev1.ConditionFalse, err, "%v")
 	}
 
