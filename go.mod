@@ -4,10 +4,8 @@ go 1.13
 
 require (
 	github.com/NYTimes/gziphandler v1.1.1 // indirect
-	github.com/coreos/bbolt v1.3.3 // indirect
 	github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f // indirect
 	github.com/emicklei/go-restful v2.11.1+incompatible // indirect
-	github.com/evanphx/json-patch v4.5.0+incompatible // indirect
 	github.com/golang/groupcache v0.0.0-20191027212112-611e8accdfc9 // indirect
 	github.com/googleapis/gnostic v0.3.1 // indirect
 	github.com/gorilla/websocket v1.4.1 // indirect
@@ -23,11 +21,9 @@ require (
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.5
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5 // indirect
-	github.com/ugorji/go v1.1.7 // indirect
 	go.uber.org/zap v1.12.0 // indirect
 	google.golang.org/appengine v1.6.2 // indirect
-	k8s.io/api v0.18.0
-	k8s.io/apimachinery v0.18.0
-	k8s.io/client-go v0.18.0
-	sigs.k8s.io/controller-tools v0.2.1 // indirect
+	k8s.io/api v0.18.9
+	k8s.io/apimachinery v0.18.9
+	k8s.io/client-go v0.18.9
 )
