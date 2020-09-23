@@ -20,7 +20,7 @@
 					"iconClass": "icon-mongodb",
 					"openshift.io/display-name": "MongoDB (Latest)",
 					"openshift.io/provider-display-name": "Red Hat, Inc.",
-					"tags": "mongodb"
+					"tags": "database,mongodb,hidden"
 				},
 				"from": {
 					"kind": "ImageStreamTag",
@@ -39,7 +39,7 @@
 					"iconClass": "icon-mongodb",
 					"openshift.io/display-name": "MongoDB 3.6",
 					"openshift.io/provider-display-name": "Red Hat, Inc.",
-					"tags": "database,mongodb",
+					"tags": "database,mongodb,hidden",
 					"version": "3.6"
 				},
 				"from": {
