@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/sirupsen/logrus"
-
 	"k8s.io/apimachinery/pkg/api/errors"
 	metaapi "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
 	v1 "github.com/openshift/api/samples/v1"
@@ -23,7 +22,7 @@ import (
 const (
 	ClusterOperatorName = "openshift-samples"
 	doingDelete         = "DeletionInProgress"
-	unsuppArch              = "UnsupportHWArchitecture"
+	unsuppArch          = "UnsupportHWArchitecture"
 	ipv6                = "IPv6Platform"
 	TBR                 = "TermsBasedRegistryUnreacahable"
 )
@@ -70,15 +69,15 @@ type ClusterOperatorWrapper interface {
 func (o *ClusterOperatorHandler) setOperatorStatusWithoutInterrogatingConfig(progressing configv1.ConditionStatus, cfg *v1.Config, reason string) {
 	err := o.setOperatorStatus(configv1.OperatorAvailable, configv1.ConditionTrue, "", cfg.Status.Version, reason)
 	if err != nil {
-		logrus.Warningf("error occurred while attempting to set available condition: %s", err.Error())
+		klog.Warningf("error occurred while attempting to set available condition: %s", err.Error())
 	}
 	err = o.setOperatorStatus(configv1.OperatorProgressing, progressing, "", cfg.Status.Version, reason)
 	if err != nil {
-		logrus.Warningf("error occurred while attempting to set progressing condition: %s", err.Error())
+		klog.Warningf("error occurred while attempting to set progressing condition: %s", err.Error())
 	}
 	err = o.setOperatorStatus(configv1.OperatorDegraded, configv1.ConditionFalse, "", cfg.Status.Version, reason)
 	if err != nil {
-		logrus.Warningf("error occurred while attempting to set degraded condition: %s", err.Error())
+		klog.Warningf("error occurred while attempting to set degraded condition: %s", err.Error())
 	}
 
 }
@@ -112,7 +111,7 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 	if err != nil {
 		// note error but try the other conditions
 		errs = append(errs, err)
-		logrus.Warningf("error occurred while attempting to set degraded condition: %s", err.Error())
+		klog.Warningf("error occurred while attempting to set degraded condition: %s", err.Error())
 	}
 	flagForMetric := false
 	if degraded == configv1.ConditionTrue {
@@ -131,7 +130,7 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 	if err != nil {
 		// note error but try the other conditions
 		errs = append(errs, err)
-		logrus.Warningf("error occurred while attempting to set available condition: %s", err.Error())
+		klog.Warningf("error occurred while attempting to set available condition: %s", err.Error())
 	}
 
 	progressing, reasonForProgressing, msgForProgressing := util.ClusterOperatorStatusProgressingCondition(cfg, degradedReason, available)
@@ -143,13 +142,13 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 	if err != nil {
 		// note error but try the other conditions
 		errs = append(errs, err)
-		logrus.Warningf("error occurred while attempting to set progressing condition: %s", err.Error())
+		klog.Warningf("error occurred while attempting to set progressing condition: %s", err.Error())
 	}
 	return utilerrors.NewAggregate(errs)
 }
 
 func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStatusConditionType, status configv1.ConditionStatus, msg, currentVersion, reason string) error {
-	logrus.Debugf("setting clusteroperator status condition %s to %s with version %s", condtype, status, currentVersion)
+	klog.Infof("setting clusteroperator status condition %s to %s with version %s", condtype, status, currentVersion)
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		state, err := o.ClusterOperatorWrapper.Get(ClusterOperatorName)
 		if err != nil {

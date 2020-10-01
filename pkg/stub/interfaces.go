@@ -7,14 +7,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/util/flowcontrol"
+	"k8s.io/klog/v2"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	v1 "github.com/openshift/api/samples/v1"
@@ -180,27 +179,27 @@ func (g *defaultInClusterInitter) init(h *Handler, restconfig *restclient.Config
 	h.restconfig = restconfig
 	tempclient, err := getTemplateClient(restconfig)
 	if err != nil {
-		logrus.Errorf("failed to get template client : %v", err)
+		klog.Errorf("failed to get template client : %v", err)
 		panic(err)
 	}
 	h.tempclient = tempclient
-	logrus.Printf("template client %#v", tempclient)
+	klog.Infof("template client %#v", tempclient)
 	imageclient, err := getImageClient(restconfig)
 	if err != nil {
-		logrus.Errorf("failed to get image client : %v", err)
+		klog.Errorf("failed to get image client : %v", err)
 		panic(err)
 	}
 	h.imageclient = imageclient
-	logrus.Printf("image client %#v", imageclient)
+	klog.Infof("image client %#v", imageclient)
 	coreclient, err := corev1client.NewForConfig(restconfig)
 	if err != nil {
-		logrus.Errorf("failed to get core client : %v", err)
+		klog.Errorf("failed to get core client : %v", err)
 		panic(err)
 	}
 	h.coreclient = coreclient
 	configclient, err := configv1client.NewForConfig(restconfig)
 	if err != nil {
-		logrus.Errorf("failed to get config client : %v", err)
+		klog.Errorf("failed to get config client : %v", err)
 		panic(err)
 	}
 	h.configclient = configclient
@@ -226,7 +225,7 @@ func (g *generatedCRDWrapper) UpdateStatus(sr *v1.Config, dbg string) error {
 		}
 		if !IsRetryableAPIError(err) {
 			if len(dbg) > 0 {
-				logrus.Printf("CRDERROR %s", dbg)
+				klog.Infof("CRDERROR %s", dbg)
 			}
 			return false, err
 		}

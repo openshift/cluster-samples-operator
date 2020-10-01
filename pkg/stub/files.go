@@ -4,11 +4,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sirupsen/logrus"
-
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 
 	v1 "github.com/openshift/api/samples/v1"
+
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 )
 
@@ -16,7 +16,7 @@ import (
 func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1.Config) error {
 	for _, file := range files {
 		if file.IsDir() {
-			logrus.Printf("processing subdir %s from dir %s", file.Name(), dir)
+			klog.Infof("processing subdir %s from dir %s", file.Name(), dir)
 			subfiles, err := h.Filefinder.List(dir + "/" + file.Name())
 			if err != nil {
 				return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content: %v")
@@ -28,7 +28,7 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1.Config
 
 			continue
 		}
-		logrus.Printf("processing file %s from dir %s", file.Name(), dir)
+		klog.Infof("processing file %s from dir %s", file.Name(), dir)
 
 		if strings.HasSuffix(dir, "imagestreams") {
 			path := dir + "/" + file.Name()

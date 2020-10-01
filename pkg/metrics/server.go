@@ -8,7 +8,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/sirupsen/logrus"
+
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -19,7 +20,7 @@ var (
 // BuildServer creates the http.Server struct
 func BuildServer(port int) *http.Server {
 	if port <= 0 {
-		logrus.Error("invalid port for metric server")
+		klog.Error("invalid port for metric server")
 		return nil
 	}
 
@@ -39,7 +40,7 @@ func StopServer(srv *http.Server) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		logrus.Warningf("Problem shutting down HTTP server: %s", err.Error())
+		klog.Warningf("Problem shutting down HTTP server: %s", err.Error())
 	}
 }
 
@@ -48,12 +49,12 @@ func RunServer(srv *http.Server, stopCh <-chan struct{}) {
 	go func() {
 		err := srv.ListenAndServeTLS(tlsCRT, tlsKey)
 		if err != nil && err != http.ErrServerClosed {
-			logrus.Errorf("error starting metrics server: %v", err)
+			klog.Errorf("error starting metrics server: %v", err)
 		}
 	}()
 	<-stopCh
 	if err := srv.Close(); err != nil {
-		logrus.Errorf("error closing metrics server: %v", err)
+		klog.Errorf("error closing metrics server: %v", err)
 	}
 }
 

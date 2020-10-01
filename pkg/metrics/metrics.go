@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sirupsen/logrus"
 
 	corelisters "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	configv1 "github.com/openshift/api/samples/v1"
@@ -111,7 +111,7 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 	skips := map[string]bool{}
 	cfg, err := sc.config.Get(configv1.ConfigName)
 	if err != nil {
-		logrus.Infof("metrics sample config retrieval failed with: %s", err.Error())
+		klog.Infof("metrics sample config retrieval failed with: %s", err.Error())
 		return
 	}
 
@@ -162,20 +162,20 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 	secret, err := sc.secrets.Get("pull-secret")
 	if err != nil {
-		logrus.Infof("metrics pull secret retrieval failed with: %s", err.Error())
+		klog.Infof("metrics pull secret retrieval failed with: %s", err.Error())
 		addCountGauge(ch, invalidSecretDesc, missingTBRCredential, float64(1))
 		return
 	}
 	dockerConfigJSON := dockerConfigJSON{}
 	buf, ok := secret.Data[".dockerconfigjson"]
 	if !ok {
-		logrus.Infof(".dockerconfigjson is missing from pull secret")
+		klog.Infof(".dockerconfigjson is missing from pull secret")
 		addCountGauge(ch, invalidSecretDesc, missingTBRCredential, float64(1))
 		return
 	}
 	err = json.Unmarshal(buf, &dockerConfigJSON)
 	if err != nil {
-		logrus.Infof("error unmarshalling .dockerconfigjson: %s", err.Error())
+		klog.Infof("error unmarshalling .dockerconfigjson: %s", err.Error())
 		addCountGauge(ch, invalidSecretDesc, missingTBRCredential, float64(1))
 		return
 	}
@@ -184,7 +184,7 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 		addCountGauge(ch, invalidSecretDesc, missingTBRCredential, float64(0))
 		return
 	}
-	logrus.Printf(".dockerconfigjson is missing an entry for registry.redhat.io")
+	klog.Infof(".dockerconfigjson is missing an entry for registry.redhat.io")
 	addCountGauge(ch, invalidSecretDesc, missingTBRCredential, float64(1))
 	return
 

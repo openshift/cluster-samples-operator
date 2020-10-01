@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,6 +21,7 @@ import (
 	corev1lister "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/klog/v2"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	operatorsv1api "github.com/openshift/api/operator/v1"
@@ -154,16 +153,16 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 	if cfg == nil || err != nil {
 		// if not found, then this also would mean a deletion event
 		if kerrors.IsNotFound(err) {
-			logrus.Printf("Received watch event %s but not upserting since deletion of the Config is in progress", kind+"/"+name)
+			klog.Infof("Received watch event %s but not upserting since deletion of the Config is in progress", kind+"/"+name)
 			return nil, "", false, false, nil
 		}
-		logrus.Printf("Received watch event %s but not upserting since not have the Config yet: %#v %#v", kind+"/"+name, err, cfg)
+		klog.Infof("Received watch event %s but not upserting since not have the Config yet: %#v %#v", kind+"/"+name, err, cfg)
 		return nil, "", false, false, err
 	}
 
 	if cfg.DeletionTimestamp != nil {
 		// we do no return the cfg in this case because we do not want to bother with any progress tracking
-		logrus.Printf("Received watch event %s but not upserting since deletion of the Config is in progress", kind+"/"+name)
+		klog.Infof("Received watch event %s but not upserting since deletion of the Config is in progress", kind+"/"+name)
 		// note, the imagestream watch cache gets cleared once the deletion/finalizer processing commences
 		return nil, "", false, false, nil
 	}
@@ -171,10 +170,10 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 	// we do not return the cfg in these cases because we do not want to bother with any progress tracking
 	switch cfg.Spec.ManagementState {
 	case operatorsv1api.Removed:
-		logrus.Debugf("Not upserting %s/%s event because operator is in removed state and image changes are not in progress", kind, name)
+		klog.Infof("Not upserting %s/%s event because operator is in removed state and image changes are not in progress", kind, name)
 		return nil, "", false, false, nil
 	case operatorsv1api.Unmanaged:
-		logrus.Debugf("Not upserting %s/%s event because operator is in unmanaged state and image changes are not in progress", kind, name)
+		klog.Infof("Not upserting %s/%s event because operator is in unmanaged state and image changes are not in progress", kind, name)
 		return nil, "", false, false, nil
 	}
 
@@ -195,7 +194,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 	case "imagestream":
 		filePath, inInventory = h.imagestreamFile[name]
 		if !inInventory {
-			logrus.Printf("watch stream event %s not part of operators inventory", name)
+			klog.Infof("watch stream event %s not part of operators inventory", name)
 			// we now have cases where sample providers are deleting entire imagestreams;
 			// let's make sure there are no stale entries with inprogress / importerror
 			processing := util.Condition(cfg, v1.ImageChangesInProgress)
@@ -203,9 +202,9 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 			if needToUpdate {
 				now := kapis.Now()
 				processing.Reason = util.ClearNameInReason(cfg, processing.Reason, name)
-				logrus.Debugf("processing reason now %s", processing.Reason)
+				klog.Infof("processing reason now %s", processing.Reason)
 				if len(strings.TrimSpace(processing.Reason)) == 0 {
-					logrus.Println("The last in progress imagestream has completed (removed imagestream check)")
+					klog.Infof("The last in progress imagestream has completed (removed imagestream check)")
 					processing.Status = corev1.ConditionFalse
 					processing.Reason = ""
 					processing.LastTransitionTime = now
@@ -231,20 +230,20 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		if !inInventory {
 			// in the case of templates we can just ignore content from prior releases that is no longer
 			// part of the current release
-			logrus.Printf("watch template event %s not part of operators inventory", name)
+			klog.Infof("watch template event %s not part of operators inventory", name)
 			return nil, "", false, false, nil
 		}
 		_, skipped = h.skippedTemplates[name]
 	}
 
 	if skipped {
-		logrus.Printf("watch event %s in skipped list for %s", name, kind)
+		klog.Infof("watch event %s in skipped list for %s", name, kind)
 		// but return cfg to potentially toggle pending/import error condition
 		return cfg, "", false, false, nil
 	}
 
 	if deleted && (kind == "template" || cache.UpsertsAmount() == 0) {
-		logrus.Printf("going to recreate deleted managed sample %s/%s", kind, name)
+		klog.Infof("going to recreate deleted managed sample %s/%s", kind, name)
 		return cfg, filePath, true, false, nil
 	}
 
@@ -253,15 +252,15 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		// we have gotten events for items early in the migration list but we have not
 		// finished processing the list
 		// avoid (re)upsert, but check import status
-		logrus.Printf("watch event for %s/%s while migration in progress, image in progress is false; will not update sample because of this event", kind, name)
+		klog.Infof("watch event for %s/%s while migration in progress, image in progress is false; will not update sample because of this event", kind, name)
 		return cfg, "", false, false, nil
 	}
 
 	if annotations != nil {
 		isv, ok := annotations[v1.SamplesVersionAnnotation]
-		logrus.Debugf("Comparing %s/%s version %s ok %v with git version %s", kind, name, isv, ok, h.version)
+		klog.Infof("Comparing %s/%s version %s ok %v with git version %s", kind, name, isv, ok, h.version)
 		if ok && isv == h.version {
-			logrus.Debugf("Not upserting %s/%s cause operator version matches", kind, name)
+			klog.Infof("Not upserting %s/%s cause operator version matches", kind, name)
 			// but return cfg to potentially toggle pending condition
 			return cfg, "", false, false, nil
 		}
@@ -271,7 +270,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 }
 
 func (h *Handler) GoodConditionUpdate(cfg *v1.Config, newStatus corev1.ConditionStatus, conditionType v1.ConfigConditionType) {
-	logrus.Debugf("updating condition %s to %s", conditionType, newStatus)
+	klog.Infof("updating condition %s to %s", conditionType, newStatus)
 	condition := util.Condition(cfg, conditionType)
 	// decision was made to not spam master if
 	// duplicate events come it (i.e. status does not
@@ -328,7 +327,7 @@ func (h *Handler) updateCfgArch(cfg *v1.Config) *v1.Config {
 	case strings.Contains(runtime.GOARCH, v1.X86Architecture):
 		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.X86Architecture)
 	default:
-		logrus.Warningf("unsupported hardware architecture indicated by the golang GOARCH variable being set to %s", runtime.GOARCH)
+		klog.Warningf("unsupported hardware architecture indicated by the golang GOARCH variable being set to %s", runtime.GOARCH)
 	}
 	return cfg
 }
@@ -341,17 +340,17 @@ func (h *Handler) tbrInaccessible() bool {
 	// even with the connection attempt below, we still do the ipv6/proxy checks in case bot ipv6 and proxy
 	// are employed, as we have will return differently here based on which are
 	if util.IsIPv6() {
-		logrus.Print("registry.redhat.io does not support ipv6, bootstrap to removed")
+		klog.Infof("registry.redhat.io does not support ipv6, bootstrap to removed")
 		return true
 	}
 	// if a proxy is in play, the registry.redhat.io connection attempt during startup is problematic at best;
 	// assume tbr is accessible since a proxy implies external access, and not disconnected
 	proxy, err := h.configclient.Proxies().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	if err != nil {
-		logrus.Printf("unable to retrieve proxy configuration as part of testing registry.redhat.io connectivity: %s", err.Error())
+		klog.Infof("unable to retrieve proxy configuration as part of testing registry.redhat.io connectivity: %s", err.Error())
 	} else {
 		if len(proxy.Status.HTTPSProxy) > 0 || len(proxy.Status.HTTPProxy) > 0 {
-			logrus.Printf("with global proxy configured assuming registry.redhat.io is accessible, bootstrap to Managed")
+			klog.Infof("with global proxy configured assuming registry.redhat.io is accessible, bootstrap to Managed")
 			return false
 		}
 	}
@@ -359,17 +358,17 @@ func (h *Handler) tbrInaccessible() bool {
 		tlsConf := &tls.Config{}
 		conn, err := tls.Dial("tcp", "registry.redhat.io:443", tlsConf)
 		if err != nil {
-			logrus.Infof("test connection to registry.redhat.io failed with %s", err.Error())
+			klog.Infof("test connection to registry.redhat.io failed with %s", err.Error())
 			return false, nil
 		}
 		defer conn.Close()
 		err = conn.Handshake()
 		if err != nil {
-			logrus.Infof("test connection to registry.redhat.io experienced SSL handshake error %s", err.Error())
+			klog.Infof("test connection to registry.redhat.io experienced SSL handshake error %s", err.Error())
 			// these can be intermittent as well so we'll retry
 			return false, nil
 		}
-		logrus.Infof("test connection to registry.redhat.io successful")
+		klog.Infof("test connection to registry.redhat.io successful")
 		return true, nil
 
 	})
@@ -380,7 +379,7 @@ func (h *Handler) tbrInaccessible() bool {
 	}
 
 	h.tbrCheckFailed = true
-	logrus.Infof("unable to establish HTTPS connection to registry.redhat.io after 3 minutes, bootstrap to Removed")
+	klog.Infof("unable to establish HTTPS connection to registry.redhat.io after 3 minutes, bootstrap to Removed")
 	return true
 }
 
@@ -404,7 +403,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 				return true, nil
 			}
 			if err != nil {
-				logrus.Printf("create default config access error %v", err)
+				klog.Infof("create default config access error %v", err)
 				return false, nil
 			}
 			// based on 4.0 testing, we've been seeing empty resources returned
@@ -419,7 +418,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 			return nil, h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "issues waiting for delete to complete: %v")
 		}
 		cfg = nil
-		logrus.Println("delete of Config recognized")
+		klog.Infof("delete of Config recognized")
 	}
 
 	if cfg == nil || kerrors.IsNotFound(err) {
@@ -446,18 +445,18 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 			cfg.Spec.ManagementState = operatorsv1api.Managed
 		}
 		h.AddFinalizer(cfg)
-		logrus.Println("creating default Config")
+		klog.Infof("creating default Config")
 		err = h.crdwrapper.Create(cfg)
 		if err != nil {
 			if !kerrors.IsAlreadyExists(err) {
 				return nil, err
 			}
 			// in case there is some race condition
-			logrus.Println("got already exists error on create default")
+			klog.Infof("got already exists error on create default")
 		}
 
 	} else {
-		logrus.Printf("Config %#v found during operator startup", cfg)
+		klog.Infof("Config %#v found during operator startup", cfg)
 		// after a restart, this means we are beyond a bootstrap; but let's
 		// preserve the state of our initial TBR check
 		h.tbrCheckFailed = false
@@ -466,7 +465,7 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 			if err == nil {
 				for _, c := range op.Status.Conditions {
 					if c.Reason == operatorstatus.TBR {
-						logrus.Print("Samples operator originally bootstrapped as removed because the TBR was inaccessible")
+						klog.Infof("Samples operator originally bootstrapped as removed because the TBR was inaccessible")
 						h.tbrCheckFailed = true
 						break
 					}
@@ -514,7 +513,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 
 	streamList, err := h.imageclientwrapper.List(iopts)
 	if err != nil && !kerrors.IsNotFound(err) {
-		logrus.Warnf("Problem listing openshift imagestreams on Config delete: %#v", err)
+		klog.Warningf("Problem listing openshift imagestreams on Config delete: %#v", err)
 		return err
 	} else {
 		if streamList.Items != nil {
@@ -527,7 +526,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 				}
 				err = h.imageclientwrapper.Delete(stream.Name, &metav1.DeleteOptions{})
 				if err != nil && !kerrors.IsNotFound(err) {
-					logrus.Warnf("Problem deleting openshift imagestream %s on Config delete: %#v", stream.Name, err)
+					klog.Warningf("Problem deleting openshift imagestream %s on Config delete: %#v", stream.Name, err)
 					return err
 				}
 				cache.ImageStreamMassDeletesAdd(stream.Name)
@@ -539,7 +538,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 
 	tempList, err := h.templateclientwrapper.List(iopts)
 	if err != nil && !kerrors.IsNotFound(err) {
-		logrus.Warnf("Problem listing openshift templates on Config delete: %#v", err)
+		klog.Warningf("Problem listing openshift templates on Config delete: %#v", err)
 		return err
 	} else {
 		if tempList.Items != nil {
@@ -552,7 +551,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 				}
 				err = h.templateclientwrapper.Delete(temp.Name, &metav1.DeleteOptions{})
 				if err != nil && !kerrors.IsNotFound(err) {
-					logrus.Warnf("Problem deleting openshift template %s on Config delete: %#v", temp.Name, err)
+					klog.Warningf("Problem deleting openshift template %s on Config delete: %#v", temp.Name, err)
 					return err
 				}
 				cache.TemplateMassDeletesAdd(temp.Name)
@@ -595,7 +594,7 @@ func (h *Handler) Handle(event util.Event) error {
 		// 2) then after we remove finalizer, comes in with delete timestamp
 		// and event delete flag true
 		if event.Deleted {
-			logrus.Info("A previous delete attempt has been successfully completed")
+			klog.Info("A previous delete attempt has been successfully completed")
 			h.cvowrapper.UpdateOperatorStatus(cfg, true, h.tbrCheckFailed)
 			return nil
 		}
@@ -628,28 +627,28 @@ func (h *Handler) Handle(event util.Event) error {
 				// note, as part of resetting the delete flag during error retries, we still need
 				// a way to tell the imagestream event processing to not bother with pending updates,
 				// so we have an additional flag for that special case
-				logrus.Println("Initiating samples delete and marking exists false")
+				klog.Infof("Initiating samples delete and marking exists false")
 				err := h.CleanUpOpenshiftNamespaceOnDelete(cfg)
 				if err != nil {
 					return err
 				}
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.SamplesExist)
 				dbg := "exist false update"
-				logrus.Printf("CRDUPDATE %s", dbg)
+				klog.Infof("CRDUPDATE %s", dbg)
 				err = h.crdwrapper.UpdateStatus(cfg, dbg)
 				if err != nil {
-					logrus.Printf("error on Config update after setting exists condition to false (returning error to retry): %v", err)
+					klog.Infof("error on Config update after setting exists condition to false (returning error to retry): %v", err)
 					return err
 				}
 			} else {
-				logrus.Println("Initiating finalizer processing for a SampleResource delete attempt")
+				klog.Infof("Initiating finalizer processing for a SampleResource delete attempt")
 				h.RemoveFinalizer(cfg)
 				dbg := "remove finalizer update"
-				logrus.Printf("CRDUPDATE %s", dbg)
+				klog.Infof("CRDUPDATE %s", dbg)
 				// not updating the status, but the metadata annotation
 				err := h.crdwrapper.Update(cfg)
 				if err != nil {
-					logrus.Printf("error removing Config finalizer during delete (hopefully retry on return of error works): %v", err)
+					klog.Infof("error removing Config finalizer during delete (hopefully retry on return of error works): %v", err)
 					return err
 				}
 				go func() {
@@ -666,7 +665,7 @@ func (h *Handler) Handle(event util.Event) error {
 			// clean that up to facilitate our mode of operation for those platforms
 			cfg.Spec.ManagementState = operatorsv1api.Removed
 			dbg := fmt.Sprintf("switch management state to removed for %s", cfg.Spec.Architectures[0])
-			logrus.Printf("CRDUPDATE %s", dbg)
+			klog.Infof("CRDUPDATE %s", dbg)
 			return h.crdwrapper.Update(cfg)
 		}
 
@@ -675,7 +674,7 @@ func (h *Handler) Handle(event util.Event) error {
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		err := h.cvowrapper.UpdateOperatorStatus(cfg, false, h.tbrCheckFailed)
 		if err != nil {
-			logrus.Errorf("error updating cluster operator status: %v", err)
+			klog.Errorf("error updating cluster operator status: %v", err)
 			return err
 		}
 
@@ -685,7 +684,7 @@ func (h *Handler) Handle(event util.Event) error {
 			if err != nil || cfgUpdate {
 				// flush status update
 				dbg := fmt.Sprintf("process mgmt update spec %s status %s", string(cfg.Spec.ManagementState), string(cfg.Status.ManagementState))
-				logrus.Printf("CRDUPDATE %s", dbg)
+				klog.Infof("CRDUPDATE %s", dbg)
 				return h.crdwrapper.UpdateStatus(cfg, dbg)
 			}
 			return err
@@ -697,7 +696,7 @@ func (h *Handler) Handle(event util.Event) error {
 		if err != nil {
 			// flush status update
 			dbg := "bad spec validation update"
-			logrus.Printf("CRDUPDATE %s", dbg)
+			klog.Infof("CRDUPDATE %s", dbg)
 			// only retry on error updating the Config; do not return
 			// the error from SpecValidation which denotes a bad config
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
@@ -705,7 +704,7 @@ func (h *Handler) Handle(event util.Event) error {
 		// if a bad config was corrected, update and return
 		if existingValidStatus != util.Condition(cfg, v1.ConfigurationValid).Status {
 			dbg := "spec corrected"
-			logrus.Printf("CRDUPDATE %s", dbg)
+			klog.Infof("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
@@ -714,7 +713,7 @@ func (h *Handler) Handle(event util.Event) error {
 			cfg.Spec.Architectures[0] != v1.X86Architecture &&
 			cfg.Spec.Architectures[0] != v1.S390Architecture &&
 			cfg.Spec.Architectures[0] != v1.PPCArchitecture {
-			logrus.Printf("samples are not installed on an unsupported architecture")
+			klog.Infof("samples are not installed on an unsupported architecture")
 		}
 
 		h.buildSkipFilters(cfg)
@@ -727,7 +726,7 @@ func (h *Handler) Handle(event util.Event) error {
 		if cfg.Spec.ManagementState == cfg.Status.ManagementState {
 			cfg = h.refetchCfgMinimizeConflicts(cfg)
 			configChanged, configChangeRequiresUpsert, configChangeRequiresImportErrorUpdate, registryChanged, unskippedStreams, unskippedTemplates = h.VariableConfigChanged(cfg)
-			logrus.Debugf("config changed %v upsert needed %v import error upd needed %v exists/true %v progressing/false %v op version %s status version %s",
+			klog.Infof("config changed %v upsert needed %v import error upd needed %v exists/true %v progressing/false %v op version %s status version %s",
 				configChanged,
 				configChangeRequiresUpsert,
 				configChangeRequiresImportErrorUpdate,
@@ -741,13 +740,13 @@ func (h *Handler) Handle(event util.Event) error {
 				util.ConditionTrue(cfg, v1.SamplesExist) &&
 				util.ConditionFalse(cfg, v1.ImageChangesInProgress) &&
 				h.version == cfg.Status.Version {
-				logrus.Debugf("At steady state: config the same and exists is true, in progress false, and version correct")
+				klog.Infof("At steady state: config the same and exists is true, in progress false, and version correct")
 
 				// once the status version is in sync, we can turn off the migration condition
 				if util.ConditionTrue(cfg, v1.MigrationInProgress) {
 					h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.MigrationInProgress)
 					dbg := " turn migration off"
-					logrus.Printf("CRDUPDATE %s", dbg)
+					klog.Infof("CRDUPDATE %s", dbg)
 					return h.crdwrapper.UpdateStatus(cfg, dbg)
 				}
 
@@ -768,7 +767,7 @@ func (h *Handler) Handle(event util.Event) error {
 				util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
 				dbg := "change in progress from true to false for config change"
-				logrus.Printf("CRDUPDATE %s", dbg)
+				klog.Infof("CRDUPDATE %s", dbg)
 				return h.crdwrapper.UpdateStatus(cfg, dbg)
 			}
 		}
@@ -788,10 +787,10 @@ func (h *Handler) Handle(event util.Event) error {
 		if util.ConditionFalse(cfg, v1.MigrationInProgress) &&
 			len(cfg.Status.Version) > 0 &&
 			h.version != cfg.Status.Version {
-			logrus.Printf("Undergoing migration from %s to %s", cfg.Status.Version, h.version)
+			klog.Infof("Undergoing migration from %s to %s", cfg.Status.Version, h.version)
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.MigrationInProgress)
 			dbg := "turn migration on"
-			logrus.Printf("CRDUPDATE %s", dbg)
+			klog.Infof("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
@@ -802,20 +801,20 @@ func (h *Handler) Handle(event util.Event) error {
 			util.Condition(cfg, v1.MigrationInProgress).LastUpdateTime.Before(&util.Condition(cfg, v1.ImageChangesInProgress).LastUpdateTime) &&
 			h.version != cfg.Status.Version {
 			if util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
-				logrus.Printf("An image import error occurred applying the latest configuration on version %s; this operator will periodically retry the import, or an administrator can investigate and remedy manually", h.version)
+				klog.Infof("An image import error occurred applying the latest configuration on version %s; this operator will periodically retry the import, or an administrator can investigate and remedy manually", h.version)
 			}
 			cfg.Status.Version = h.version
-			logrus.Printf("The samples are now at version %s", cfg.Status.Version)
+			klog.Infof("The samples are now at version %s", cfg.Status.Version)
 			dbg := "upd status version"
-			logrus.Printf("CRDUPDATE %s", dbg)
+			klog.Infof("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 			/*if cfg.ConditionFalse(cfg, v1.ImportImageErrorsExist) {
 				cfg.Status.Version = h.version
-				logrus.Printf("The samples are now at version %s", cfg.Status.Version)
-				logrus.Println("CRDUPDATE upd status version")
+				klog.Infof("The samples are now at version %s", cfg.Status.Version)
+				klog.Infof("CRDUPDATE upd status version")
 				return h.crdwrapper.UpdateStatus(cfg)
 			}
-			logrus.Printf("An image import error occurred applying the latest configuration on version %s, problem resolution needed", h.version
+			klog.Infof("An image import error occurred applying the latest configuration on version %s, problem resolution needed", h.version
 			return nil
 
 			*/
@@ -840,13 +839,13 @@ func (h *Handler) Handle(event util.Event) error {
 		// cross referencing with any image import errors
 		if configChangeRequiresImportErrorUpdate && !configChangeRequiresUpsert {
 			dbg := "config change did not require upsert but did change import errors"
-			logrus.Printf("CRDUPDATE %s", dbg)
+			klog.Infof("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
 		if configChanged && !configChangeRequiresUpsert && util.ConditionTrue(cfg, v1.SamplesExist) {
 			dbg := "bypassing upserts for non invasive config change after initial create"
-			logrus.Printf("CRDUPDATE %s", dbg)
+			klog.Infof("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
@@ -871,7 +870,7 @@ func (h *Handler) Handle(event util.Event) error {
 				h.GoodConditionUpdate(h.refetchCfgMinimizeConflicts(cfg), corev1.ConditionFalse, v1.ImageChangesInProgress)
 				// note, the imagestream watch cache gets cleared once the deletion/finalizer processing commences
 				dbg := "progressing false because delete has arrived"
-				logrus.Printf("CRDUPDATE %s", dbg)
+				klog.Infof("CRDUPDATE %s", dbg)
 				return h.crdwrapper.UpdateStatus(cfg, dbg)
 			}
 
@@ -879,7 +878,7 @@ func (h *Handler) Handle(event util.Event) error {
 				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error creating samples: %v")
 				dbg := "setting samples exists to unknown"
-				logrus.Printf("CRDUPDATE %s", dbg)
+				klog.Infof("CRDUPDATE %s", dbg)
 				e := h.crdwrapper.UpdateStatus(cfg, dbg)
 				if e != nil {
 					return e
@@ -905,10 +904,10 @@ func (h *Handler) Handle(event util.Event) error {
 			if len(progressing.Reason) > 0 {
 				progressing.LastUpdateTime = now
 				progressing.LastTransitionTime = now
-				logrus.Debugf("Handle changing processing from false to true")
+				klog.Infof("Handle changing processing from false to true")
 				progressing.Status = corev1.ConditionTrue
 			} else {
-				logrus.Debugln("there are no imagestreams available for import")
+				klog.Info("there are no imagestreams available for import")
 				// see if there are unskipped templates, to set SamplesExists to true
 				if !util.ConditionTrue(cfg, v1.SamplesExist) {
 					templatesProcessed := false
@@ -924,13 +923,13 @@ func (h *Handler) Handle(event util.Event) error {
 						cfg = h.refetchCfgMinimizeConflicts(cfg)
 						h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
 						dbg := "exist true update templates only"
-						logrus.Printf("CRDUPDATE %s", dbg)
+						klog.Infof("CRDUPDATE %s", dbg)
 						return h.crdwrapper.UpdateStatus(cfg, dbg)
 					}
 				}
 				return nil
 			}
-			logrus.Debugf("Handle Reason field set to %s", progressing.Reason)
+			klog.Infof("Handle Reason field set to %s", progressing.Reason)
 			util.ConditionUpdate(cfg, progressing)
 
 			// now that we employ status subresources, we can't populate
@@ -939,7 +938,7 @@ func (h *Handler) Handle(event util.Event) error {
 			cfg = h.initConditions(cfg)
 
 			dbg := "progressing true update"
-			logrus.Printf("CRDUPDATE %s", dbg)
+			klog.Infof("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
@@ -947,7 +946,7 @@ func (h *Handler) Handle(event util.Event) error {
 			cfg = h.refetchCfgMinimizeConflicts(cfg)
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
 			dbg := "exist true update"
-			logrus.Printf("CRDUPDATE %s", dbg)
+			klog.Infof("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
@@ -981,11 +980,11 @@ func (h *Handler) Handle(event util.Event) error {
 			}
 			if len(strings.TrimSpace(util.Condition(cfg, v1.ImageChangesInProgress).Reason)) == 0 {
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
-				logrus.Println("The last in progress imagestream has completed (config event loop)")
+				klog.Infof("The last in progress imagestream has completed (config event loop)")
 			}
 			if anyChange {
 				dbg := "updating in progress after examining cached imagestream events"
-				logrus.Printf("CRDUPDATE %s", dbg)
+				klog.Infof("CRDUPDATE %s", dbg)
 				err = h.crdwrapper.UpdateStatus(cfg, dbg)
 				if err == nil && util.ConditionFalse(cfg, v1.ImageChangesInProgress) {
 					// only clear out cache if we got the update through

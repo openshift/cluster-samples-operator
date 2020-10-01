@@ -1,10 +1,9 @@
 package stub
 
 import (
-	"github.com/sirupsen/logrus"
-
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/klog/v2"
 
 	v1 "github.com/openshift/api/samples/v1"
 	templatev1 "github.com/openshift/api/template/v1"
@@ -18,9 +17,9 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 	// fetch of the config object, so we did not rework to ordering of the version check within that method
 	if t.Annotations != nil && !deleted {
 		isv, ok := t.Annotations[v1.SamplesVersionAnnotation]
-		logrus.Debugf("Comparing template/%s version %s ok %v with git version %s", t.Name, isv, ok, h.version)
+		klog.Infof("Comparing template/%s version %s ok %v with git version %s", t.Name, isv, ok, h.version)
 		if ok && isv == h.version {
-			logrus.Debugf("Not upserting template/%s cause operator version matches", t.Name)
+			klog.Infof("Not upserting template/%s cause operator version matches", t.Name)
 			return nil
 		}
 	}
@@ -42,7 +41,7 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error reading file %s", filePath)
 		dbg := "event temp update err"
-		logrus.Printf("CRDUPDATE %s", dbg)
+		klog.Infof("CRDUPDATE %s", dbg)
 		h.crdwrapper.UpdateStatus(cfg, dbg)
 		// if we get this, don't bother retrying
 		return nil
@@ -59,7 +58,7 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing template %s", template.Name)
 		dbg := "event temp update err bad api obj update"
-		logrus.Printf("CRDUPDATE %s", dbg)
+		klog.Infof("CRDUPDATE %s", dbg)
 		return h.crdwrapper.UpdateStatus(cfg, dbg)
 	}
 	return nil
@@ -93,13 +92,13 @@ func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *tem
 		_, err := h.templateclientwrapper.Create(templateInOperatorImage)
 		if err != nil {
 			if kerrors.IsAlreadyExists(err) {
-				logrus.Printf("template %s recreated since delete event", templateInOperatorImage.Name)
+				klog.Infof("template %s recreated since delete event", templateInOperatorImage.Name)
 				// return the error so the caller can decide what to do
 				return err
 			}
 			return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "template create error: %v")
 		}
-		logrus.Printf("created template %s", templateInOperatorImage.Name)
+		klog.Infof("created template %s", templateInOperatorImage.Name)
 		return nil
 	}
 
@@ -108,6 +107,6 @@ func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *tem
 	if err != nil {
 		return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "template update error: %v")
 	}
-	logrus.Printf("updated template %s", templateInCluster.Name)
+	klog.Infof("updated template %s", templateInCluster.Name)
 	return nil
 }

@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sirupsen/logrus"
-
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 
 	operatorsv1api "github.com/openshift/api/operator/v1"
 	v1 "github.com/openshift/api/samples/v1"
@@ -57,7 +56,7 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 	// if we have not had a valid Config processed, allow caller to try with
 	// the cfg contents
 	if !util.ConditionTrue(cfg, v1.SamplesExist) && !util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
-		logrus.Println("Spec is valid because this operator has not processed a config yet")
+		klog.Infof("Spec is valid because this operator has not processed a config yet")
 		return nil
 	}
 
@@ -93,10 +92,10 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool, bool,
 	clearImageImportErrors := false
 	registryChange := false
 
-	logrus.Debugf("the before skipped templates %#v", cfg.Status.SkippedTemplates)
-	logrus.Debugf("the after skipped templates %#v and associated map %#v", cfg.Spec.SkippedTemplates, h.skippedTemplates)
-	logrus.Debugf("the before skipped streams %#v", cfg.Status.SkippedImagestreams)
-	logrus.Debugf("the after skipped streams %#v and associated map %#v", cfg.Spec.SkippedImagestreams, h.skippedImagestreams)
+	klog.Infof("the before skipped templates %#v", cfg.Status.SkippedTemplates)
+	klog.Infof("the after skipped templates %#v and associated map %#v", cfg.Spec.SkippedTemplates, h.skippedTemplates)
+	klog.Infof("the before skipped streams %#v", cfg.Status.SkippedImagestreams)
+	klog.Infof("the after skipped streams %#v and associated map %#v", cfg.Spec.SkippedImagestreams, h.skippedImagestreams)
 
 	unskippedTemplates := map[string]bool{}
 	// capture additions/subtractions from skipped list in general change boolean
@@ -117,12 +116,12 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool, bool,
 	}
 
 	if configChangeAtAll {
-		logrus.Printf("SkippedTemplates changed from %#v to %#v", cfg.Status.SkippedTemplates, cfg.Spec.SkippedTemplates)
+		klog.Infof("SkippedTemplates changed from %#v to %#v", cfg.Status.SkippedTemplates, cfg.Spec.SkippedTemplates)
 	}
 
 	unskippedStreams := map[string]bool{}
 	if cfg.Spec.SamplesRegistry != cfg.Status.SamplesRegistry {
-		logrus.Printf("SamplesRegistry changed from %s to %s", cfg.Status.SamplesRegistry, cfg.Spec.SamplesRegistry)
+		klog.Infof("SamplesRegistry changed from %s to %s", cfg.Status.SamplesRegistry, cfg.Spec.SamplesRegistry)
 		configChangeAtAll = true
 		configChangeRequireUpsert = true
 		registryChange = true
@@ -152,7 +151,7 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool, bool,
 	}
 
 	if streamChange {
-		logrus.Printf("SkippedImagestreams changed from %#v to %#v", cfg.Status.SkippedImagestreams, cfg.Spec.SkippedImagestreams)
+		klog.Infof("SkippedImagestreams changed from %#v to %#v", cfg.Status.SkippedImagestreams, cfg.Spec.SkippedImagestreams)
 	}
 
 	// see if need to update the cfg from the main loop to clear out any prior image import
@@ -204,7 +203,7 @@ func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				err = h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content : %v")
 				dbg := "file list err update"
-				logrus.Printf("CRDUPDATE %s", dbg)
+				klog.Infof("CRDUPDATE %s", dbg)
 				h.crdwrapper.UpdateStatus(cfg, dbg)
 				return err
 			}
@@ -214,7 +213,7 @@ func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				err = h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error processing content : %v")
 				dbg := "proc file err update"
-				logrus.Printf("CRDUPDATE %s", dbg)
+				klog.Infof("CRDUPDATE %s", dbg)
 				h.crdwrapper.UpdateStatus(cfg, dbg)
 				return err
 			}
@@ -230,7 +229,7 @@ func (h *Handler) processError(opcfg *v1.Config, ctype v1.ConfigConditionType, c
 	} else {
 		log = fmt.Sprintf(msg, err, args)
 	}
-	logrus.Println(log)
+	klog.Infof(log)
 	status := util.Condition(opcfg, ctype)
 	// decision was made to not spam master if
 	// duplicate events come it (i.e. status does not
@@ -285,7 +284,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionTrue
 			util.ConditionUpdate(cfg, condition)
-			logrus.Printf("Attempting stage 1 Removed management state: RemovePending == true")
+			klog.Infof("Attempting stage 1 Removed management state: RemovePending == true")
 			return false, true, nil
 		}
 
@@ -297,7 +296,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionFalse
 			util.ConditionUpdate(cfg, condition)
-			logrus.Printf("Attempting stage 3 Removed management state: RemovePending == false")
+			klog.Infof("Attempting stage 3 Removed management state: RemovePending == false")
 			return false, true, nil
 		}
 
@@ -305,7 +304,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState ||
 			util.ConditionTrue(cfg, v1.SamplesExist) {
 
-			logrus.Println("management state set to removed so deleting samples")
+			klog.Infof("management state set to removed so deleting samples")
 			err := h.CleanUpOpenshiftNamespaceOnDelete(cfg)
 			if err != nil {
 				return false, true, h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "The error %v during openshift namespace cleanup has left the samples in an unknown state")
@@ -327,7 +326,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 			// group arch discussion has decided that we report the latest version
 			cfg.Status.Version = h.version
 			h.ClearStatusConfigForRemoved(cfg)
-			logrus.Printf("Attempting stage 2 Removed management state: Status == Removed")
+			klog.Infof("Attempting stage 2 Removed management state: Status == Removed")
 			return false, true, nil
 		}
 
@@ -343,7 +342,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		h.tbrCheckFailed = false
 
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState {
-			logrus.Println("management state set to managed")
+			klog.Infof("management state set to managed")
 		}
 		// will set status state to managed at top level caller
 		// to deal with config change processing
@@ -353,7 +352,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		h.tbrCheckFailed = false
 
 		if cfg.Spec.ManagementState != cfg.Status.ManagementState {
-			logrus.Println("management state set to unmanaged")
+			klog.Infof("management state set to unmanaged")
 			cfg.Status.ManagementState = operatorsv1api.Unmanaged
 			// after online starter upgrade attempts while this operator was not set to managed,
 			// group arch discussion has decided that we report the latest version
@@ -378,7 +377,7 @@ func (h *Handler) ProcessManagementField(cfg *v1.Config) (bool, bool, error) {
 		return false, false, nil
 	default:
 		// force it to Managed if they passed in something funky, including the empty string
-		logrus.Warningf("Unknown management state %s specified; switch to Managed", cfg.Spec.ManagementState)
+		klog.Warningf("Unknown management state %s specified; switch to Managed", cfg.Spec.ManagementState)
 		cfgvalid := util.Condition(cfg, v1.ConfigurationValid)
 		cfgvalid.Message = fmt.Sprintf("Unexpected management state %v received, switching to %v", cfg.Spec.ManagementState, operatorsv1api.Managed)
 		now := kapis.Now()

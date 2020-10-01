@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metaapi "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,6 +14,7 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 
 	imagev1 "github.com/openshift/api/image/v1"
 	sampopapi "github.com/openshift/api/samples/v1"
@@ -161,7 +160,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) error {
 	c.sampopInformerFactory.Start(stopCh)
 	c.kubeOCNSInformerFactory.Start(stopCh)
 
-	logrus.Println("waiting for informer caches to sync")
+	klog.Infof("waiting for informer caches to sync")
 	if !cache.WaitForCacheSync(stopCh, c.isInformer.HasSynced, c.tInformer.HasSynced, c.crInformer.HasSynced, c.ocSecInformer.HasSynced) {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
@@ -195,9 +194,9 @@ func (c *Controller) Run(stopCh <-chan struct{}) error {
 	}
 	go wait.Until(ocSecQueueWorker.workqueueProcessor, time.Second, stopCh)
 
-	logrus.Println("started events processor")
+	klog.Infof("started events processor")
 	<-stopCh
-	logrus.Println("shutting down events processor")
+	klog.Infof("shutting down events processor")
 
 	return nil
 }
@@ -235,7 +234,7 @@ func (g *tGetter) Get(c *Controller, key string) (runtime.Object, error) {
 // WORK QUEUE EVENT PROCESSING
 
 func (c *Controller) handleWork(getter runtimeObjectGetter, o interface{}) error {
-	logrus.Debugf("handleWork key %s getter %#v", o, getter)
+	klog.Infof("handleWork key %s getter %#v", o, getter)
 
 	event := util.Event{
 		Object:  nil,
@@ -255,7 +254,7 @@ func (c *Controller) handleWork(getter runtimeObjectGetter, o interface{}) error
 				if opCR && key == sampopapi.ConfigName {
 					return c.Bootstrap()
 				}
-				logrus.Printf("handleWork resource %s has since been deleted, ignore update event", key)
+				klog.Infof("handleWork resource %s has since been deleted, ignore update event", key)
 				return nil
 			}
 			return fmt.Errorf("handleWork failed to get %q resource: %s", key, err)
@@ -318,7 +317,7 @@ func (w *queueWorker) workqueueProcessor() {
 			return
 		}
 
-		logrus.Debugf("get event from workqueue %#v", obj)
+		klog.Infof("get event from workqueue %#v", obj)
 		func() {
 			defer w.workQueue.Done(obj)
 
@@ -329,16 +328,16 @@ func (w *queueWorker) workqueueProcessor() {
 				dbg = str
 			} else {
 				w.workQueue.Forget(obj)
-				logrus.Errorf("expected string in workqueue but got %#v", obj)
+				klog.Errorf("expected string in workqueue but got %#v", obj)
 				return
 			}
 
 			if err := w.c.handleWork(w.getter, obj); err != nil {
 				w.workQueue.AddRateLimited(obj)
-				logrus.Errorf("unable to sync: %s, requeuing", err)
+				klog.Errorf("unable to sync: %s, requeuing", err)
 			} else {
 				w.workQueue.Forget(obj)
-				logrus.Debugf("event from workqueue successfully processed %s", dbg)
+				klog.Infof("event from workqueue successfully processed %s", dbg)
 			}
 		}()
 	}
@@ -350,13 +349,13 @@ func (c *Controller) commonInformerEventHandler(keygen queueKeyGen, wq workqueue
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			key := keygen.Key(o)
-			logrus.Debugf("add event to workqueue due to %s (add) via %#v", key, keygen)
+			klog.Infof("add event to workqueue due to %s (add) via %#v", key, keygen)
 			// we pass key vs. obj to distinguish from delete
 			wq.Add(key)
 		},
 		UpdateFunc: func(o, n interface{}) {
 			key := keygen.Key(n)
-			logrus.Debugf("add event to workqueue due to %s (update) via %#v", key, keygen)
+			klog.Infof("add event to workqueue due to %s (update) via %#v", key, keygen)
 			// we pass key vs. obj to distinguish from delete
 			wq.Add(key)
 		},
@@ -365,28 +364,28 @@ func (c *Controller) commonInformerEventHandler(keygen queueKeyGen, wq workqueue
 			if !ok {
 				tombstone, ok := o.(cache.DeletedFinalStateUnknown)
 				if !ok {
-					logrus.Errorf("error decoding object, invalid type")
+					klog.Errorf("error decoding object, invalid type")
 					return
 				}
 				object, ok = tombstone.Obj.(metaapi.Object)
 				if !ok {
-					logrus.Errorf("error decoding object tombstone, invalid type")
+					klog.Errorf("error decoding object tombstone, invalid type")
 					return
 				}
-				logrus.Debugf("recovered deleted object %q from tombstone", object.GetName())
+				klog.Infof("recovered deleted object %q from tombstone", object.GetName())
 			}
 			_, stream := keygen.(*imagestreamQueueKeyGen)
 			if stream && sampcache.ImageStreamDeletePartOfMassDelete(object.GetName()) {
-				logrus.Printf("one time ignoring of delete event for imagestream %s as part of group delete", object.GetName())
+				klog.Infof("one time ignoring of delete event for imagestream %s as part of group delete", object.GetName())
 				return
 			}
 			_, tpl := keygen.(*templateQueueKeyGen)
 			if tpl && sampcache.TemplateDeletePartOfMassDelete(object.GetName()) {
-				logrus.Printf("one time ignoring of delete event for template %s as part of a group delete", object.GetName())
+				klog.Infof("one time ignoring of delete event for template %s as part of a group delete", object.GetName())
 				return
 			}
 			key := keygen.Key(object)
-			logrus.Debugf("add event to workqueue due to %#v (delete) via %#v", key, keygen)
+			klog.Infof("add event to workqueue due to %#v (delete) via %#v", key, keygen)
 			// but we pass in the actual object on delete so it can be leveraged by the
 			// event handling (objs without finalizers won't be accessible via get)
 			wq.Add(object)

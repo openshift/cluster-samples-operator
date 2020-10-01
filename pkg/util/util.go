@@ -2,7 +2,6 @@ package util
 
 import (
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"os"
 	"strings"
 	"sync"
@@ -11,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8snet "k8s.io/apimachinery/pkg/util/net"
+	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -302,13 +302,13 @@ func IsUnsupportedArch(cfg *samplev1.Config) bool {
 func IsIPv6() bool {
 	ip, err := k8snet.ChooseHostInterface()
 	if err != nil {
-		logrus.Printf("IPv6 determination: ChooseHostInterface err: %s", err.Error())
+		klog.Infof("IPv6 determination: ChooseHostInterface err: %s", err.Error())
 		return false
 	}
 	if ip.To4() != nil {
 		return false
 	}
-	logrus.Printf("based on host %s this is an ipv6 cluster", ip.String())
+	klog.Infof("based on host %s this is an ipv6 cluster", ip.String())
 	return true
 }
 

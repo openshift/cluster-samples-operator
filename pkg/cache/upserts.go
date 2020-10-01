@@ -4,9 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 
 	imagev1 "github.com/openshift/api/image/v1"
 )
@@ -42,10 +41,10 @@ func AllUpsertEventsArrived() bool {
 				// if we have not retrieved all the events
 				// within 5 minutes of the start of recording,
 				// let's move on
-				logrus.Printf("have not received an upsert event for %s in 5 minutes so cache is skipping this one", key)
+				klog.Infof("have not received an upsert event for %s in 5 minutes so cache is skipping this one", key)
 				continue
 			}
-			logrus.Printf("have not received an upsert event for imagestream %s", key)
+			klog.Infof("have not received an upsert event for imagestream %s", key)
 			return false
 		}
 	}
