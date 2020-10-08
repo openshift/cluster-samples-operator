@@ -112,3 +112,17 @@ spec:
       from:
         kind: DockerImage
         name: quay.io/openshift/origin-oauth-proxy-samples:v4.4
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
+  name: hello-openshift
+spec:
+  tags:
+  - name: latest
+    importPolicy:
+      scheduled: true
+    from:
+      kind: DockerImage
+      name: docker.io/openshift/hello-openshift:latest

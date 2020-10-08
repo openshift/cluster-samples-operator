@@ -54,3 +54,7 @@ spec:
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-oauth-proxy-samples:v4.4
+  - name: hello-openshift
+    from:
+      kind: DockerImage
+      name: docker.io/openshift/hello-openshift:latest
