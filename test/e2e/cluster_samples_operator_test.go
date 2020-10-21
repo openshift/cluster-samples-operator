@@ -134,6 +134,18 @@ func verifyOperatorUp(t *testing.T) *samplesapi.Config {
 	if err != nil {
 		t.Fatalf("error waiting for samples resource to appear: %v", err)
 	}
+	err = wait.PollImmediate(1*time.Second, 1*time.Minute, func() (bool, error) {
+		_, err = kubeClient.CoreV1().ConfigMaps(samplesapi.OperatorNamespace).Get(
+			context.TODO(), util.IST2ImageMap, metav1.GetOptions{})
+		if err != nil {
+			t.Logf("%s", err.Error())
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		t.Fatalf("error waiting for ist to image map: %s", err.Error())
+	}
 	return cfg
 }
 

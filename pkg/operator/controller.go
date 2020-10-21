@@ -43,22 +43,23 @@ type Controller struct {
 	restconfig *restclient.Config
 	cvowrapper *operatorstatus.ClusterOperatorHandler
 
-	crWorkqueue workqueue.RateLimitingInterface
-	isWorkqueue workqueue.RateLimitingInterface
-	tWorkqueue  workqueue.RateLimitingInterface
+	crWorkqueue     workqueue.RateLimitingInterface
+	isWorkqueue     workqueue.RateLimitingInterface
+	tWorkqueue      workqueue.RateLimitingInterface
+	ocSecWorkqueue  workqueue.RateLimitingInterface
+	cfgMapWorkqueue workqueue.RateLimitingInterface
 
-	ocSecWorkqueue workqueue.RateLimitingInterface
-
-	crInformer cache.SharedIndexInformer
-	isInformer cache.SharedIndexInformer
-	tInformer  cache.SharedIndexInformer
-
-	ocSecInformer cache.SharedIndexInformer
+	crInformer     cache.SharedIndexInformer
+	isInformer     cache.SharedIndexInformer
+	tInformer      cache.SharedIndexInformer
+	ocSecInformer  cache.SharedIndexInformer
+	cfgMapInformer cache.SharedIndexInformer
 
 	kubeOCNSInformerFactory kubeinformers.SharedInformerFactory
 	imageInformerFactory    imageinformers.SharedInformerFactory
 	templateInformerFactory templateinformers.SharedInformerFactory
 	sampopInformerFactory   sampopinformers.SharedInformerFactory
+	cfgMapInformerFactory   kubeinformers.SharedInformerFactory
 
 	listers *sampopclient.Listers
 
@@ -77,13 +78,14 @@ func NewController() (*Controller, error) {
 
 	listers := &sampopclient.Listers{}
 	c := &Controller{
-		restconfig:     kubeconfig,
-		cvowrapper:     operatorstatus.NewClusterOperatorHandler(operatorClient),
-		crWorkqueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "samplesconfig-changes"),
-		isWorkqueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "imagestream-changes"),
-		tWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "template-changes"),
-		ocSecWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openshift-config-namespace-secret-changes"),
-		listers:        listers,
+		restconfig:      kubeconfig,
+		cvowrapper:      operatorstatus.NewClusterOperatorHandler(operatorClient),
+		crWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "samplesconfig-changes"),
+		isWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "imagestream-changes"),
+		tWorkqueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "template-changes"),
+		ocSecWorkqueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openshift-config-namespace-secret-changes"),
+		cfgMapWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "samples-operator-namesapce-configmap-changes"),
+		listers:         listers,
 	}
 
 	// Initial event to bootstrap CR if it doesn't exist.
@@ -109,13 +111,11 @@ func NewController() (*Controller, error) {
 		return nil, err
 	}
 
-	c.kubeOCNSInformerFactory = kubeinformers.NewFilteredSharedInformerFactory(kubeClient, defaultResyncDuration, "openshift-config", nil)
-	//TODO - eventually a k8s go-client deps bump will lead to the form below, similar to the image registry operator's kubeinformer initialization,
-	// and similar to what is available with the openshift go-client for imagestreams and templates
-	//kubeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncDuration, kubeinformers.WithNamespace("kube-system"))
+	c.kubeOCNSInformerFactory = kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncDuration, kubeinformers.WithNamespace("openshift-config"))
 	c.imageInformerFactory = imageinformers.NewSharedInformerFactoryWithOptions(imageClient, defaultResyncDuration, imageinformers.WithNamespace("openshift"))
 	c.templateInformerFactory = templateinformers.NewSharedInformerFactoryWithOptions(templateClient, defaultResyncDuration, templateinformers.WithNamespace("openshift"))
 	c.sampopInformerFactory = sampopinformers.NewSharedInformerFactory(sampopClient, defaultResyncDuration)
+	c.cfgMapInformerFactory = kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncDuration, kubeinformers.WithNamespace(sampopapi.OperatorNamespace))
 
 	// A note on the fact we are listening on secrets in the openshift-config namespace, even though we no longer
 	// copy that secret to the openshift namespace for imagestream import
@@ -141,6 +141,10 @@ func NewController() (*Controller, error) {
 	c.crInformer.AddEventHandler(c.crInformerEventHandler())
 	c.listers.Config = c.sampopInformerFactory.Samples().V1().Configs().Lister()
 
+	c.cfgMapInformer = c.cfgMapInformerFactory.Core().V1().ConfigMaps().Informer()
+	c.cfgMapInformer.AddEventHandler(c.configMapInformerEventHandler())
+	c.listers.ConfigMaps = c.cfgMapInformerFactory.Core().V1().ConfigMaps().Lister().ConfigMaps(sampopapi.OperatorNamespace)
+
 	c.handlerStub, err = stub.NewSamplesOperatorHandler(kubeconfig,
 		c.listers)
 	if err != nil {
@@ -155,14 +159,21 @@ func (c *Controller) Run(stopCh <-chan struct{}) error {
 	defer c.isWorkqueue.ShutDown()
 	defer c.tWorkqueue.ShutDown()
 	defer c.ocSecWorkqueue.ShutDown()
+	defer c.cfgMapWorkqueue.ShutDown()
 
 	c.imageInformerFactory.Start(stopCh)
 	c.templateInformerFactory.Start(stopCh)
 	c.sampopInformerFactory.Start(stopCh)
 	c.kubeOCNSInformerFactory.Start(stopCh)
+	c.cfgMapInformerFactory.Start(stopCh)
 
 	logrus.Println("waiting for informer caches to sync")
-	if !cache.WaitForCacheSync(stopCh, c.isInformer.HasSynced, c.tInformer.HasSynced, c.crInformer.HasSynced, c.ocSecInformer.HasSynced) {
+	if !cache.WaitForCacheSync(stopCh,
+		c.isInformer.HasSynced,
+		c.tInformer.HasSynced,
+		c.crInformer.HasSynced,
+		c.ocSecInformer.HasSynced,
+		c.cfgMapInformer.HasSynced) {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -194,6 +205,14 @@ func (c *Controller) Run(stopCh <-chan struct{}) error {
 		getter:    &ocSecretGetter{},
 	}
 	go wait.Until(ocSecQueueWorker.workqueueProcessor, time.Second, stopCh)
+	cfgMapQueueWorker := queueWorker{
+		c:         c,
+		workQueue: c.cfgMapWorkqueue,
+		getter:    &cfgMapGetter{},
+	}
+	for i := 0; i < 5; i++ {
+		go wait.Until(cfgMapQueueWorker.workqueueProcessor, time.Second, stopCh)
+	}
 
 	logrus.Println("started events processor")
 	<-stopCh
@@ -230,6 +249,12 @@ type tGetter struct{}
 
 func (g *tGetter) Get(c *Controller, key string) (runtime.Object, error) {
 	return c.listers.Templates.Get(key)
+}
+
+type cfgMapGetter struct{}
+
+func (g *cfgMapGetter) Get(c *Controller, key string) (runtime.Object, error) {
+	return c.listers.ConfigMaps.Get(key)
 }
 
 // WORK QUEUE EVENT PROCESSING
@@ -301,6 +326,13 @@ type templateQueueKeyGen struct{}
 func (c *templateQueueKeyGen) Key(o interface{}) string {
 	template := o.(*templatev1.Template)
 	return template.Name
+}
+
+type configMapQueueKeyGen struct{}
+
+func (c *configMapQueueKeyGen) Key(o interface{}) string {
+	configMap := o.(*corev1.ConfigMap)
+	return configMap.Name
 }
 
 // WORK QUEUE LOOP
@@ -409,4 +441,8 @@ func (c *Controller) imagestreamInformerEventHandler() cache.ResourceEventHandle
 
 func (c *Controller) templateInformerEventHandler() cache.ResourceEventHandlerFuncs {
 	return c.commonInformerEventHandler(&templateQueueKeyGen{}, c.tWorkqueue)
+}
+
+func (c *Controller) configMapInformerEventHandler() cache.ResourceEventHandlerFuncs {
+	return c.commonInformerEventHandler(&configMapQueueKeyGen{}, c.cfgMapWorkqueue)
 }

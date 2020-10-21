@@ -23,7 +23,7 @@ import (
 const (
 	ClusterOperatorName = "openshift-samples"
 	doingDelete         = "DeletionInProgress"
-	unsuppArch              = "UnsupportHWArchitecture"
+	unsuppArch          = "UnsupportHWArchitecture"
 	ipv6                = "IPv6Platform"
 	TBR                 = "TermsBasedRegistryUnreacahable"
 )

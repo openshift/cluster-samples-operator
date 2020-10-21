@@ -90,6 +90,16 @@ The samples resource maintains the following conditions in its status:
 See https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions for how these
 Cluster Operator status conditions are managed.
 
+# Disconnected mirroring assistance
+
+A `ConfigMap` named `imagestreamtag-to-image` is created in the Samples Operator's namespace that contains an
+entry for each `ImageStreamTag`, where the value of the entry is the image used to populate that `ImageStreamTag`.
+
+The format of the key for each entry in the `data` field in the `ConfigMap` is `<imagestreamname>_<imagestreamtagname>`.
+
+Samples Operator will come up as `Removed` for a disconnected OCP install.  If you choose to change it to `Managed`,
+override the registry to a mirror registry available in your disconnected environment, you can use this `ConfigMap`
+as a reference for which images need to be mirrored for your `ImageStreams` of interest to properly import.
 
 # Troubleshooting
 

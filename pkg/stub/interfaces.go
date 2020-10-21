@@ -9,10 +9,13 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/util/flowcontrol"
 
@@ -108,6 +111,43 @@ func (g *defaultTemplateClientWrapper) Delete(name string, opts *metav1.DeleteOp
 func (g *defaultTemplateClientWrapper) Watch() (watch.Interface, error) {
 	opts := metav1.ListOptions{}
 	return g.h.tempclient.Templates("openshift").Watch(context.TODO(), opts)
+}
+
+type ConfigMapClientWrapper interface {
+	Get(name string) (*corev1.ConfigMap, error)
+	List() ([]*corev1.ConfigMap, error)
+	Create(cm *corev1.ConfigMap) (*corev1.ConfigMap, error)
+	Update(cm *corev1.ConfigMap) (*corev1.ConfigMap, error)
+	Delete(name string) error
+}
+
+type defaultConfigMapClientWrapper struct {
+	h      *Handler
+	lister corev1listers.ConfigMapNamespaceLister
+}
+
+func (g *defaultConfigMapClientWrapper) Get(name string) (*corev1.ConfigMap, error) {
+	return g.lister.Get(name)
+}
+
+func (g *defaultConfigMapClientWrapper) List() ([]*corev1.ConfigMap, error) {
+	cms, err := g.lister.List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+	return cms, nil
+}
+
+func (g *defaultConfigMapClientWrapper) Create(cm *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	return g.h.coreclient.ConfigMaps(v1.OperatorNamespace).Create(context.TODO(), cm, metav1.CreateOptions{})
+}
+
+func (g *defaultConfigMapClientWrapper) Update(cm *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	return g.h.coreclient.ConfigMaps(v1.OperatorNamespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+}
+
+func (g *defaultConfigMapClientWrapper) Delete(name string) error {
+	return g.h.coreclient.ConfigMaps(v1.OperatorNamespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
 type ImageStreamFromFileGetter interface {

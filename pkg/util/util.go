@@ -152,6 +152,7 @@ const (
 	// numConfigConditionType is a helper constant that captures the number possible conditions
 	// defined above in this const block
 	numconfigConditionType = 7
+	IST2ImageMap           = "imagestreamtag-to-image"
 )
 
 // ClusterOperatorStatusAvailableCondition return values are as follows:

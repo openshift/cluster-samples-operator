@@ -81,15 +81,16 @@ func NewSamplesOperatorHandler(kubeconfig *restclient.Config,
 
 	h.imageclientwrapper = &defaultImageStreamClientWrapper{h: h, lister: listers.ImageStreams}
 	h.templateclientwrapper = &defaultTemplateClientWrapper{h: h, lister: listers.Templates}
+	h.configmapclientwrapper = &defaultConfigMapClientWrapper{h: h, lister: listers.ConfigMaps}
 	h.cvowrapper = operatorstatus.NewClusterOperatorHandler(h.configclient)
 
 	h.skippedImagestreams = make(map[string]bool)
 	h.skippedTemplates = make(map[string]bool)
 
-	h.CreateDefaultResourceIfNeeded(nil)
-
 	h.imagestreamFile = make(map[string]string)
 	h.templateFile = make(map[string]string)
+	h.imagestreatagToImage = make(map[string]string)
+	h.CreateDefaultResourceIfNeeded(nil)
 
 	h.imagestreamRetry = make(map[string]metav1.Time)
 
@@ -113,8 +114,9 @@ type Handler struct {
 	coreclient   *corev1client.CoreV1Client
 	configclient *configv1client.ConfigV1Client
 
-	imageclientwrapper    ImageStreamClientWrapper
-	templateclientwrapper TemplateClientWrapper
+	imageclientwrapper     ImageStreamClientWrapper
+	templateclientwrapper  TemplateClientWrapper
+	configmapclientwrapper ConfigMapClientWrapper
 
 	crdlister        configv1lister.ConfigLister
 	streamlister     imagev1lister.ImageStreamNamespaceLister
@@ -129,8 +131,9 @@ type Handler struct {
 	skippedTemplates    map[string]bool
 	skippedImagestreams map[string]bool
 
-	imagestreamFile map[string]string
-	templateFile    map[string]string
+	imagestreamFile      map[string]string
+	templateFile         map[string]string
+	imagestreatagToImage map[string]string
 
 	imagestreamRetry map[string]metav1.Time
 
@@ -434,6 +437,13 @@ func (h *Handler) CreateDefaultResourceIfNeeded(cfg *v1.Config) (*v1.Config, err
 		cfg.Kind = "Config"
 		cfg.APIVersion = v1.GroupName + "/" + v1.Version
 		cfg = h.updateCfgArch(cfg)
+
+		// build file maps and create configmaps with imagestreamtag to image mappings
+		err := h.buildFileMaps(cfg, true)
+		if err != nil {
+			return nil, err
+		}
+
 		switch {
 		// TODO as we gain content for non x86 platforms we can remove the nonx86 check
 		case util.IsUnsupportedArch(cfg):
@@ -568,6 +578,10 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 
 func (h *Handler) Handle(event util.Event) error {
 	switch event.Object.(type) {
+	case *corev1.ConfigMap:
+		//TODO any validations on our configmap with imagestreamtags to images
+		return nil
+
 	case *imagev1.ImageStream:
 		is, _ := event.Object.(*imagev1.ImageStream)
 		if is.Namespace != "openshift" {
@@ -788,6 +802,14 @@ func (h *Handler) Handle(event util.Event) error {
 		if util.ConditionFalse(cfg, v1.MigrationInProgress) &&
 			len(cfg.Status.Version) > 0 &&
 			h.version != cfg.Status.Version {
+			// delete ist to image map as we will need to build a new one;
+			// we do not remove this map during delete/remove processing
+			// to facilitate disconnected users deciding which images to mirror
+			err := h.configmapclientwrapper.Delete(util.IST2ImageMap)
+			if err != nil {
+				// simply retry
+				return err
+			}
 			logrus.Printf("Undergoing migration from %s to %s", cfg.Status.Version, h.version)
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.MigrationInProgress)
 			dbg := "turn migration on"
