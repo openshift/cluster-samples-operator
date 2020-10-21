@@ -278,6 +278,8 @@ func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.Ima
 	switch imagestream.Name {
 	case "jenkins":
 		return
+	case "jenkins-agent-base":
+		return
 	case "jenkins-agent-nodejs":
 		return
 	case "jenkins-agent-maven":

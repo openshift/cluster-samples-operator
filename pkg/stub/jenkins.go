@@ -30,6 +30,8 @@ func jenkinsOverrides(imagestream *imagev1.ImageStream) *imagev1.ImageStream {
 	switch {
 	case imagestream.Name == "jenkins":
 		return tagInPayload("2", "IMAGE_JENKINS", imagestream)
+	case imagestream.Name == "jenkins-agent-base":
+		return tagInPayload("latest", "IMAGE_AGENT_BASE", imagestream)
 	case imagestream.Name == "jenkins-agent-maven":
 		return tagInPayload("v4.0", "IMAGE_AGENT_MAVEN", imagestream)
 	case imagestream.Name == "jenkins-agent-nodejs":
