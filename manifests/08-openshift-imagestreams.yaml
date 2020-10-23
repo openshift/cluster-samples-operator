@@ -6,6 +6,8 @@ apiVersion: image.openshift.io/v1
 metadata:
   namespace: openshift
   name: cli
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   tags:
   - name: latest
@@ -20,6 +22,8 @@ apiVersion: image.openshift.io/v1
 metadata:
   namespace: openshift
   name: cli-artifacts
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   tags:
   - name: latest
@@ -34,6 +38,8 @@ apiVersion: image.openshift.io/v1
 metadata:
   namespace: openshift
   name: installer
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   tags:
   - name: latest
@@ -48,6 +54,8 @@ apiVersion: image.openshift.io/v1
 metadata:
   namespace: openshift
   name: installer-artifacts
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   tags:
   - name: latest
@@ -62,6 +70,8 @@ apiVersion: image.openshift.io/v1
 metadata:
   namespace: openshift
   name: tests
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   tags:
   - name: latest
@@ -76,6 +86,8 @@ apiVersion: image.openshift.io/v1
 metadata:
   namespace: openshift
   name: tools
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   tags:
   - name: latest
@@ -90,6 +102,8 @@ apiVersion: image.openshift.io/v1
 metadata:
   namespace: openshift
   name: must-gather
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   tags:
     - name: latest
@@ -104,6 +118,8 @@ apiVersion: image.openshift.io/v1
 metadata:
   namespace: openshift
   name: oauth-proxy
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   tags:
     - name: v4.4
@@ -118,6 +134,8 @@ apiVersion: image.openshift.io/v1
 metadata:
   namespace: openshift
   name: hello-openshift
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   tags:
   - name: latest

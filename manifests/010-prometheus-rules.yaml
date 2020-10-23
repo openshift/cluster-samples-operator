@@ -5,6 +5,8 @@ metadata:
     name: samples-operator-alerts
   name: samples-operator-alerts
   namespace: openshift-cluster-samples-operator
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   groups:
   - name: SamplesOperator
