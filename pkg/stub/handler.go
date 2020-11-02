@@ -45,6 +45,7 @@ import (
 
 const (
 	x86ContentRootDir = "/opt/openshift/operator/x86_64"
+	armContentRootDir = "/opt/openshift/operator/aarch64"
 	ppcContentRootDir = "/opt/openshift/operator/ppc64le"
 	zContentRootDir   = "/opt/openshift/operator/s390x"
 	installtypekey    = "keyForInstallTypeField"
@@ -326,6 +327,8 @@ func (h *Handler) updateCfgArch(cfg *v1.Config) *v1.Config {
 		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.PPCArchitecture)
 	case strings.Contains(runtime.GOARCH, v1.S390Architecture):
 		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.S390Architecture)
+	case strings.Contains(runtime.GOARCH, v1.ARMArchitecture):
+		cfg.Spec.Architectures = append(cfg.Spec.Architectures, v1.ARMArchitecture)
 	case strings.Contains(runtime.GOARCH, v1.AMDArchitecture):
 		fallthrough
 	case strings.Contains(runtime.GOARCH, v1.X86Architecture):
@@ -725,6 +728,7 @@ func (h *Handler) Handle(event util.Event) error {
 
 		if len(cfg.Spec.Architectures) > 0 &&
 			cfg.Spec.Architectures[0] != v1.AMDArchitecture &&
+			cfg.Spec.Architectures[0] != v1.ARMArchitecture &&
 			cfg.Spec.Architectures[0] != v1.X86Architecture &&
 			cfg.Spec.Architectures[0] != v1.S390Architecture &&
 			cfg.Spec.Architectures[0] != v1.PPCArchitecture {

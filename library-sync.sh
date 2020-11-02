@@ -16,6 +16,12 @@ mv * ..
 popd # official
 rmdir official
 popd # ocp-x86_64
+pushd ocp-aarch64
+pushd official
+mv * ..
+popd # official
+rmdir official
+popd #ocp-aarch64
 pushd ocp-ppc64le
 pushd official
 mv * ..

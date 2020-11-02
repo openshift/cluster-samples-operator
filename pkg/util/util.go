@@ -290,6 +290,8 @@ func IsUnsupportedArch(cfg *samplev1.Config) bool {
 		return false
 	case samplev1.X86Architecture:
 		return false
+	case samplev1.ARMArchitecture:
+		return false
 	case samplev1.S390Architecture:
 		return false
 	case samplev1.PPCArchitecture:
