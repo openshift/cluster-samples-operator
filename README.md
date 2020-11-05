@@ -66,7 +66,7 @@ The samples resource maintains the following conditions in its status:
 - ImageChangesInProgress
 -- True when imagestreams have been created/updated, but we are awaiting acknowledgment all the changes were applied  
 -- False when all imagestream changes are acknowledged 
--- The list of pending imagestreams will be in the reason field
+-- The list of pending imagestreams will be represented by a configmap for each imagestream in the samples operator's namespace (where the imagestream name is the configmap name).  When the imagestream has completed imports, the respective configmap for the imagestream is deleted.
 - ImportCredentialsExist
 -- A 'samples-registry-credentials' secret has been copied into the openshift namespace
 - ConfigurationValid
@@ -76,8 +76,7 @@ The samples resource maintains the following conditions in its status:
 - ImportImageErrorsExist
 -- Indicator of which imagestreams had errors during the image import phase for one of their tags
 -- True when an error has occurred
--- The list of imagestreams with an error will be in the reason field
--- The details of each error reported will be in the message field
+-- The configmap associated with the imagestream will remain in the samples operator's namespace.  There will be a key in the configmap's data map for each imagestreamtag, where the value of the entry will be the error message reported in the imagestream status.
 - MigrationInProgress
 -- True when the samples operator has detected that its version is different than the samples operator version the current samples set were installed with
 
@@ -115,7 +114,8 @@ cluster admin can attempt to rectify the situation by
 
 Deployment, Events in operator’s namespace (openshift-cluster-samples-operator):  basic `oc get pods`, `oc get events`, `oc logs` of the operator pod 
 
-Secrets: `oc get secrets` in the openshift namespace
+If any configmaps persist in the samples operator's namespace, the data maps for those configmaps will have information on which 
+import failed:  `oc get configmaps -n openshift-cluster-samples-operator -o yaml`
 
 Samples: `oc get is -n openshift`, `oc get templates -n openshift`  … use of -o yaml on any given imagestream should show the status, and import errors will be noted there as well
 

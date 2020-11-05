@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"bytes"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"net/http"
 	"strings"
 	"testing"
@@ -51,6 +52,29 @@ func (f *fakeConfigLister) Get(name string) (*configv1.Config, error) {
 	return f.c, nil
 }
 
+type fakeConfigMapLister struct {
+	cms []*corev1.ConfigMap
+}
+
+func (f *fakeConfigMapLister) List(selector labels.Selector) ([]*corev1.ConfigMap, error) {
+	if f.cms == nil {
+		return []*corev1.ConfigMap{}, nil
+	}
+	return f.cms, nil
+}
+
+func (f *fakeConfigMapLister) Get(name string) (*corev1.ConfigMap, error) {
+	if f.cms == nil {
+		return nil, nil
+	}
+	for _, cm := range f.cms {
+		if cm.Name == name {
+			return cm, nil
+		}
+	}
+	return nil, nil
+}
+
 type fakeResponseWriter struct {
 	bytes.Buffer
 	statusCode int
@@ -76,6 +100,7 @@ func TestMetrics(t *testing.T) {
 		expectedResponse []string
 		secretLister     *fakeSecretLister
 		configLister     *fakeConfigLister
+		configMapLister  *fakeConfigMapLister
 	}{
 		{
 			name: "all good",
@@ -89,6 +114,7 @@ func TestMetrics(t *testing.T) {
 				"openshift_samples_invalidsecret_info{reason=\"missing_secret\"} 0",
 				"openshift_samples_invalidsecret_info{reason=\"missing_tbr_credential\"} 0",
 			},
+			configMapLister: &fakeConfigMapLister{},
 			secretLister: &fakeSecretLister{
 				s: &corev1.Secret{
 					Data: map[string][]byte{
@@ -130,6 +156,7 @@ func TestMetrics(t *testing.T) {
 				"openshift_samples_invalidsecret_info{reason=\"missing_secret\"} 0",
 				"openshift_samples_invalidsecret_info{reason=\"missing_tbr_credential\"} 1",
 			},
+			configMapLister: &fakeConfigMapLister{},
 			secretLister: &fakeSecretLister{
 				s: &corev1.Secret{
 					Data: map[string][]byte{
@@ -171,6 +198,7 @@ func TestMetrics(t *testing.T) {
 				"openshift_samples_invalidsecret_info{reason=\"missing_secret\"} 0",
 				"openshift_samples_invalidsecret_info{reason=\"missing_tbr_credential\"} 1",
 			},
+			configMapLister: &fakeConfigMapLister{},
 			secretLister: &fakeSecretLister{
 				s: &corev1.Secret{
 					Data: map[string][]byte{},
@@ -210,6 +238,7 @@ func TestMetrics(t *testing.T) {
 				"openshift_samples_invalidsecret_info{reason=\"missing_secret\"} 1",
 				"openshift_samples_invalidsecret_info{reason=\"missing_tbr_credential\"} 1",
 			},
+			configMapLister: &fakeConfigMapLister{},
 			secretLister: &fakeSecretLister{
 				s: nil,
 			},
@@ -254,6 +283,22 @@ func TestMetrics(t *testing.T) {
 					},
 				},
 			},
+			configMapLister: &fakeConfigMapLister{
+				cms: []*corev1.ConfigMap{
+					&corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "bar",
+						},
+						Data: map[string]string{"bar": "could not import"},
+					},
+					&corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "foo",
+						},
+						Data: map[string]string{"foo": "could not import"},
+					},
+				},
+			},
 			configLister: &fakeConfigLister{
 				c: &configv1.Config{
 					Status: configv1.ConfigStatus{
@@ -262,7 +307,7 @@ func TestMetrics(t *testing.T) {
 							{
 								Type:   configv1.ImportImageErrorsExist,
 								Status: corev1.ConditionTrue,
-								Reason: "foo bar ",
+								Reason: "",
 							},
 							{
 								Type:   configv1.ConfigurationValid,
@@ -281,8 +326,9 @@ func TestMetrics(t *testing.T) {
 		registry := prometheus.NewRegistry()
 
 		sc := samplesCollector{
-			secrets: tt.secretLister,
-			config:  tt.configLister,
+			secrets:    tt.secretLister,
+			config:     tt.configLister,
+			configmaps: tt.configMapLister,
 		}
 
 		registry.MustRegister(&sc)

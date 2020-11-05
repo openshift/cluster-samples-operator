@@ -1174,7 +1174,6 @@ func coreTestUpgrade(t *testing.T) {
 	if cfg.Status.ManagementState == operatorsv1api.Managed {
 		validateContent(t, nil)
 	}
-
 }
 
 func changeMgmtState(t *testing.T, state operatorsv1api.ManagementState) {

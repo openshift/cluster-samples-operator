@@ -23,7 +23,6 @@ import (
 	templatev1 "github.com/openshift/api/template/v1"
 	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 
-	"github.com/openshift/cluster-samples-operator/pkg/cache"
 	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
 )
@@ -242,10 +241,21 @@ func TestSkipped(t *testing.T) {
 
 	// also, even with an import error, on an imagestream event, the import error should be cleared out
 	importerror := util.Condition(cfg, v1.ImportImageErrorsExist)
-	importerror.Reason = "foo "
-	importerror.Message = "<imagestream/foo> import failed <imagestream/foo>"
 	importerror.Status = corev1.ConditionTrue
 	util.ConditionUpdate(cfg, importerror)
+
+	fakecmclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+		},
+		Data: map[string]string{
+			"foo": "could not import",
+		},
+		BinaryData: nil,
+	}
+	fakecmclient.configMaps["foo"] = cm
+
 	event.Object = &imagev1.ImageStream{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo",
@@ -264,8 +274,19 @@ func TestSkipped(t *testing.T) {
 		},
 	}
 	h.Handle(event)
+	_, stillHasCM := fakecmclient.configMaps["foo"]
+	if stillHasCM {
+		t.Fatalf("clean imagestream did not result in configmap getting deleted")
+	}
+	event.Deleted = true
+	event.Object = &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+		},
+	}
+	h.Handle(event)
 	importerror = util.Condition(cfg, v1.ImportImageErrorsExist)
-	if len(importerror.Reason) > 0 || importerror.Status == corev1.ConditionTrue {
+	if importerror.Status == corev1.ConditionTrue {
 		t.Fatalf("skipped imagestream still reporting error %#v", importerror)
 	}
 }
@@ -466,7 +487,7 @@ func TestImageStreamEvent(t *testing.T) {
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	// expedite the stream events coming in
-	cache.ClearUpsertsCache()
+	//cache.ClearUpsertsCache()
 
 	tagVersion := int64(1)
 	is := &imagev1.ImageStream{
@@ -583,6 +604,7 @@ func TestImageStreamEvent(t *testing.T) {
 		},
 	}
 	h.processImageStreamWatchEvent(is, false)
+	h.processImageCondition()
 	validate(true, err, "", cfg, conditions, statuses, t)
 }
 
@@ -592,8 +614,6 @@ func TestImageStreamErrorRetry(t *testing.T) {
 	err := h.Handle(event)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
-	// expedite the stream events coming in
-	cache.ClearUpsertsCache()
 
 	tagVersion := int64(1)
 	is := &imagev1.ImageStream{
@@ -649,8 +669,20 @@ func TestImageStreamErrorRetry(t *testing.T) {
 
 	h.processImageStreamWatchEvent(is, false)
 
+	fakecmclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
+	cm, exists := fakecmclient.configMaps[is.Name]
+	if !exists {
+		t.Fatalf("no associated configmap for %s", is.Name)
+	}
+	event = util.Event{Object: cm}
+	h.Handle(event)
+
 	if !util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
 		t.Fatalf("Import Error Condition not true: %#v", cfg)
+	}
+
+	if !h.imageStreamHasErrors(is.Name) {
+		t.Fatalf("Import errors not registered in config map for %s", is.Name)
 	}
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
@@ -662,6 +694,9 @@ func TestImageStreamErrorRetry(t *testing.T) {
 
 	initialImportErrorLastUpdateTime := util.Condition(cfg, v1.ImportImageErrorsExist).LastUpdateTime
 	h.processImageStreamWatchEvent(is, false)
+	cm, _ = fakecmclient.configMaps[is.Name]
+	event = util.Event{Object: cm}
+	h.Handle(event)
 	// refetch to see if updated
 	importError := util.Condition(cfg, v1.ImportImageErrorsExist)
 	if !importError.LastUpdateTime.Equal(&initialImportErrorLastUpdateTime) {
@@ -696,8 +731,20 @@ func TestImageStreamErrorRetry(t *testing.T) {
 
 	h.processImageStreamWatchEvent(is, false)
 
+	_, stillHasCM := fakecmclient.configMaps["foo"]
+	if stillHasCM {
+		t.Fatalf("clean imagestream did not result in configmap getting deleted")
+	}
+	event.Deleted = true
+	event.Object = &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+		},
+	}
+	h.Handle(event)
+
 	if util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
-		t.Fatalf("Import Error Condition not true: %#v", cfg)
+		t.Fatalf("Import Error Condition still true: %#v", cfg)
 	}
 }
 
@@ -711,7 +758,7 @@ func TestTemplateEvent(t *testing.T) {
 	statuses[0] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
 	// expedite the template events coming in
-	cache.ClearUpsertsCache()
+	//cache.ClearUpsertsCache()
 
 	template := &templatev1.Template{
 		ObjectMeta: metav1.ObjectMeta{
@@ -733,7 +780,7 @@ func setup() (Handler, *v1.Config, util.Event) {
 	cfg, _ := h.CreateDefaultResourceIfNeeded(nil)
 	cfg = h.initConditions(cfg)
 	h.crdwrapper.(*fakeCRDWrapper).cfg = cfg
-	cache.ClearUpsertsCache()
+	//cache.ClearUpsertsCache()
 	return h, cfg, util.Event{Object: cfg}
 }
 
@@ -741,14 +788,12 @@ func TestTemplateRemovedFromPayload(t *testing.T) {
 	h, _, _ := setup()
 	mimic(&h, x86ContentRootDir)
 
-	_, filePath, doUpsert, updateCfgOnly, err := h.prepSamplesWatchEvent("template", "no-longer-exists", map[string]string{}, false)
+	_, filePath, doUpsert, err := h.prepSamplesWatchEvent("template", "no-longer-exists", map[string]string{}, false)
 	switch {
 	case len(filePath) > 0:
 		t.Fatalf("should not have returned a file path")
 	case doUpsert:
 		t.Fatalf("do upsert should not be true")
-	case updateCfgOnly:
-		t.Fatalf("update cfg only should not be true")
 	case err != nil:
 		t.Fatalf("got unexpected err %s", err.Error())
 	}
@@ -757,12 +802,20 @@ func TestTemplateRemovedFromPayload(t *testing.T) {
 func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 	h, cfg, _ := setup()
 	mimic(&h, x86ContentRootDir)
-	progressing := util.Condition(cfg, v1.ImageChangesInProgress)
-	progressing.Reason = "foo "
 	errors := util.Condition(cfg, v1.ImportImageErrorsExist)
-	errors.Reason = "bar "
-	util.ConditionUpdate(cfg, progressing)
 	util.ConditionUpdate(cfg, errors)
+	cm := &corev1.ConfigMap{}
+	cm.Name = "foo"
+	fakeconfigmapclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
+	fakeconfigmapclient.Create(cm)
+	cm = &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "bar",
+		},
+		Data: map[string]string{"bar": "could not import"},
+	}
+	fakeconfigmapclient.Create(cm)
+
 	fakefile := h.Filefinder.(*fakeResourceFileLister)
 	fakefile.files = map[string][]fakeFileInfo{}
 	tagVersion := int64(1)
@@ -798,15 +851,18 @@ func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
-	if strings.Contains(progressing.Reason, "foo") {
-		t.Fatal("progressing still has foo after it was no longer in payload")
+	cm, err = fakeconfigmapclient.Get("foo")
+	if cm != nil {
+		t.Fatal("still tracking foo after it was no longer in payload")
 	}
 	is.Name = "bar"
 	err = h.processImageStreamWatchEvent(is, false)
-	errors = util.Condition(cfg, v1.ImportImageErrorsExist)
-	if strings.Contains(errors.Reason, "bar") {
-		t.Fatal("import errors still has bar after it was no longer in payload")
+	cm, err = fakeconfigmapclient.Get("bar")
+	if cm != nil {
+		t.Fatal("still tracking bar after it was no longer in payload")
+	}
+	if util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
+		t.Fatal("still tracking import error true after no longer in payload")
 	}
 
 }
@@ -1025,8 +1081,16 @@ func TestImageStreamImportError(t *testing.T) {
 		h.processFiles(dir, files, cfg)
 		progressing := util.Condition(cfg, v1.ImageChangesInProgress)
 		progressing.Status = corev1.ConditionTrue
-		progressing.Reason = is.Name + " "
 		util.ConditionUpdate(cfg, progressing)
+
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: is.Name,
+			},
+		}
+		fakecmclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
+		fakecmclient.configMaps[is.Name] = cm
+
 		needCreds := util.Condition(cfg, v1.ImportCredentialsExist)
 		needCreds.Status = corev1.ConditionTrue
 		util.ConditionUpdate(cfg, needCreds)
@@ -1034,13 +1098,21 @@ func TestImageStreamImportError(t *testing.T) {
 		if err != nil {
 			t.Fatalf("processImageStreamWatchEvent error %#v for stream %#v", err, is)
 		}
+		event := util.Event{Object: cm}
+		h.Handle(event)
 		if util.ConditionFalse(cfg, v1.ImportImageErrorsExist) {
 			t.Fatalf("processImageStreamWatchEvent did not set import error to true %#v for stream %#v", cfg, is)
 		}
 
-		importErr := util.Condition(cfg, v1.ImportImageErrorsExist)
-		if len(importErr.Reason) == 0 || !util.NameInReason(cfg, importErr.Reason, is.Name) {
-			t.Fatalf("processImageStreamWatchEvent did not set import error reason field %#v for stream %#v", cfg, is)
+		cm, err = fakecmclient.Get(is.Name)
+		if err != nil {
+			t.Fatalf("error on cm get %s: %s", is.Name, err.Error())
+		}
+		if cm == nil {
+			t.Fatalf("cm get nil %s", is.Name)
+		}
+		if cm.Data == nil || len(cm.Data) == 0 {
+			t.Fatalf("processImageStreamWatchEvent did not put error for imagestream %s in configmap: %#v", is.Name, cm)
 		}
 	}
 }
@@ -1095,22 +1167,30 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 	h.processFiles(dir, files, cfg)
 	importError := util.Condition(cfg, v1.ImportImageErrorsExist)
 	importError.Status = corev1.ConditionTrue
-	importError.Reason = "foo "
-	importError.Message = "<imagestream/foo> import failed <imagestream/foo>"
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+		},
+		Data: map[string]string{"foo": "could not import"},
+	}
+	fakecmclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
+	fakecmclient.configMaps["foo"] = cm
 	util.ConditionUpdate(cfg, importError)
 	err := h.processImageStreamWatchEvent(stream, false)
 	if err != nil {
 		t.Fatalf("processImageStreamWatchEvent error %#v", err)
 	}
+	_, stillHasCM := fakecmclient.configMaps["foo"]
+	if stillHasCM {
+		t.Fatalf("clean imagestream did not delete configmap")
+	}
+	event := util.Event{
+		Deleted: true,
+		Object:  cm,
+	}
+	h.Handle(event)
 	if util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
 		t.Fatalf("processImageStreamWatchEvent did not set import error to false %#v", cfg)
-	}
-	importErr := util.Condition(cfg, v1.ImportImageErrorsExist)
-	if len(importErr.Reason) > 0 && util.NameInReason(cfg, importErr.Reason, stream.Name) {
-		t.Fatalf("processImageStreamWatchEvent did not set import error reason field %#v", cfg)
-	}
-	if len(importErr.Message) > 0 {
-		t.Fatalf("processImageStreamWatchEvent did not set import error message field %#v", cfg)
 	}
 }
 
@@ -1277,7 +1357,7 @@ func getTKeys() []string {
 }
 
 func mimic(h *Handler, topdir string) {
-	cache.ClearUpsertsCache()
+	//cache.ClearUpsertsCache()
 	registry1 := "registry.access.redhat.com"
 	registry2 := "registry.redhat.io"
 	fakefile := h.Filefinder.(*fakeResourceFileLister)

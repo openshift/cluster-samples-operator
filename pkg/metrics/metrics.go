@@ -2,19 +2,21 @@ package metrics
 
 import (
 	"encoding/json"
-	"strings"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sirupsen/logrus"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/selection"
 
+	"k8s.io/apimachinery/pkg/labels"
 	corelisters "k8s.io/client-go/listers/core/v1"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	configv1 "github.com/openshift/api/samples/v1"
 	sampoplisters "github.com/openshift/client-go/samples/listers/samples/v1"
-
 	"github.com/openshift/cluster-samples-operator/pkg/client"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -98,8 +100,9 @@ type dockerConfigJSON struct {
 }
 
 type samplesCollector struct {
-	secrets corelisters.SecretNamespaceLister
-	config  sampoplisters.ConfigLister
+	secrets    corelisters.SecretNamespaceLister
+	config     sampoplisters.ConfigLister
+	configmaps corelisters.ConfigMapNamespaceLister
 }
 
 func (sc *samplesCollector) Describe(ch chan<- *prometheus.Desc) {
@@ -124,9 +127,23 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 		skips[skip] = true
 	}
 
-	importFailuresExist := util.ConditionTrue(cfg, configv1.ImportImageErrorsExist)
-	importFailures := util.Condition(cfg, configv1.ImportImageErrorsExist)
-	importFailuresReason := importFailures.Reason
+	selector := labels.NewSelector()
+	requirement, err := labels.NewRequirement(util.ImageStreamErrorLabel, selection.Equals, []string{"true"})
+	if err != nil {
+		logrus.Infof("unexpected error building configmap selector: %s", err.Error())
+		return
+	}
+	selector.Add(*requirement)
+	cms, err := sc.configmaps.List(selector)
+	streamsWithErrors := map[string]string{}
+	if err != nil && !kerrors.IsNotFound(err) {
+		logrus.Infof("unexpected error on configmaps list: %s", err.Error())
+	}
+	if cms != nil && len(cms) > 0 {
+		for _, cm := range cms {
+			streamsWithErrors[cm.Name] = cm.Name
+		}
+	}
 	for _, stream := range streams {
 		_, skipped := skips[stream]
 
@@ -135,8 +152,9 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 			addCountGauge(ch, importsFailedDesc, stream, float64(0))
 			continue
 		}
-		// if there are import failures, and this stream is in the list maintained in the Reason field, set to 1
-		if importFailuresExist && (strings.HasPrefix(importFailuresReason, stream+" ") || strings.Contains(importFailuresReason, " "+stream+" ") || strings.HasSuffix(importFailuresReason, " "+stream)) {
+
+		_, hasFailures := streamsWithErrors[stream]
+		if hasFailures {
 			addCountGauge(ch, importsFailedDesc, stream, float64(1))
 			continue
 		}
@@ -202,6 +220,7 @@ func init() {
 func InitializeMetricsCollector(listers *client.Listers) {
 	sc.secrets = listers.ConfigNamespaceSecrets
 	sc.config = listers.Config
+	sc.configmaps = listers.ConfigMaps
 
 	if !registered {
 		prometheus.MustRegister(&sc)

@@ -83,15 +83,13 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 // first boolean: did the config change at all
 // second boolean: does the config change require a samples upsert; for example, simply adding
 // to a skip list does not require a samples upsert
-// third boolean: even if an upsert is not needed, update the config instance to clear out image import errors
-// fourth boolean: if the registry changed, that means a) we have to update all imagestreams regardless of skip lists;
+// thrid boolean: if the registry changed, that means a) we have to update all imagestreams regardless of skip lists;
 // and b) we don't have to update the templates if that is the only change
 // first map: imagestreams that were unskipped (imagestream updates can be expensive, so an optimization)
 // second map: templates that were unskipped
-func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool, bool, map[string]bool, map[string]bool) {
+func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool, map[string]bool, map[string]bool) {
 	configChangeAtAll := false
 	configChangeRequireUpsert := false
-	clearImageImportErrors := false
 	registryChange := false
 
 	logrus.Debugf("the before skipped templates %#v", cfg.Status.SkippedTemplates)
@@ -127,7 +125,7 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool, bool,
 		configChangeAtAll = true
 		configChangeRequireUpsert = true
 		registryChange = true
-		return configChangeAtAll, configChangeRequireUpsert, clearImageImportErrors, registryChange, unskippedStreams, unskippedTemplates
+		return configChangeAtAll, configChangeRequireUpsert, registryChange, unskippedStreams, unskippedTemplates
 	}
 
 	streamChange := false
@@ -159,16 +157,13 @@ func (h *Handler) VariableConfigChanged(cfg *v1.Config) (bool, bool, bool, bool,
 	// see if need to update the cfg from the main loop to clear out any prior image import
 	// errors for skipped streams
 	for _, stream := range cfg.Spec.SkippedImagestreams {
-		importErrors := util.Condition(cfg, v1.ImportImageErrorsExist)
-		beforeError := util.NameInReason(cfg, importErrors.Reason, stream)
-		h.clearStreamFromImportError(stream, util.Condition(cfg, v1.ImportImageErrorsExist), cfg)
-		if beforeError {
-			clearImageImportErrors = true
-			// we do not break here cause we want to clear out all possible streams
+		err := h.configmapclientwrapper.Delete(stream)
+		if err != nil && !kerrors.IsNotFound(err) {
+			logrus.Warningf("unexpected error trying to delete config map %s: %s", stream, err.Error())
 		}
 	}
 
-	return configChangeAtAll, configChangeRequireUpsert, clearImageImportErrors, registryChange, unskippedStreams, unskippedTemplates
+	return configChangeAtAll, configChangeRequireUpsert, registryChange, unskippedStreams, unskippedTemplates
 }
 
 func (h *Handler) buildSkipFilters(opcfg *v1.Config) {

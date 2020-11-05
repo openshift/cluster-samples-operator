@@ -151,35 +151,34 @@ type Handler struct {
 // - cfg: return this if we want to check the status of a prior upsert
 // - filePath: used to the caller to look up the image content for the upsert
 // - doUpsert: whether to do the upsert of not ... not doing the upsert optionally triggers the need for checking status of prior upsert
-// - updateCfgOnly: if we want to update the cfg without any upsert attempts or processing
 // - err: if a problem occurred getting the Config, we return the error to bubble up and initiate a retry
-func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[string]string, deleted bool) (*v1.Config, string, bool, bool, error) {
+func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[string]string, deleted bool) (*v1.Config, string, bool, error) {
 	cfg, err := h.crdwrapper.Get(v1.ConfigName)
 	if cfg == nil || err != nil {
 		// if not found, then this also would mean a deletion event
 		if kerrors.IsNotFound(err) {
 			logrus.Printf("Received watch event %s but not upserting since deletion of the Config is in progress", kind+"/"+name)
-			return nil, "", false, false, nil
+			return nil, "", false, nil
 		}
 		logrus.Printf("Received watch event %s but not upserting since not have the Config yet: %#v %#v", kind+"/"+name, err, cfg)
-		return nil, "", false, false, err
+		return nil, "", false, err
 	}
 
 	if cfg.DeletionTimestamp != nil {
 		// we do no return the cfg in this case because we do not want to bother with any progress tracking
 		logrus.Printf("Received watch event %s but not upserting since deletion of the Config is in progress", kind+"/"+name)
 		// note, the imagestream watch cache gets cleared once the deletion/finalizer processing commences
-		return nil, "", false, false, nil
+		return nil, "", false, nil
 	}
 
 	// we do not return the cfg in these cases because we do not want to bother with any progress tracking
 	switch cfg.Spec.ManagementState {
 	case operatorsv1api.Removed:
 		logrus.Debugf("Not upserting %s/%s event because operator is in removed state and image changes are not in progress", kind, name)
-		return nil, "", false, false, nil
+		return nil, "", false, nil
 	case operatorsv1api.Unmanaged:
 		logrus.Debugf("Not upserting %s/%s event because operator is in unmanaged state and image changes are not in progress", kind, name)
-		return nil, "", false, false, nil
+		return nil, "", false, nil
 	}
 
 	filePath := ""
@@ -202,32 +201,17 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 			logrus.Printf("watch stream event %s not part of operators inventory", name)
 			// we now have cases where sample providers are deleting entire imagestreams;
 			// let's make sure there are no stale entries with inprogress / importerror
-			processing := util.Condition(cfg, v1.ImageChangesInProgress)
-			needToUpdate := util.NameInReason(cfg, processing.Reason, name)
-			if needToUpdate {
-				now := kapis.Now()
-				processing.Reason = util.ClearNameInReason(cfg, processing.Reason, name)
-				logrus.Debugf("processing reason now %s", processing.Reason)
-				if len(strings.TrimSpace(processing.Reason)) == 0 {
-					logrus.Println("The last in progress imagestream has completed (removed imagestream check)")
-					processing.Status = corev1.ConditionFalse
-					processing.Reason = ""
-					processing.LastTransitionTime = now
-				}
-				processing.LastUpdateTime = now
-				util.ConditionUpdate(cfg, processing)
+			_, err := h.configmapclientwrapper.Get(name)
+			if err != nil && kerrors.IsNotFound(err) {
+				// ConfigMap should only exist if the imagestream has an error
+				return nil, "", false, nil
 			}
-			importErrors := util.Condition(cfg, v1.ImportImageErrorsExist)
-			needToUpdate2 := util.NameInReason(cfg, importErrors.Reason, name)
-			if needToUpdate2 {
-				h.mapsMutex.Lock()
-				defer h.mapsMutex.Unlock()
-				h.clearStreamFromImportError(name, importErrors, cfg)
+			if err != nil {
+				// GET errors indicate a potential issue with the apiserver, return error and try again
+				return nil, "", false, err
 			}
-			if needToUpdate || needToUpdate2 {
-				return cfg, "", false, true, nil
-			}
-			return nil, "", false, false, nil
+			err = h.configmapclientwrapper.Delete(name)
+			return nil, "", false, err
 		}
 		_, skipped = h.skippedImagestreams[name]
 	case "template":
@@ -236,7 +220,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 			// in the case of templates we can just ignore content from prior releases that is no longer
 			// part of the current release
 			logrus.Printf("watch template event %s not part of operators inventory", name)
-			return nil, "", false, false, nil
+			return nil, "", false, nil
 		}
 		_, skipped = h.skippedTemplates[name]
 	}
@@ -244,12 +228,12 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 	if skipped {
 		logrus.Printf("watch event %s in skipped list for %s", name, kind)
 		// but return cfg to potentially toggle pending/import error condition
-		return cfg, "", false, false, nil
+		return cfg, "", false, nil
 	}
 
-	if deleted && (kind == "template" || cache.UpsertsAmount() == 0) {
+	if deleted { //&& (kind == "template" || cache.UpsertsAmount() == 0) {
 		logrus.Printf("going to recreate deleted managed sample %s/%s", kind, name)
-		return cfg, filePath, true, false, nil
+		return cfg, filePath, true, nil
 	}
 
 	if util.ConditionFalse(cfg, v1.ImageChangesInProgress) &&
@@ -258,7 +242,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		// finished processing the list
 		// avoid (re)upsert, but check import status
 		logrus.Printf("watch event for %s/%s while migration in progress, image in progress is false; will not update sample because of this event", kind, name)
-		return cfg, "", false, false, nil
+		return cfg, "", false, nil
 	}
 
 	if annotations != nil {
@@ -267,11 +251,11 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		if ok && isv == h.version {
 			logrus.Debugf("Not upserting %s/%s cause operator version matches", kind, name)
 			// but return cfg to potentially toggle pending condition
-			return cfg, "", false, false, nil
+			return cfg, "", false, nil
 		}
 	}
 
-	return cfg, filePath, true, false, nil
+	return cfg, filePath, true, nil
 }
 
 func (h *Handler) GoodConditionUpdate(cfg *v1.Config, newStatus corev1.ConditionStatus, conditionType v1.ConfigConditionType) {
@@ -548,8 +532,6 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 		}
 	}
 
-	cache.ClearUpsertsCache()
-
 	tempList, err := h.templateclientwrapper.List(iopts)
 	if err != nil && !kerrors.IsNotFound(err) {
 		logrus.Warnf("Problem listing openshift templates on Config delete: %#v", err)
@@ -573,6 +555,23 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 		}
 	}
 
+	cmList, err := h.configmapclientwrapper.List()
+	if err != nil && !kerrors.IsNotFound(err) {
+		logrus.Warnf("Problem listing sample operator config maps on Config delete: %v", err.Error())
+		return err
+	} else {
+		for _, cm := range cmList {
+			if cm.Name == util.IST2ImageMap {
+				continue
+			}
+			err := h.configmapclientwrapper.Delete(cm.Name)
+			if err != nil && !kerrors.IsNotFound(err) {
+				logrus.Warnf("Problem deleting samples operator config map %s on Config delete: %v", cm.Name, err.Error())
+				return err
+			}
+		}
+	}
+
 	// FYI we no longer delete the credential because the payload imagestreams like cli, must-gather that
 	// this operator initially installs via its manifest, but does not manage, needs the pull image secret
 
@@ -582,8 +581,11 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 func (h *Handler) Handle(event util.Event) error {
 	switch event.Object.(type) {
 	case *corev1.ConfigMap:
-		//TODO any validations on our configmap with imagestreamtags to images
-		return nil
+		cm, _ := event.Object.(*corev1.ConfigMap)
+		if cm.Name == util.IST2ImageMap {
+			return nil
+		}
+		return h.processImageCondition()
 
 	case *imagev1.ImageStream:
 		is, _ := event.Object.(*imagev1.ImageStream)
@@ -613,11 +615,11 @@ func (h *Handler) Handle(event util.Event) error {
 		// and event delete flag true
 		if event.Deleted {
 			logrus.Info("A previous delete attempt has been successfully completed")
-			h.cvowrapper.UpdateOperatorStatus(cfg, true, h.tbrCheckFailed)
+			h.cvowrapper.UpdateOperatorStatus(cfg, true, h.tbrCheckFailed, h.activeImageStreams())
 			return nil
 		}
 		if cfg.DeletionTimestamp != nil {
-			h.cvowrapper.UpdateOperatorStatus(cfg, true, h.tbrCheckFailed)
+			h.cvowrapper.UpdateOperatorStatus(cfg, true, h.tbrCheckFailed, h.activeImageStreams())
 			// before we kick off the delete cycle though, we make sure a prior creation
 			// cycle is not still in progress, because we don't want the create adding back
 			// in things we just deleted ... if an upsert is still in progress, return an error;
@@ -631,7 +633,7 @@ func (h *Handler) Handle(event util.Event) error {
 			}
 
 			// nuke any registered upserts
-			cache.ClearUpsertsCache()
+			//cache.ClearUpsertsCache()
 
 			if h.NeedsFinalizing(cfg) {
 				// so we initiate the delete and set exists to false first, where if we get
@@ -690,7 +692,7 @@ func (h *Handler) Handle(event util.Event) error {
 		// Every time we see a change to the Config object, update the ClusterOperator status
 		// based on the current conditions of the Config.
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		err := h.cvowrapper.UpdateOperatorStatus(cfg, false, h.tbrCheckFailed)
+		err := h.cvowrapper.UpdateOperatorStatus(cfg, false, h.tbrCheckFailed, h.activeImageStreams())
 		if err != nil {
 			logrus.Errorf("error updating cluster operator status: %v", err)
 			return err
@@ -738,17 +740,15 @@ func (h *Handler) Handle(event util.Event) error {
 		h.buildSkipFilters(cfg)
 		configChanged := false
 		configChangeRequiresUpsert := false
-		configChangeRequiresImportErrorUpdate := false
 		registryChanged := false
 		unskippedStreams := map[string]bool{}
 		unskippedTemplates := map[string]bool{}
 		if cfg.Spec.ManagementState == cfg.Status.ManagementState {
 			cfg = h.refetchCfgMinimizeConflicts(cfg)
-			configChanged, configChangeRequiresUpsert, configChangeRequiresImportErrorUpdate, registryChanged, unskippedStreams, unskippedTemplates = h.VariableConfigChanged(cfg)
-			logrus.Debugf("config changed %v upsert needed %v import error upd needed %v exists/true %v progressing/false %v op version %s status version %s",
+			configChanged, configChangeRequiresUpsert, registryChanged, unskippedStreams, unskippedTemplates = h.VariableConfigChanged(cfg)
+			logrus.Debugf("config changed %v upsert needed %v exists/true %v progressing/false %v op version %s status version %s",
 				configChanged,
 				configChangeRequiresUpsert,
-				configChangeRequiresImportErrorUpdate,
 				util.ConditionTrue(cfg, v1.SamplesExist),
 				util.ConditionFalse(cfg, v1.ImageChangesInProgress),
 				h.version,
@@ -835,16 +835,6 @@ func (h *Handler) Handle(event util.Event) error {
 			dbg := "upd status version"
 			logrus.Printf("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
-			/*if cfg.ConditionFalse(cfg, v1.ImportImageErrorsExist) {
-				cfg.Status.Version = h.version
-				logrus.Printf("The samples are now at version %s", cfg.Status.Version)
-				logrus.Println("CRDUPDATE upd status version")
-				return h.crdwrapper.UpdateStatus(cfg)
-			}
-			logrus.Printf("An image import error occurred applying the latest configuration on version %s, problem resolution needed", h.version
-			return nil
-
-			*/
 		}
 
 		if len(cfg.Spec.Architectures) == 0 {
@@ -860,14 +850,6 @@ func (h *Handler) Handle(event util.Event) error {
 		}
 		for _, name := range cfg.Status.SkippedImagestreams {
 			h.setSampleManagedLabelToFalse("imagestream", name)
-		}
-
-		// this boolean is driven by VariableConfigChanged based on comparing spec/status skip lists and
-		// cross referencing with any image import errors
-		if configChangeRequiresImportErrorUpdate && !configChangeRequiresUpsert {
-			dbg := "config change did not require upsert but did change import errors"
-			logrus.Printf("CRDUPDATE %s", dbg)
-			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
 		if configChanged && !configChangeRequiresUpsert && util.ConditionTrue(cfg, v1.SamplesExist) {
@@ -887,6 +869,30 @@ func (h *Handler) Handle(event util.Event) error {
 			h.upsertInProgress = true
 			turnFlagOff := func(h *Handler) { h.upsertInProgress = false }
 			defer turnFlagOff(h)
+
+			atLeastOneImageStream := false
+			for isName := range h.imagestreamFile {
+				_, skipped := h.skippedImagestreams[isName]
+				unskipping := len(unskippedStreams) > 0
+				_, unskipped := unskippedStreams[isName]
+				if (unskipping && !unskipped) || skipped {
+					continue
+				}
+
+				cm := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      isName,
+						Namespace: v1.OperatorNamespace,
+					},
+					Data: map[string]string{},
+				}
+				_, err = h.configmapclientwrapper.Create(cm)
+				if err != nil && !kerrors.IsAlreadyExists(err) {
+					return err
+				}
+				atLeastOneImageStream = true
+			}
+
 			abortForDelete, err := h.createSamples(cfg, true, registryChanged, unskippedStreams, unskippedTemplates)
 			// we prioritize enabling delete vs. any error processing from createSamples (though at the moment that
 			// method only returns nil error when it returns true for abortForDelete) as a subsequent delete's processing will
@@ -917,18 +923,8 @@ func (h *Handler) Handle(event util.Event) error {
 			progressing := util.Condition(cfg, v1.ImageChangesInProgress)
 			progressing.Reason = ""
 			progressing.Message = ""
-			for isName := range h.imagestreamFile {
-				_, skipped := h.skippedImagestreams[isName]
-				unskipping := len(unskippedStreams) > 0
-				_, unskipped := unskippedStreams[isName]
-				if unskipping && !unskipped {
-					continue
-				}
-				if !util.NameInReason(cfg, progressing.Reason, isName) && !skipped {
-					progressing.Reason = progressing.Reason + isName + " "
-				}
-			}
-			if len(progressing.Reason) > 0 {
+
+			if atLeastOneImageStream {
 				progressing.LastUpdateTime = now
 				progressing.LastTransitionTime = now
 				logrus.Debugf("Handle changing processing from false to true")
@@ -956,7 +952,6 @@ func (h *Handler) Handle(event util.Event) error {
 				}
 				return nil
 			}
-			logrus.Debugf("Handle Reason field set to %s", progressing.Reason)
 			util.ConditionUpdate(cfg, progressing)
 
 			// now that we employ status subresources, we can't populate
@@ -977,49 +972,6 @@ func (h *Handler) Handle(event util.Event) error {
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
-		// it is possible that all the cached imagestream events show that
-		// the image imports are complete; hence we would not get any more
-		// events until the next relist to clear out in progress; so let's
-		// cycle through them here now
-		if cache.AllUpsertEventsArrived() && util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
-			keysToClear := []string{}
-			anyChange := false
-			ac := false
-			cfg = h.refetchCfgMinimizeConflicts(cfg)
-			for key, is := range cache.GetUpsertImageStreams() {
-				if is == nil {
-					// never got update, refetch
-					var e error
-					is, e = h.imageclientwrapper.Get(key)
-					if e != nil {
-						keysToClear = append(keysToClear, key)
-						anyChange = true
-						continue
-					}
-				}
-				cfg, _, ac = h.processImportStatus(is, cfg)
-				anyChange = anyChange || ac
-			}
-			for _, key := range keysToClear {
-				cache.RemoveUpsert(key)
-				util.ClearNameInReason(cfg, util.Condition(cfg, v1.ImageChangesInProgress).Reason, key)
-				util.ClearNameInReason(cfg, util.Condition(cfg, v1.ImportImageErrorsExist).Reason, key)
-			}
-			if len(strings.TrimSpace(util.Condition(cfg, v1.ImageChangesInProgress).Reason)) == 0 {
-				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
-				logrus.Println("The last in progress imagestream has completed (config event loop)")
-			}
-			if anyChange {
-				dbg := "updating in progress after examining cached imagestream events"
-				logrus.Printf("CRDUPDATE %s", dbg)
-				err = h.crdwrapper.UpdateStatus(cfg, dbg)
-				if err == nil && util.ConditionFalse(cfg, v1.ImageChangesInProgress) {
-					// only clear out cache if we got the update through
-					cache.ClearUpsertsCache()
-				}
-				return err
-			}
-		}
 	}
 	return nil
 }
@@ -1092,9 +1044,6 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 		}
 
 		if _, isok := h.skippedImagestreams[imagestream.Name]; !isok {
-			if updateIfPresent {
-				cache.AddUpsert(imagestream.Name)
-			}
 			imagestreams = append(imagestreams, imagestream)
 		}
 
@@ -1118,9 +1067,6 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 
 		err = h.upsertImageStream(imagestream, is, cfg)
 		if err != nil {
-			if updateIfPresent {
-				cache.RemoveUpsert(imagestream.Name)
-			}
 			return false, err
 		}
 	}

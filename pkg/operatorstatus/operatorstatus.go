@@ -83,7 +83,7 @@ func (o *ClusterOperatorHandler) setOperatorStatusWithoutInterrogatingConfig(pro
 
 }
 
-func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionInProgress, tbrInaccessible bool) error {
+func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionInProgress, tbrInaccessible bool, activeImageStreams []string) error {
 	if deletionInProgress {
 		o.setOperatorStatusWithoutInterrogatingConfig(configv1.ConditionTrue, cfg, doingDelete)
 		// will ignore errors in delete path, but we at least log them above
@@ -134,7 +134,7 @@ func (o *ClusterOperatorHandler) UpdateOperatorStatus(cfg *v1.Config, deletionIn
 		logrus.Warningf("error occurred while attempting to set available condition: %s", err.Error())
 	}
 
-	progressing, reasonForProgressing, msgForProgressing := util.ClusterOperatorStatusProgressingCondition(cfg, degradedReason, available)
+	progressing, reasonForProgressing, msgForProgressing := util.ClusterOperatorStatusProgressingCondition(cfg, degradedReason, available, activeImageStreams)
 	err = o.setOperatorStatus(configv1.OperatorProgressing,
 		progressing,
 		msgForProgressing,

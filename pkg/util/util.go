@@ -115,31 +115,6 @@ func Condition(s *samplev1.Config, c samplev1.ConfigConditionType) *samplev1.Con
 	return &newCondition
 }
 
-func NameInReason(s *samplev1.Config, reason, name string) bool {
-	switch {
-	case strings.Index(reason, name+" ") == 0:
-		// if the first entry is name + " "
-		return true
-	case strings.Contains(reason, " "+name+" "):
-		// otherwise, for a subsequent entry, it must have a preceding space,
-		// to account for 'jenkins-agent-nodejs' vs. 'nodejs'
-		return true
-	default:
-		return false
-	}
-}
-
-func ClearNameInReason(s *samplev1.Config, reason, name string) string {
-	switch {
-	case strings.Index(reason, name+" ") == 0:
-		return strings.Replace(reason, name+" ", "", 1)
-	case strings.Contains(reason, " "+name+" "):
-		return strings.Replace(reason, " "+name+" ", " ", 1)
-	default:
-		return reason
-	}
-}
-
 const (
 	noInstallDetailed      = "Samples installation in error at %s: %s"
 	installed              = "Samples installation successful at %s"
@@ -153,6 +128,7 @@ const (
 	// defined above in this const block
 	numconfigConditionType = 7
 	IST2ImageMap           = "imagestreamtag-to-image"
+	ImageStreamErrorLabel  = "samples.openshift.io/imagestream-error"
 )
 
 // ClusterOperatorStatusAvailableCondition return values are as follows:
@@ -248,7 +224,7 @@ func ClusterOperatorStatusDegradedCondition(s *samplev1.Config) (configv1.Condit
 // 1) is the value to set on the ClusterOperator Progressing condition
 // 2) string is the reason to set on the condition if needed
 // 3) string is the message to set on the condition
-func ClusterOperatorStatusProgressingCondition(s *samplev1.Config, degradedState string, available configv1.ConditionStatus) (configv1.ConditionStatus, string, string) {
+func ClusterOperatorStatusProgressingCondition(s *samplev1.Config, degradedState string, available configv1.ConditionStatus, activeStreams []string) (configv1.ConditionStatus, string, string) {
 
 	// after online starter upgrade attempts while this operator was not set to managed,
 	// group arch discussion has decided that we report the Progressing==false if removed/unmanaged
@@ -269,7 +245,7 @@ func ClusterOperatorStatusProgressingCondition(s *samplev1.Config, degradedState
 		reason := ""
 		if ConditionTrue(s, samplev1.ImportImageErrorsExist) {
 			importErrors := Condition(s, samplev1.ImportImageErrorsExist)
-			msg = fmt.Sprintf(doneImportsFailed, s.Status.Version, importErrors.Reason, importErrors.LastUpdateTime.String())
+			msg = fmt.Sprintf(doneImportsFailed, s.Status.Version, strings.Join(activeStreams, ","), importErrors.LastUpdateTime.String())
 			reason = failedImageImports
 		}
 		return configv1.ConditionFalse, reason, msg
@@ -312,6 +288,13 @@ func IsIPv6() bool {
 		return false
 	}
 	logrus.Printf("based on host %s this is an ipv6 cluster", ip.String())
+	return true
+}
+
+func ImageStreamErrorExists(cm *corev1.ConfigMap) bool {
+	if value, exists := cm.Labels[ImageStreamErrorLabel]; !exists || value != "true" {
+		return false
+	}
 	return true
 }
 
