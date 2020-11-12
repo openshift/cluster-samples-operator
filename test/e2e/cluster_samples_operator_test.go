@@ -1146,16 +1146,6 @@ func coreTestUpgrade(t *testing.T) {
 		t.Fatalf("problem updating deployment env")
 	}
 
-	if cfg.Status.ManagementState == operatorsv1api.Managed {
-		err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-			cfg := verifyOperatorUp(t)
-			if util.ConditionTrue(cfg, samplesapi.MigrationInProgress) {
-				return true, nil
-			}
-			return false, nil
-		})
-	}
-
 	if err != nil {
 		dumpPod(t)
 		t.Fatalf("did not enter migration mode in time %#v", verifyOperatorUp(t))
