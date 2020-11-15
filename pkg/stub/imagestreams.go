@@ -315,6 +315,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 			retryIfNeeded = lastRetryTime.Time.Before(tenMinutesAgo)
 		}
 
+		tagsToPotentiallClearFromConfigMap := []string{}
 		for _, statusTag := range is.Status.Tags {
 			// if an error occurred with the latest generation, let's give up as we are no longer "in progress"
 			// in that case as well, but mark the import failure
@@ -336,8 +337,6 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 				if mostRecentErrorGeneration > 0 && mostRecentErrorGeneration >= latestGeneration {
 					logrus.Warningf("Image import for imagestream %s tag %s generation %v failed with detailed message %s", is.Name, statusTag.Tag, mostRecentErrorGeneration, message)
 					anyErrors = true
-					// update imagestream error message for this tag
-					err = h.storeImageStreamTagError(is.Name, statusTag.Tag, message)
 
 					// if a first time failure, or need to retry
 					if !h.imageStreamHasErrors(is.Name) ||
@@ -347,25 +346,44 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 						imgImport, err := importTag(is, statusTag.Tag)
 						if err != nil {
 							logrus.Warningf("attempted to define and imagestreamimport for imagestream/tag %s/%s but got err %v; simply moving on", is.Name, statusTag.Tag, err)
-							break
 						}
 						if imgImport == nil {
-							break
+							logrus.Warningf("attempted to define an imagestreamimport for imagestream/tag %s/%s bug got a nil image import reference", is.Name, statusTag.Tag)
 						}
-						imgImport, err = h.imageclientwrapper.ImageStreamImports("openshift").Create(context.TODO(), imgImport, kapis.CreateOptions{})
-						if err != nil {
-							logrus.Warningf("attempted to initiate an imagestreamimport retry for imagestream/tag %s/%s but got err %v; simply moving on", is.Name, statusTag.Tag, err)
-							break
+						if imgImport != nil && err == nil {
+							imgImport, err = h.imageclientwrapper.ImageStreamImports("openshift").Create(context.TODO(), imgImport, kapis.CreateOptions{})
+							if err != nil {
+								logrus.Warningf("attempted to initiate an imagestreamimport retry for imagestream/tag %s/%s but got err %v; simply moving on", is.Name, statusTag.Tag, err)
+							}
+							if err == nil {
+								metrics.ImageStreamImportRetry(is.Name)
+								logrus.Printf("initiated an imagestreamimport retry for imagestream/tag %s/%s", is.Name, statusTag.Tag)
+							}
+
 						}
-						metrics.ImageStreamImportRetry(is.Name)
-						logrus.Printf("initiated an imagestreamimport retry for imagestream/tag %s/%s", is.Name, statusTag.Tag)
 
 					}
 
+					// update imagestream error message for this tag
+					err = h.storeImageStreamTagError(is.Name, statusTag.Tag, message)
+					if err != nil {
+						return cfg, err
+					}
+
 				} else {
-					h.clearImageStreamTagError(is.Name, statusTag.Tag)
+					// in case the currently observed behavior of imagestreams changes and the conditions array is not
+					// cleared out when a tag is healthy, clear the tag here as well
+					// but at present time, this path will not be hit
+					tagsToPotentiallClearFromConfigMap = append(tagsToPotentiallClearFromConfigMap, statusTag.Tag)
 				}
+			} else {
+				// lack of conditions means there are no errors; conditions seem to now be cleared if errors resolved
+				tagsToPotentiallClearFromConfigMap = append(tagsToPotentiallClearFromConfigMap, statusTag.Tag)
 			}
+		}
+
+		if len(tagsToPotentiallClearFromConfigMap) > 0 {
+			err = h.clearImageStreamTagError(is.Name, tagsToPotentiallClearFromConfigMap)
 		}
 
 	} else {
