@@ -1146,6 +1146,30 @@ func coreTestUpgrade(t *testing.T) {
 		t.Fatalf("problem updating deployment env")
 	}
 
+	// confirm pod has new version env
+	podClient := kubeClient.CoreV1().Pods(samplesapi.OperatorNamespace)
+	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
+		pods, err := podClient.List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			t.Logf("error listing pods: %s", err.Error())
+			return false, nil
+		}
+		for _, pod := range pods.Items {
+			for _, c := range pod.Spec.Containers {
+				for _, env := range c.Env {
+					if strings.TrimSpace(env.Name) == "RELEASE_VERSION" && env.Value == newVersion {
+						return true, nil
+					}
+				}
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		dumpPod(t)
+		t.Fatalf("deployment RELEASE_VERSION change not reflected in pod")
+	}
+
 	if err != nil {
 		dumpPod(t)
 		t.Fatalf("did not enter migration mode in time %#v", verifyOperatorUp(t))
