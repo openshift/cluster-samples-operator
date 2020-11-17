@@ -42,17 +42,28 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			return nil
 		}
 
-		nonMatchDetail := ""
-
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		cfg, nonMatchDetail, err = h.processImportStatus(is, cfg)
+		cfg, err = h.processImportStatus(is, cfg)
 		if err != nil {
+			logrus.Warningf("process import status error %s on imagestream event %s", err.Error(), is.Name)
 			return err
 		}
-		if len(nonMatchDetail) > 0 {
-			logrus.Printf("imagestream %s still not finished with its image imports, including %s", is.Name, nonMatchDetail)
-		}
 
+		// the next two attempts to update samples conditions stem from analysis of installs with some amount of
+		// lower level issues (api server not ready, thottling, watches getting closed) as a failsafe to make sure
+		// the operator reports happiness to the CVO as quickly as possible... ultimately, with so many imagestreams, some of their events
+		// eventually get through
+		if h.shouldSetProgressingFalse(cfg) {
+			dbg := fmt.Sprintf("progressing false update on imagestream %s event", is.Name)
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
+		}
+		if h.shouldSetVersion(cfg) {
+			cfg.Status.Version = h.version
+			dbg := fmt.Sprintf("upd status version to %s on imagestream event %s", h.version, is.Name)
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
+		}
 		return nil
 
 	}
@@ -276,10 +287,9 @@ func (h *Handler) buildImageStreamErrorMessage() string {
 	return msg
 }
 
-func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (*v1.Config, string, error) {
+func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (*v1.Config, error) {
 	var err error
 	anyErrors := false
-	nonMatchDetail := ""
 	// in case we have to manipulate imagestream retry map
 	h.mapsMutex.Lock()
 	defer h.mapsMutex.Unlock()
@@ -305,6 +315,7 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 			retryIfNeeded = lastRetryTime.Time.Before(tenMinutesAgo)
 		}
 
+		tagsToPotentiallClearFromConfigMap := []string{}
 		for _, statusTag := range is.Status.Tags {
 			// if an error occurred with the latest generation, let's give up as we are no longer "in progress"
 			// in that case as well, but mark the import failure
@@ -326,8 +337,6 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 				if mostRecentErrorGeneration > 0 && mostRecentErrorGeneration >= latestGeneration {
 					logrus.Warningf("Image import for imagestream %s tag %s generation %v failed with detailed message %s", is.Name, statusTag.Tag, mostRecentErrorGeneration, message)
 					anyErrors = true
-					// update imagestream error message for this tag
-					err = h.storeImageStreamTagError(is.Name, statusTag.Tag, message)
 
 					// if a first time failure, or need to retry
 					if !h.imageStreamHasErrors(is.Name) ||
@@ -337,25 +346,44 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 						imgImport, err := importTag(is, statusTag.Tag)
 						if err != nil {
 							logrus.Warningf("attempted to define and imagestreamimport for imagestream/tag %s/%s but got err %v; simply moving on", is.Name, statusTag.Tag, err)
-							break
 						}
 						if imgImport == nil {
-							break
+							logrus.Warningf("attempted to define an imagestreamimport for imagestream/tag %s/%s bug got a nil image import reference", is.Name, statusTag.Tag)
 						}
-						imgImport, err = h.imageclientwrapper.ImageStreamImports("openshift").Create(context.TODO(), imgImport, kapis.CreateOptions{})
-						if err != nil {
-							logrus.Warningf("attempted to initiate an imagestreamimport retry for imagestream/tag %s/%s but got err %v; simply moving on", is.Name, statusTag.Tag, err)
-							break
+						if imgImport != nil && err == nil {
+							imgImport, err = h.imageclientwrapper.ImageStreamImports("openshift").Create(context.TODO(), imgImport, kapis.CreateOptions{})
+							if err != nil {
+								logrus.Warningf("attempted to initiate an imagestreamimport retry for imagestream/tag %s/%s but got err %v; simply moving on", is.Name, statusTag.Tag, err)
+							}
+							if err == nil {
+								metrics.ImageStreamImportRetry(is.Name)
+								logrus.Printf("initiated an imagestreamimport retry for imagestream/tag %s/%s", is.Name, statusTag.Tag)
+							}
+
 						}
-						metrics.ImageStreamImportRetry(is.Name)
-						logrus.Printf("initiated an imagestreamimport retry for imagestream/tag %s/%s", is.Name, statusTag.Tag)
 
 					}
 
+					// update imagestream error message for this tag
+					err = h.storeImageStreamTagError(is.Name, statusTag.Tag, message)
+					if err != nil {
+						return cfg, err
+					}
+
 				} else {
-					h.clearImageStreamTagError(is.Name, statusTag.Tag)
+					// in case the currently observed behavior of imagestreams changes and the conditions array is not
+					// cleared out when a tag is healthy, clear the tag here as well
+					// but at present time, this path will not be hit
+					tagsToPotentiallClearFromConfigMap = append(tagsToPotentiallClearFromConfigMap, statusTag.Tag)
 				}
+			} else {
+				// lack of conditions means there are no errors; conditions seem to now be cleared if errors resolved
+				tagsToPotentiallClearFromConfigMap = append(tagsToPotentiallClearFromConfigMap, statusTag.Tag)
 			}
+		}
+
+		if len(tagsToPotentiallClearFromConfigMap) > 0 {
+			err = h.clearImageStreamTagError(is.Name, tagsToPotentiallClearFromConfigMap)
 		}
 
 	} else {
@@ -364,9 +392,9 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 		err := h.configmapclientwrapper.Delete(is.Name)
 		if err != nil && !kerrors.IsNotFound(err) {
 			logrus.Warningf("unexpected error on delete of config map %s: %s", is.Name, err.Error())
-			return cfg, "", err
+			return cfg, err
 		}
-		return cfg, "", nil
+		return cfg, nil
 	}
 
 	logrus.Debugf("any errors %v for %s", anyErrors, is.Name)
@@ -379,5 +407,5 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 		}
 	}
 
-	return cfg, nonMatchDetail, err
+	return cfg, err
 }

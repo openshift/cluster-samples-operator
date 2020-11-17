@@ -236,8 +236,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return cfg, filePath, true, nil
 	}
 
-	if util.ConditionFalse(cfg, v1.ImageChangesInProgress) &&
-		(util.ConditionTrue(cfg, v1.MigrationInProgress) || h.version != cfg.Status.Version) {
+	if h.shouldSetVersion(cfg) {
 		// we have gotten events for items early in the migration list but we have not
 		// finished processing the list
 		// avoid (re)upsert, but check import status
@@ -759,15 +758,7 @@ func (h *Handler) Handle(event util.Event) error {
 				util.ConditionTrue(cfg, v1.SamplesExist) &&
 				util.ConditionFalse(cfg, v1.ImageChangesInProgress) &&
 				h.version == cfg.Status.Version {
-				logrus.Debugf("At steady state: config the same and exists is true, in progress false, and version correct")
-
-				// once the status version is in sync, we can turn off the migration condition
-				if util.ConditionTrue(cfg, v1.MigrationInProgress) {
-					h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.MigrationInProgress)
-					dbg := " turn migration off"
-					logrus.Printf("CRDUPDATE %s", dbg)
-					return h.crdwrapper.UpdateStatus(cfg, dbg)
-				}
+				logrus.Printf("At steady state: config the same and exists is true, in progress false, and version correct")
 
 				// migration inevitably means we need to refresh the file cache as samples are added and
 				// deleted between releases, so force file map building
@@ -803,30 +794,7 @@ func (h *Handler) Handle(event util.Event) error {
 		}
 
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		if util.ConditionFalse(cfg, v1.MigrationInProgress) &&
-			len(cfg.Status.Version) > 0 &&
-			h.version != cfg.Status.Version {
-			// delete ist to image map as we will need to build a new one;
-			// we do not remove this map during delete/remove processing
-			// to facilitate disconnected users deciding which images to mirror
-			err := h.configmapclientwrapper.Delete(util.IST2ImageMap)
-			if err != nil {
-				// simply retry
-				return err
-			}
-			logrus.Printf("Undergoing migration from %s to %s", cfg.Status.Version, h.version)
-			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.MigrationInProgress)
-			dbg := "turn migration on"
-			logrus.Printf("CRDUPDATE %s", dbg)
-			return h.crdwrapper.UpdateStatus(cfg, dbg)
-		}
-
-		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		if !configChanged &&
-			util.ConditionTrue(cfg, v1.SamplesExist) &&
-			util.ConditionFalse(cfg, v1.ImageChangesInProgress) &&
-			util.Condition(cfg, v1.MigrationInProgress).LastUpdateTime.Before(&util.Condition(cfg, v1.ImageChangesInProgress).LastUpdateTime) &&
-			h.version != cfg.Status.Version {
+		if !configChanged && h.shouldSetVersion(cfg) {
 			if util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
 				logrus.Printf("An image import error occurred applying the latest configuration on version %s; this operator will periodically retry the import, or an administrator can investigate and remedy manually", h.version)
 			}
@@ -1073,7 +1041,7 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 
 	// if after initial startup, and not migration, the only cfg change was changing the registry, since that does not impact
 	// the templates, we can move on
-	if len(unskippedTemplates) == 0 && registryChanged && util.ConditionTrue(cfg, v1.SamplesExist) && util.ConditionFalse(cfg, v1.MigrationInProgress) {
+	if len(unskippedTemplates) == 0 && registryChanged && h.sufficientSteadyStateForAnOperator(cfg) {
 		return false, nil
 	}
 
@@ -1137,4 +1105,117 @@ func getImageClient(restconfig *restclient.Config) (*imagev1client.ImageV1Client
 func GetNamespace() string {
 	b, _ := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/" + corev1.ServiceAccountNamespaceKey)
 	return string(b)
+}
+
+func (h *Handler) shouldSetProgressingFalse(cfg *v1.Config) bool {
+	present := h.numOfManagedImageStreamsPresent()
+	managed := h.numOfManagedImageStreams()
+	if present < managed {
+		logrus.Printf("shouldSetProgressingFalse: only %d of the %d imagestreams exist", present, managed)
+	}
+	return util.ConditionTrue(cfg, v1.SamplesExist) &&
+		util.ConditionTrue(cfg, v1.ImageChangesInProgress) &&
+		(len(h.activeImageStreams()) == 0 || util.ConditionTrue(cfg, v1.ImportImageErrorsExist)) &&
+		!h.upsertInProgress &&
+		present >= managed
+}
+
+func (h *Handler) shouldSetVersion(cfg *v1.Config) bool {
+	return util.ConditionTrue(cfg, v1.SamplesExist) &&
+		util.ConditionFalse(cfg, v1.ImageChangesInProgress) &&
+		!h.upsertInProgress &&
+		h.version != cfg.Status.Version &&
+		h.areStreamsAtCorrectVersion()
+}
+
+func (h *Handler) sufficientSteadyStateForAnOperator(cfg *v1.Config) bool {
+	return util.ConditionTrue(cfg, v1.SamplesExist) &&
+		util.ConditionFalse(cfg, v1.ImageChangesInProgress) &&
+		h.version == cfg.Status.Version
+}
+
+func (h *Handler) areStreamsAtCorrectVersion() bool {
+	for key, _ := range h.imagestreamFile {
+		// remember, our get wrapper goes through the lister, so we are only hitting the controller cache
+		skipped, ok := h.skippedImagestreams[key]
+		if skipped && ok {
+			continue
+		}
+		is, err := h.imageclientwrapper.Get(key)
+		if err != nil {
+			if !h.upsertInProgress {
+				// not all imagestreams may be created yet during initial or bulk creations
+				logrus.Warningf("areStreamsAtCorrectVersion: get of stream %s got error: %s", key, err.Error())
+			}
+			return false
+		}
+		if is == nil {
+			if !h.upsertInProgress {
+				// not all imagestreams may be created yet during initial or bulk creations
+				logrus.Warningf("areStreamsAtCorrectVersion: got nil for stream %s but no error", key)
+			}
+			return false
+		}
+		if is.Annotations == nil {
+			logrus.Warningf("areStreamsAtCorrectVersion: stream %s has no annotation map", key)
+			return false
+		}
+		isv, ok := is.Annotations[v1.SamplesVersionAnnotation]
+		if !ok {
+			logrus.Warningf("areStreamsAtCorrectVersion: stream %s does not have version annotation", key)
+			return false
+		}
+		if isv != h.version {
+			logrus.Warningf("areStreamsAtCorrectVersion: stream %s is at version %s instead of %s", key, isv, h.version)
+			return false
+		}
+	}
+	logrus.Printf("areStreamsAtCorrectVersion: all streams are now at the correct version %s", h.version)
+	return true
+}
+
+func (h *Handler) numOfManagedImageStreams() int {
+	rc := len(h.imagestreamFile) - len(h.skippedImagestreams)
+	return rc
+}
+
+func (h *Handler) numOfManagedImageStreamsPresent() int {
+	rc := 0
+	for key, _ := range h.imagestreamFile {
+		// remember, our get wrapper goes through the lister, so we are only hitting the controller cache
+		skipped, ok := h.skippedImagestreams[key]
+		if skipped && ok {
+			continue
+		}
+		is, err := h.imageclientwrapper.Get(key)
+		if err != nil {
+			if !h.upsertInProgress {
+				// not all imagestreams may be created yet during initial or bulk creations
+				logrus.Warningf("numOfManagedImageStreamsPresent: get of stream %s got error: %s", key, err.Error())
+			}
+			continue
+		}
+		if is == nil {
+			if !h.upsertInProgress {
+				// not all imagestreams may be created yet during initial or bulk creations
+				logrus.Warningf("numOfManagedImageStreamsPresent: got nil for stream %s but no error", key)
+			}
+			continue
+		}
+		if is.Labels == nil {
+			logrus.Warningf("numOfManagedImageStreamsPresent: stream %s has no labels map", key)
+			continue
+		}
+		managed, ok := is.Labels[v1.SamplesManagedLabel]
+		if !ok {
+			logrus.Warningf("numOfManagedImageStreamsPresent: stream %s does not have managed label", key)
+			continue
+		}
+		if managed != "true" {
+			logrus.Warningf("numOfManagedImageStreamsPresent: stream %s has managed value of %s but is not in internal skip list", key, managed)
+			continue
+		}
+		rc++
+	}
+	return rc
 }

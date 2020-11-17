@@ -1117,6 +1117,92 @@ func TestImageStreamImportError(t *testing.T) {
 	}
 }
 
+func TestImageStreamTagImportErrorRecovery(t *testing.T) {
+	two := int64(2)
+	one := int64(1)
+	stream := &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+			Annotations: map[string]string{
+				v1.SamplesVersionAnnotation: TestVersion,
+			},
+		},
+		Spec: imagev1.ImageStreamSpec{
+			Tags: []imagev1.TagReference{
+				{
+					Name:       "1",
+					Generation: &two,
+				},
+				{
+					Name:       "2",
+					Generation: &one,
+				},
+			},
+		},
+		Status: imagev1.ImageStreamStatus{
+			Tags: []imagev1.NamedTagEventList{
+				{
+					Tag: "1",
+					Items: []imagev1.TagEvent{
+						{
+							Generation: two,
+						},
+					},
+					Conditions: []imagev1.TagEventCondition{
+						{
+							Status:     corev1.ConditionFalse,
+							Generation: two,
+						},
+					},
+				},
+				{
+					Tag: "2",
+					Items: []imagev1.TagEvent{
+						{
+							Generation: two,
+						},
+					},
+				},
+			},
+		},
+	}
+	h, cfg, _ := setup()
+	mimic(&h, x86ContentRootDir)
+	dir := h.GetBaseDir(v1.X86Architecture, cfg)
+	files, _ := h.Filefinder.List(dir)
+	h.processFiles(dir, files, cfg)
+	importError := util.Condition(cfg, v1.ImportImageErrorsExist)
+	importError.Status = corev1.ConditionTrue
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+		},
+		Data: map[string]string{
+			"1": "could not import",
+			"2": "could not import",
+		},
+	}
+	fakecmclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
+	fakecmclient.configMaps["foo"] = cm
+	util.ConditionUpdate(cfg, importError)
+	err := h.processImageStreamWatchEvent(stream, false)
+	if err != nil {
+		t.Fatalf("processImageStreamWatchEvent error %#v", err)
+	}
+	cm, stillHasCM := fakecmclient.configMaps["foo"]
+	if !stillHasCM {
+		t.Fatalf("partially clean imagestream did not keep configmap")
+	}
+	_, stillHasCleanTag := cm.Data["2"]
+	if stillHasCleanTag {
+		t.Fatalf("partially clean imagestream still has clean tag in configmap")
+	}
+	_, stillHasBrokenTag := cm.Data["1"]
+	if !stillHasBrokenTag {
+		t.Fatalf("partially clean imagestream does not have tag that is still broke in configmap")
+	}
+}
+
 func TestImageStreamImportErrorRecovery(t *testing.T) {
 	two := int64(2)
 	one := int64(1)

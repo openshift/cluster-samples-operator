@@ -166,35 +166,34 @@ func (h *Handler) storeImageStreamTagError(isName, tagName, message string) erro
 	return err
 }
 
-func (h *Handler) clearImageStreamTagError(isName, tagName string) error {
+func (h *Handler) clearImageStreamTagError(isName string, tags []string) error {
 	cm, err := h.configmapclientwrapper.Get(isName)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			logrus.Warningf("unexpected error on get of configmap %s: %s", isName, err.Error())
 			return err
 		}
-		cm := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      isName,
-				Namespace: v1.OperatorNamespace,
-			},
-			Data: map[string]string{},
-		}
-		cm, err = h.configmapclientwrapper.Create(cm)
-		if err != nil && !kerrors.IsAlreadyExists(err) {
-			return err
-		}
+		logrus.Printf("clearImageStreamTagError: stream %s already deleted so no worries on clearing tags", isName)
+		return nil
 	}
 	if cm.Data == nil {
 		return nil
 	}
-	_, hasTag := cm.Data[tagName]
-	if !hasTag {
-		return nil
-	}
-	delete(cm.Data, tagName)
+	hasTag := false
+	for _, tagName := range tags {
+		_, ok := cm.Data[tagName]
+		if !ok {
+			continue
+		}
+		hasTag = true
+		logrus.Printf("clearing error messages from configmap for stream %s and tag %s", isName, tagName)
+		delete(cm.Data, tagName)
 
-	_, err = h.configmapclientwrapper.Update(cm)
+	}
+
+	if hasTag {
+		_, err = h.configmapclientwrapper.Update(cm)
+	}
 	return err
 
 }

@@ -68,7 +68,7 @@ The samples resource maintains the following conditions in its status:
 -- False when all imagestream changes are acknowledged 
 -- The list of pending imagestreams will be represented by a configmap for each imagestream in the samples operator's namespace (where the imagestream name is the configmap name).  When the imagestream has completed imports, the respective configmap for the imagestream is deleted.
 - ImportCredentialsExist
--- A 'samples-registry-credentials' secret has been copied into the openshift namespace
+-- Credentials for pulling from `registry.redhat.io` exist in the `pull-secret` Secret in the `openshift-config` namespace
 - ConfigurationValid
 -- True or false based on whether any of the restricted changes noted above have been submitted
 - RemovePending
@@ -78,7 +78,7 @@ The samples resource maintains the following conditions in its status:
 -- True when an error has occurred
 -- The configmap associated with the imagestream will remain in the samples operator's namespace.  There will be a key in the configmap's data map for each imagestreamtag, where the value of the entry will be the error message reported in the imagestream status.
 - MigrationInProgress
--- True when the samples operator has detected that its version is different than the samples operator version the current samples set were installed with
+-- This condition is deprecated as of the 4.7 branch of this repository.  Upgrade tracking is now achieved via the other conditions and both the per imagestream configmaps and the imagestream-to-image configmap. 
 
 # CVO Cluster Operator Status
 

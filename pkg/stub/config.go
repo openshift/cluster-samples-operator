@@ -221,13 +221,32 @@ func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 		cm = &corev1.ConfigMap{}
 		cm.Name = util.IST2ImageMap
 		cm.Namespace = v1.OperatorNamespace
+		cm.Annotations = map[string]string{}
+		cm.Annotations[v1.SamplesVersionAnnotation] = h.version
 		cm.Data = map[string]string{}
 		for key, value := range h.imagestreatagToImage {
 			cm.Data[key] = value
 		}
-		_, err = h.configmapclientwrapper.Create(cm)
-		if err != nil {
+		if _, err = h.configmapclientwrapper.Create(cm); err != nil {
 			return err
+		}
+	}
+	if err == nil {
+		if cm.Annotations == nil {
+			cm.Annotations = map[string]string{}
+		}
+		version, ok := cm.Annotations[v1.SamplesVersionAnnotation]
+		if !ok || version != h.version {
+			logrus.Printf("Updating %s configmap to version %s", util.IST2ImageMap, h.version)
+			cm.Annotations[v1.SamplesVersionAnnotation] = h.version
+			cm.Data = map[string]string{}
+			for key, value := range h.imagestreatagToImage {
+				cm.Data[key] = value
+			}
+			_, err = h.configmapclientwrapper.Update(cm)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
