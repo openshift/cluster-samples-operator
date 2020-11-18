@@ -60,9 +60,6 @@ func (h *Handler) processImageCondition() error {
 			}
 		}
 		switch {
-		case !anyErrors && util.ConditionFalse(cfg, v1.ImageChangesInProgress) && !h.upsertInProgress:
-			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.ImageChangesInProgress)
-			prefix = "progressing true"
 		case anyErrors && util.ConditionTrue(cfg, v1.ImageChangesInProgress):
 			h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
 			prefix = "progressing false"

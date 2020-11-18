@@ -64,8 +64,7 @@ The samples resource maintains the following conditions in its status:
 - SamplesExists
 -- Indicates the samples have been created in the openshift namespace
 - ImageChangesInProgress
--- True when imagestreams have been created/updated, but we are awaiting acknowledgment all the changes were applied  
--- False when all imagestream changes are acknowledged 
+-- This condition is deprecated as of the 4.7 branch of this repository.  `ImageStream` image imports are no longer tracked in real time via conditions on the samples config resource, nor do in progress `ImageStreams` directly affect updates to the `ClusterOperator` instance `openshift-samples`.  Prolonged errors with `ImageStreams` are reported now by Prometheus alerts. 
 -- The list of pending imagestreams will be represented by a configmap for each imagestream in the samples operator's namespace (where the imagestream name is the configmap name).  When the imagestream has completed imports, the respective configmap for the imagestream is deleted.
 - ImportCredentialsExist
 -- Credentials for pulling from `registry.redhat.io` exist in the `pull-secret` Secret in the `openshift-config` namespace
