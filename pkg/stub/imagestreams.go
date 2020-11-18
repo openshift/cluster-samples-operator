@@ -56,6 +56,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		if h.shouldSetProgressingFalse(cfg) {
 			dbg := fmt.Sprintf("progressing false update on imagestream %s event", is.Name)
 			logrus.Printf("CRDUPDATE %s", dbg)
+			h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 		if h.shouldSetVersion(cfg) {
