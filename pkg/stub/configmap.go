@@ -127,7 +127,7 @@ func (h *Handler) imageStreamHasErrors(isName string) bool {
 }
 
 func (h *Handler) storeImageStreamTagError(isName, tagName, message string) error {
-	cm, err := h.configmapclientwrapper.Get(isName)
+	cmFromControllerCache, err := h.configmapclientwrapper.Get(isName)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			logrus.Warningf("unexpected error on get of configmap %s: %s", isName, err.Error())
@@ -151,6 +151,12 @@ func (h *Handler) storeImageStreamTagError(isName, tagName, message string) erro
 		}
 		return nil
 	}
+	// need to deep copy like we do in controller logic on configmap events, but this call
+	// can stem from non-configmap events; need to copy before we change cached copy
+	cm := &corev1.ConfigMap{}
+	if cmFromControllerCache != nil {
+		cmFromControllerCache.DeepCopyInto(cm)
+	}
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
@@ -164,7 +170,7 @@ func (h *Handler) storeImageStreamTagError(isName, tagName, message string) erro
 }
 
 func (h *Handler) clearImageStreamTagError(isName string, tags []string) error {
-	cm, err := h.configmapclientwrapper.Get(isName)
+	cmFromControllerCache, err := h.configmapclientwrapper.Get(isName)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			logrus.Warningf("unexpected error on get of configmap %s: %s", isName, err.Error())
@@ -173,9 +179,13 @@ func (h *Handler) clearImageStreamTagError(isName string, tags []string) error {
 		logrus.Printf("clearImageStreamTagError: stream %s already deleted so no worries on clearing tags", isName)
 		return nil
 	}
-	if cm.Data == nil {
+	if cmFromControllerCache == nil || cmFromControllerCache.Data == nil {
 		return nil
 	}
+	// need to deep copy like we do in controller logic on configmap events, but this call
+	// can stem from non-configmap events; need to copy before we change cached copy
+	cm := &corev1.ConfigMap{}
+	cmFromControllerCache.DeepCopyInto(cm)
 	hasTag := false
 	for _, tagName := range tags {
 		_, ok := cm.Data[tagName]
