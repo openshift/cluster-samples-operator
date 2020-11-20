@@ -49,30 +49,11 @@ func TestWrongSampleResourceName(t *testing.T) {
 	validate(true, err, "", cfg, []v1.ConfigConditionType{}, []corev1.ConditionStatus{}, t)
 }
 
-func TestNoArchOrDist(t *testing.T) {
-	h, cfg, event := setup()
-	err := h.Handle(event)
-	// image in progress (4th entry, array index 3) should still be false when there is no content ... a la z or ppc
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
-	err = h.Handle(event)
-	// and on a subsequent event, exists should still be false since we did not create any content previously
-	validate(true, err, "", cfg, conditions, statuses, t)
-}
-
 func TestWithDist(t *testing.T) {
 	h, cfg, event := setup()
-	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
-	err = h.Handle(event)
-	// image in progress (4th entry, array index 3) should still be false when there is no content ... a la z or ppc
-	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
 	mimic(&h, x86ContentRootDir)
-	err = h.Handle(event)
-	// with content present, image im progress should now be true
-	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	err := h.Handle(event)
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 }
 
@@ -91,12 +72,7 @@ func TestWithArchDist(t *testing.T) {
 
 	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg,
-		conditions,
-		statuses, t)
-	err = h.Handle(event)
-	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg,
 		conditions,
 		statuses, t)
@@ -110,7 +86,7 @@ func TestWithArch(t *testing.T) {
 		v1.PPCArchitecture,
 	}
 	err := h.Handle(event)
-	validateArchOverride(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t, v1.PPCArchitecture)
+	validateArchOverride(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t, v1.PPCArchitecture)
 }
 
 func TestWithBadArch(t *testing.T) {
@@ -149,18 +125,7 @@ func TestManagementState(t *testing.T) {
 	cfg.ResourceVersion = "2"
 	cfg.Spec.ManagementState = operatorsv1api.Managed
 	err = h.Handle(event)
-	statuses = []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
-
-	err = h.Handle(event)
-	// event after in progress set to true, sets exists to true
-	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
-	validate(true, err, "", cfg, conditions, statuses, t)
-
-	// event after exists is true that should trigger samples upsert
-	err = h.Handle(event)
-	// event after in progress set to true
-	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	for _, key := range iskeys {
@@ -218,7 +183,7 @@ func TestSkipped(t *testing.T) {
 	mimic(&h, x86ContentRootDir)
 
 	err := h.Handle(event)
-	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	for _, key := range iskeys {
@@ -324,16 +289,7 @@ func TestProcessed(t *testing.T) {
 	err := h.Handle(event)
 	validate(true, err, "", cfg,
 		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-
-	err = h.Handle(event)
-	validate(true, err, "", cfg,
-		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
-	err = h.Handle(event)
-	validate(true, err, "", cfg,
-		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	for _, key := range iskeys {
@@ -370,18 +326,14 @@ func TestProcessed(t *testing.T) {
 	// make sure registries are updated after already updating from the defaults
 	cfg.Spec.SamplesRegistry = "bar.io"
 	cfg.ResourceVersion = "2"
-	// fake out that the samples completed updating
-	progressing := util.Condition(cfg, v1.ImageChangesInProgress)
-	progressing.Status = corev1.ConditionFalse
-	util.ConditionUpdate(cfg, progressing)
-	// in conjuction, clear out config map tracking
+	// clear out config map tracking
 	fakecfgmapclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
 		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 	is, _ = fakeisclient.Get("foo")
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
@@ -398,11 +350,7 @@ func TestProcessed(t *testing.T) {
 	// make sure registries are updated when sampleRegistry is the form of host/path
 	cfg.Spec.SamplesRegistry = "foo.io/bar"
 	cfg.ResourceVersion = "3"
-	// fake out that the samples completed updating
-	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
-	progressing.Status = corev1.ConditionFalse
-	util.ConditionUpdate(cfg, progressing)
-	// in conjuction, clear out config map tracking
+	// clear out config map tracking
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	// reset operator image to clear out previous registry image override
 	mimic(&h, x86ContentRootDir)
@@ -410,7 +358,7 @@ func TestProcessed(t *testing.T) {
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
 		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 	is, _ = fakeisclient.Get("foo")
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
@@ -427,11 +375,7 @@ func TestProcessed(t *testing.T) {
 	// make sure registries are updated when sampleRegistry is the form of host:port/path
 	cfg.Spec.SamplesRegistry = "foo.io:1111/bar"
 	cfg.ResourceVersion = "4"
-	// fake out that the samples completed updating
-	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
-	progressing.Status = corev1.ConditionFalse
-	util.ConditionUpdate(cfg, progressing)
-	// in conjuction, clear out config map tracking
+	// clear out config map tracking
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	// reset operator image to clear out previous registry image override
 	mimic(&h, x86ContentRootDir)
@@ -439,7 +383,7 @@ func TestProcessed(t *testing.T) {
 	err = h.Handle(event)
 	validate(true, err, "", cfg,
 		conditions,
-		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
+		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 	is, _ = fakeisclient.Get("foo")
 	if is == nil || !strings.HasPrefix(is.Spec.DockerImageRepository, cfg.Spec.SamplesRegistry) {
 		t.Fatalf("stream repo not updated %#v, %#v", is, h)
@@ -455,12 +399,7 @@ func TestProcessed(t *testing.T) {
 	// make sure registries are updated when switch back to default
 	cfg.ResourceVersion = "5"
 	cfg.Spec.SamplesRegistry = ""
-	// also make sure processing occurs for disruptive config change even if progressing==true
-	progressing = util.Condition(cfg, v1.ImageChangesInProgress)
-	// fake out that the samples completed updating
-	progressing.Status = corev1.ConditionFalse
-	util.ConditionUpdate(cfg, progressing)
-	// in conjuction, clear out config map tracking
+	// clear out config map tracking
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	// reset operator image to clear out previous registry image override
 	mimic(&h, x86ContentRootDir)
@@ -484,7 +423,7 @@ func TestImageStreamEvent(t *testing.T) {
 	h, cfg, event := setup()
 	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	// expedite the stream events coming in
 	//cache.ClearUpsertsCache()
@@ -535,17 +474,11 @@ func TestImageStreamEvent(t *testing.T) {
 		t.Fatalf("is did not reach client %s: %#v", "foo", h)
 	}
 
-	// mimic img change condition event that sets exists to true
-	err = h.Handle(event)
-	statuses[0] = corev1.ConditionTrue
-	validate(true, err, "", cfg, conditions, statuses, t)
-
 	// with the update above, now process both of the imagestreams and see the in progress condition
 	// go false
 	is.Annotations[v1.SamplesVersionAnnotation] = h.version
 	h.processImageStreamWatchEvent(is, false)
 	validate(true, err, "", cfg, conditions, statuses, t)
-	statuses[3] = corev1.ConditionFalse
 	is = &imagev1.ImageStream{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "bar",
@@ -612,7 +545,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 	h, cfg, event := setup()
 	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	tagVersion := int64(1)
@@ -752,7 +685,7 @@ func TestTemplateEvent(t *testing.T) {
 	h, cfg, event := setup()
 	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	err = h.Handle(event)
 	statuses[0] = corev1.ConditionTrue
@@ -894,7 +827,7 @@ func TestImageGetError(t *testing.T) {
 		fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 		fakeisclient.geterrors = map[string]error{"foo": iserr}
 
-		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		err := h.Handle(event)
 		if !kerrors.IsNotFound(iserr) {
 			statuses[0] = corev1.ConditionUnknown
@@ -1079,9 +1012,6 @@ func TestImageStreamImportError(t *testing.T) {
 		dir := h.GetBaseDir(v1.X86Architecture, cfg)
 		files, _ := h.Filefinder.List(dir)
 		h.processFiles(dir, files, cfg)
-		progressing := util.Condition(cfg, v1.ImageChangesInProgress)
-		progressing.Status = corev1.ConditionTrue
-		util.ConditionUpdate(cfg, progressing)
 
 		cm := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1333,7 +1263,7 @@ func TestTemplateGetError(t *testing.T) {
 		faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 		faketclient.geterrors = map[string]error{"bo": terr}
 
-		statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+		statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		err := h.Handle(event)
 		if !kerrors.IsNotFound(terr) {
 			statuses[0] = corev1.ConditionUnknown
@@ -1374,14 +1304,11 @@ func TestSameCR(t *testing.T) {
 	mimic(&h, x86ContentRootDir)
 	cfg.ResourceVersion = "a"
 
-	// first pass on the resource creates the samples, exists (first entry, index 0) is still false
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	err := h.Handle(event)
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	err = h.Handle(event)
-	// next pass is when we expect exists to be true
-	statuses[0] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	err = h.Handle(event)
@@ -1421,7 +1348,7 @@ func TestBadTopLevelStatus(t *testing.T) {
 	err := h.Handle(event)
 	// with deferring sdk updates to the very end, the local object will still have valid statuses on it, even though the error
 	// error returned by h.Handle indicates etcd was not updated
-	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(false, err, "badsdkupdate", cfg, conditions, statuses, t)
 }
 

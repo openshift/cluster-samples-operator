@@ -216,9 +216,9 @@ func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 		}
 	}
 
-	cm, err := h.configmapclientwrapper.Get(util.IST2ImageMap)
+	cmFromControllerCache, err := h.configmapclientwrapper.Get(util.IST2ImageMap)
 	if kerrors.IsNotFound(err) {
-		cm = &corev1.ConfigMap{}
+		cm := &corev1.ConfigMap{}
 		cm.Name = util.IST2ImageMap
 		cm.Namespace = v1.OperatorNamespace
 		cm.Annotations = map[string]string{}
@@ -232,6 +232,12 @@ func (h *Handler) buildFileMaps(cfg *v1.Config, forceRebuild bool) error {
 		}
 	}
 	if err == nil {
+		// need to deep copy like we do in controller logic on configmap events, but this call
+		// can stem from non-configmap events; need to copy before we change cached copy
+		cm := &corev1.ConfigMap{}
+		if cmFromControllerCache != nil {
+			cmFromControllerCache.DeepCopyInto(cm)
+		}
 		if cm.Annotations == nil {
 			cm.Annotations = map[string]string{}
 		}

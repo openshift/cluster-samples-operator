@@ -40,7 +40,7 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1.Config
 			metrics.AddStream(imagestream.Name)
 			if !strings.HasPrefix(imagestream.Name, "jenkins") {
 				for _, tag := range imagestream.Spec.Tags {
-					if tag.From.Kind != "DockerImage" {
+					if tag.From != nil && tag.From.Kind != "DockerImage" {
 						continue
 					}
 					h.imagestreatagToImage[imagestream.Name+"_"+tag.Name] = tag.From.Name

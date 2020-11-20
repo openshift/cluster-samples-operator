@@ -698,8 +698,8 @@ func (h *Handler) Handle(event util.Event) error {
 		}
 
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
-		doit, cfgUpdate, err := h.ProcessManagementField(cfg)
-		if !doit || err != nil {
+		updateStatusManagementState, cfgUpdate, err := h.ProcessManagementField(cfg)
+		if !updateStatusManagementState || err != nil {
 			if err != nil || cfgUpdate {
 				// flush status update
 				dbg := fmt.Sprintf("process mgmt update spec %s status %s", string(cfg.Spec.ManagementState), string(cfg.Status.ManagementState))
@@ -826,7 +826,20 @@ func (h *Handler) Handle(event util.Event) error {
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
-		if !util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
+		if !util.ConditionTrue(cfg, v1.SamplesExist) ||
+			!util.ConditionFalse(cfg, v1.ImageChangesInProgress) ||
+			h.version != cfg.Status.Version ||
+			configChanged ||
+			updateStatusManagementState {
+			logrus.Infof("ENTERING UPSERT / STEADY STATE PATH ExistTrue %v ImageInProgressFalse %v VersionOK %v ConfigChanged %v ManagementStateChanged %v",
+				util.ConditionTrue(cfg, v1.SamplesExist),
+				util.ConditionFalse(cfg, v1.ImageChangesInProgress),
+				h.version == cfg.Status.Version,
+				configChanged,
+				updateStatusManagementState)
+			cfg.Status.Version = h.version
+			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
+			h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
 			// pass in true to force rebuild of maps, which we do here because at this point
 			// we have taken on some form of config change
 			err = h.buildFileMaps(cfg, true)
@@ -838,7 +851,6 @@ func (h *Handler) Handle(event util.Event) error {
 			turnFlagOff := func(h *Handler) { h.upsertInProgress = false }
 			defer turnFlagOff(h)
 
-			atLeastOneImageStream := false
 			for isName := range h.imagestreamFile {
 				_, skipped := h.skippedImagestreams[isName]
 				unskipping := len(unskippedStreams) > 0
@@ -858,7 +870,6 @@ func (h *Handler) Handle(event util.Event) error {
 				if err != nil && !kerrors.IsAlreadyExists(err) {
 					return err
 				}
-				atLeastOneImageStream = true
 			}
 
 			abortForDelete, err := h.createSamples(cfg, true, registryChanged, unskippedStreams, unskippedTemplates)
@@ -886,56 +897,13 @@ func (h *Handler) Handle(event util.Event) error {
 				}
 				return err
 			}
-			now := kapis.Now()
-			cfg = h.refetchCfgMinimizeConflicts(cfg)
-			progressing := util.Condition(cfg, v1.ImageChangesInProgress)
-			progressing.Reason = ""
-			progressing.Message = ""
-
-			if atLeastOneImageStream {
-				progressing.LastUpdateTime = now
-				progressing.LastTransitionTime = now
-				logrus.Debugf("Handle changing processing from false to true")
-				progressing.Status = corev1.ConditionTrue
-			} else {
-				logrus.Debugln("there are no imagestreams available for import")
-				// see if there are unskipped templates, to set SamplesExists to true
-				if !util.ConditionTrue(cfg, v1.SamplesExist) {
-					templatesProcessed := false
-					for tName := range h.templateFile {
-						_, skipped := h.skippedTemplates[tName]
-						if skipped {
-							continue
-						}
-						templatesProcessed = true
-						break
-					}
-					if templatesProcessed {
-						cfg = h.refetchCfgMinimizeConflicts(cfg)
-						h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
-						dbg := "exist true update templates only"
-						logrus.Printf("CRDUPDATE %s", dbg)
-						return h.crdwrapper.UpdateStatus(cfg, dbg)
-					}
-				}
-				return nil
-			}
-			util.ConditionUpdate(cfg, progressing)
 
 			// now that we employ status subresources, we can't populate
 			// the conditions on create; so we do initialize here, which is our "step 1"
 			// of the "make a change" flow in our state machine
 			cfg = h.initConditions(cfg)
 
-			dbg := "progressing true update"
-			logrus.Printf("CRDUPDATE %s", dbg)
-			return h.crdwrapper.UpdateStatus(cfg, dbg)
-		}
-
-		if !util.ConditionTrue(cfg, v1.SamplesExist) {
-			cfg = h.refetchCfgMinimizeConflicts(cfg)
-			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
-			dbg := "exist true update"
+			dbg := "samples upserted; set clusteroperator ready, steady state"
 			logrus.Printf("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}

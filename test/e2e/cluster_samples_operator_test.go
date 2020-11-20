@@ -455,22 +455,6 @@ func verifyImageStreamsPresent(t *testing.T, content map[string]bool, timeToComp
 	}
 }
 
-func verifyImageChangesInProgress(t *testing.T) {
-	var cfg *samplesapi.Config
-	var err error
-	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
-		if err != nil {
-			t.Logf("%v", err)
-			return false, nil
-		}
-		if util.ConditionTrue(cfg, samplesapi.ImageChangesInProgress) {
-			return true, nil
-		}
-		return false, nil
-	})
-}
-
 func verifyImageStreamsGone(t *testing.T) {
 	time.Sleep(30 * time.Second)
 	content := getSamplesNames(getContentDir(t), nil, t)
@@ -577,9 +561,7 @@ func verifyDeletedImageStreamRecreated(t *testing.T) {
 		cfg := verifyOperatorUp(t)
 		t.Fatalf("error deleting jenkins imagestream %v Config %#v", err, cfg)
 	}
-	// first make sure image changes makes it to true
-	verifyImageChangesInProgress(t)
-	// then make sure the image changes are complete before attempting to fetch deleted IS
+	// make sure the image changes are complete before attempting to fetch deleted IS
 	verifyConditionsCompleteSamplesAdded(t)
 	err = wait.PollImmediate(1*time.Second, 30*time.Second, func() (bool, error) {
 		_, err := imageClient.ImageV1().ImageStreams("openshift").Get(context.TODO(), "jenkins", metav1.GetOptions{})
@@ -959,23 +941,7 @@ func TestSpecManagementStateField(t *testing.T) {
 		t.Fatalf("cfg status mgmt never went to managed %#v", verifyOperatorUp(t))
 	}
 
-	// wait for it to get into pending
-	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
-		if err != nil {
-			t.Logf("%v", err)
-			return false, nil
-		}
-		if util.Condition(cfg, samplesapi.ImageChangesInProgress).LastUpdateTime.After(now.Time) {
-			return true, nil
-		}
-		return false, nil
-	})
-	if err != nil {
-		dumpPod(t)
-		t.Fatalf("error waiting for Config to get into pending: %v samples resource %#v", err, cfg)
-	}
-	// now wait for it to get out of pending
+	// now wait for it to get to steady state
 	err = verifyConditionsCompleteSamplesAdded(t)
 	if err != nil {
 		dumpPod(t)
@@ -1062,10 +1028,7 @@ func TestSkippedProcessing(t *testing.T) {
 	verifySkippedStreamManagedLabel(t, "true")
 	verifySkippedTemplateManagedLabel(t, "true")
 
-	// checking in progress before validating content helps
-	// makes sure we go into image changes true mode from false
-	verifyImageChangesInProgress(t)
-	// then make sure image changes complete
+	// make sure image changes complete
 	err = verifyConditionsCompleteSamplesAdded(t)
 	if err != nil {
 		dumpPod(t)
