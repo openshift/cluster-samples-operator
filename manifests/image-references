@@ -30,6 +30,10 @@ spec:
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-jenkins:latest
+  - name: jenkins-agent-base
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-jenkins-agent-base:latest
   - name: jenkins-agent-nodejs
     from:
       kind: DockerImage
