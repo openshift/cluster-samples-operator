@@ -6,6 +6,7 @@ metadata:
   annotations:
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-production-edge: "true"
 rules:
 - apiGroups:
   - ""
@@ -38,6 +39,7 @@ metadata:
   annotations:
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-production-edge: "true"
 rules:
 - apiGroups:
   - samples.operator.openshift.io
@@ -65,6 +67,7 @@ metadata:
   annotations:
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-production-edge: "true"
 rules:
 - apiGroups:
   - samples.operator.openshift.io
@@ -86,6 +89,7 @@ metadata:
   annotations:
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-production-edge: "true"
 subjects:
 - kind: ServiceAccount
   name: cluster-samples-operator
@@ -103,6 +107,7 @@ metadata:
   annotations:
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-production-edge: "true"
 subjects:
 - kind: ServiceAccount
   name: cluster-samples-operator
