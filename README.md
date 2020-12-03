@@ -2,9 +2,12 @@
 
 The samples operator manages the sample imagestreams and templates stored in the openshift namespace, and any docker credentials, stored as a secret, needed for the imagestreams to import the images they reference.
 
-On initial startup, the operator will create the default samples resource to initiate the creation of the imagestreams and templates.  The imagestreams are the RHEL based OCP imagestreams pointing to images on registry.redhat.access.com.  Similarly the templates are those categorized as OCP templates.  When details for obtaining the credentials for registry.redhat.io are finalized, we will begin defaulting to that registry for the imagestreams.
+On initial startup, the operator will create the default samples resource to initiate the creation of the imagestreams and templates.  The imagestreams are the RHEL based OCP imagestreams pointing to images on `registry.redhat.io`.  Similarly the templates are those categorized as OCP templates.  When details for obtaining the credentials for registry.redhat.io are finalized, we will begin defaulting to that registry for the imagestreams.
 
-The samples operator, along with it's configuration resources, are contained within the openshift-cluster-samples-operator namespace. On startup it will copy the pull secret captured by the install into the "openshift" namespace with the name "samples-registry-credentials" to facilitate imagestream imports.  An admin can create any additional secret(s) in the openshift namespace as needed (where those secrets contain the content of a docker config.json) needed to facilitate image import.
+The samples operator, along with it's configuration resources, are contained within the openshift-cluster-samples-operator namespace.  With releases before 4.5, the samples operator would copy the install pull secret into the `openshift`
+namespace to facilitate API Server's imagestream import from `registry.redhat.io`.  Starting with 4.5 that is no longer required, as the API Server's imagestream import can access the install pull secret for imagestreams in any namespace.  
+Otherwise, an admin can create any additional secret(s) in the openshift namespace as needed (where those secrets contain the content of a docker config.json) needed to facilitate image import, if say they override the registry to something
+other than `registry.redhat.io`.
 
 The image for the samples operator contains imagestream and template definitions for the associated OpenShift release. Each sample includes an annotation that denotes the OpenShift version that it is compatible with. The operator uses this annotation to ensure that each sample matches it's release version. Samples outside of its inventory are ignored, as are skipped samples (see below). Modifications to any samples that are managed by the operator will be reverted automatically.  The jenkins images are actually part of the image payload from the install and are tagged into the image streams in question directly.
 
@@ -16,8 +19,6 @@ The samples resource includes a finalizer which will clean up the following upon
 - Operator managed templates
 - Operator generated configuration resources
 - Cluster status resources
-- The samples-registry-credentials secret
-
 
 
 Upon deletion of the samples resource, the samples operator will recreate the resource using the default configuration.
@@ -52,10 +53,8 @@ The operator will still process Secrets while in Removed state.  You can create 
 ## Config behaviors
 
 - Neither deletion nor setting the ManagementState to Removed will be complete while imagestream imports are still in progress.  Once progress has completed (either in success or in error), the delete/removed will commence.  Details on progress tracking can be found in the Conditions section.
-- Secret/imagestream/watches events are ignored once deletion or removal has started
-- Creation / update of RHEL content will not commence if the secret for pull access is not in place if using the default registry.redhat.io (ie SamplesRegistry is not explicitly set)
-- Creation / update of RHEL content will not be gated if the SamplesRegistry has been overridden.
-- Secret, imagestream and templates watch events can come in before the initial samples resource object is created … the operator will detect and requeue the event
+- imagestream/template watch events are ignored once deletion or removal has started
+- imagestream and templates watch events can come in before the initial samples resource object is created … the operator will detect and requeue the event
 
 # Conditions
 
@@ -67,7 +66,7 @@ The samples resource maintains the following conditions in its status:
 -- This condition is deprecated as of the 4.7 branch of this repository.  `ImageStream` image imports are no longer tracked in real time via conditions on the samples config resource, nor do in progress `ImageStreams` directly affect updates to the `ClusterOperator` instance `openshift-samples`.  Prolonged errors with `ImageStreams` are reported now by Prometheus alerts. 
 -- The list of pending imagestreams will be represented by a configmap for each imagestream in the samples operator's namespace (where the imagestream name is the configmap name).  When the imagestream has completed imports, the respective configmap for the imagestream is deleted.
 - ImportCredentialsExist
--- Credentials for pulling from `registry.redhat.io` exist in the `pull-secret` Secret in the `openshift-config` namespace
+-- Credentials for pulling from `registry.redhat.io` exist in the `pull-secret` Secret in the `openshift-config` namespace ... i.e. the install pull secret
 - ConfigurationValid
 -- True or false based on whether any of the restricted changes noted above have been submitted
 - RemovePending
@@ -103,12 +102,17 @@ as a reference for which images need to be mirrored for your `ImageStreams` of i
 
 CRD instance for the samples operator config:  `oc get configs.samples.operator.openshift.io cluster -o yaml`
 
+You can also use `configs.samples` for short.
+
 Check the status of the conditions. (See above for details on those conditions)
 
-In the case that a failure occurred during an image import, the Available cluster operator status will be *FALSE*.  A
-cluster admin can attempt to rectify the situation by
+While imagestream import failures no longer affect the state Samples reports to the CVO (that changes occurred in 4.6),
+the samples operator will fire Prometheus alerts per the rules defined in [https://github.com/openshift/cluster-samples-operator/blob/master/manifests/010-prometheus-rules.yaml](https://github.com/openshift/cluster-samples-operator/blob/master/manifests/010-prometheus-rules.yaml)
 
-- Retrying the import via `oc import-image <imagestream name> -n openshift --all`; if successful, the operator will detect the success and clear that imagestream from the failure list
+The samples operator will also attempt to re-import the imagestreams on approximate 15 minute intervals.  Otherwise,
+a cluster admin can:
+
+- Retry the import whenever they like via `oc import-image <imagestream name> -n openshift --all`; if successful, the operator will detect the success and clear that imagestream from the failure list
 - Add the failing imagestream(s) to the `skippedImagestreams` list; the operator will also clear the imagestream(s) specified from the failure list
 
 Deployment, Events in operator’s namespace (openshift-cluster-samples-operator):  basic `oc get pods`, `oc get events`, `oc logs` of the operator pod 
@@ -121,7 +125,18 @@ Samples: `oc get is -n openshift`, `oc get templates -n openshift`  … use of -
 Deletion of the CRD instance will reset the samples operator to the default configuration, but leave the current revision of the samples operator pod running.
 
 If there is a bug in the samples operator deletion logic, to reset the samples operator configuration by stopping the current pod and starting a new one:
-- Run `oc edit clusterversion version` and add an entry for the Deployment of the samples operator so it is unmanaged
+- Run `oc edit clusterversion version` and add an override entry to the spec for the Deployment of the samples operator so it is unmanaged:
+
+```yaml
+spec:
+  overrides:
+  - kind: Deployment
+    group: apps/v1
+    name: cluster-samples-operator
+    namespace: openshift-cluster-samples-operator
+    unmanaged: true
+```
+
 - Scale down the deployment via `oc scale deploy cluster-samples-operator --replicas=0`
 - Edit the samples resource, remove the finalizer
 - Delete the samples resource, config map/secrets in operator namespace, samples in openshift namespace
