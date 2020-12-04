@@ -28,31 +28,24 @@ Upon deletion of the samples resource, the samples operator will recreate the re
 The samples resource offers the following configuration fields:
 
 - ManagementState
--- Managed: the operator will update the samples as the configuration dictates
--- Unmanaged: the operator will ignore updates to the samples resource object and any imagestreams or templates in the openshift namespace
--- Removed: the operator will remove the set of managed imagestreams and templates in the openshift namespace. It will ignore new samples created by the cluster admin or any samples in the skipped lists.  After the removals are complete, the operator will work like it is in the 'Unmanaged' state and ignore any watch events on the sample resources, imagestreams, or templates.  There are some caveats around concurrent creates and removal (see Config behaviors section).
-- Samples Registry
--- Override the registry that images are imported from
-- Architecture
--- Place holder to choose an architecture type.  Currently only x86 is supported.
-- Skipped Imagestreams
--- Imagestreams that are in the operator’s inventory, but that the cluster admin wants the operator to ignore / not manage
-- Skipped Templates 
--- Templates that are in the operator’s inventory, but that the cluster admin wants the operator to ignore / not manage
+    - Managed: the operator will update the samples as the configuration dictates
+    - Unmanaged: the operator will ignore updates to the samples resource object and any imagestreams or templates in the openshift namespace
+    - Removed: the operator will remove the set of managed imagestreams and templates in the openshift namespace. It will ignore new samples created by the cluster admin or any samples in the skipped lists.  After the removals are complete, the operator will work like it is in the 'Unmanaged' state and ignore any watch events on the sample resources, imagestreams, or templates.  There are some caveats around concurrent creates and removal (see Config behaviors section).
+- Samples Registry: Override the registry that images are imported from
+- Architecture:  The currently supported values are x86_64, amd64, arm64, ppc64le, s390x.  This field was originally made an 
+  array during the early, pre-release days of 4.x because the possibility of installing multiple archtiectures was being considered. However, that has never come to fruition, 
+  nor is it likely to come to fruition.  Instead, the operator looks at Go's `runtime.GOARCH` package / variable at its initial startup to determine which
+  architecture's set of sample imagestreams and templates to install.  And you are not allowed to change it after that.
+- Skipped Imagestreams:  Imagestreams that are in the operator’s inventory, but that the cluster admin wants the operator to ignore / not manage
+- Skipped Templates:  Templates that are in the operator’s inventory, but that the cluster admin wants the operator to ignore / not manage
 
 ## Config restrictions
 
-When we start supporting multiple architectures, the architecture list is not allowed to be changed while in the 'Managed' state.
-
-In order to change the architectures values, an administrator must:
-- Mark the ManagementState as 'Removed', saving the change.
-- In a subsequent change, change the architecture and change the ManagementState back to Managed.
-
-The operator will still process Secrets while in Removed state.  You can create the secret either before switching to Removed, while in Removed state before switching to Managed state, or after switching to Managed state (though you'll see delays creating the samples until the secret event is processed if you create the secret after switching to Managed). This is done to help facilitate the changing of the registry, where the user chooses to remove all the samples before switching to insure a clean slate (removing before switching is not required).
+You cannot change the Architecture field at this time.
 
 ## Config behaviors
 
-- Neither deletion nor setting the ManagementState to Removed will be complete while imagestream imports are still in progress.  Once progress has completed (either in success or in error), the delete/removed will commence.  Details on progress tracking can be found in the Conditions section.
+- Neither deletion nor setting the ManagementState to Removed will be complete while imagestream imports are still in progress.  Once progress has completed (either in success or in error), then delete/remove will commence.  Details on progress tracking can be found in the Conditions section.
 - imagestream/template watch events are ignored once deletion or removal has started
 - imagestream and templates watch events can come in before the initial samples resource object is created … the operator will detect and requeue the event
 
@@ -60,23 +53,18 @@ The operator will still process Secrets while in Removed state.  You can create 
 
 The samples resource maintains the following conditions in its status:
 
-- SamplesExists
--- Indicates the samples have been created in the openshift namespace
-- ImageChangesInProgress
--- This condition is deprecated as of the 4.7 branch of this repository.  `ImageStream` image imports are no longer tracked in real time via conditions on the samples config resource, nor do in progress `ImageStreams` directly affect updates to the `ClusterOperator` instance `openshift-samples`.  Prolonged errors with `ImageStreams` are reported now by Prometheus alerts. 
--- The list of pending imagestreams will be represented by a configmap for each imagestream in the samples operator's namespace (where the imagestream name is the configmap name).  When the imagestream has completed imports, the respective configmap for the imagestream is deleted.
-- ImportCredentialsExist
--- Credentials for pulling from `registry.redhat.io` exist in the `pull-secret` Secret in the `openshift-config` namespace ... i.e. the install pull secret
-- ConfigurationValid
--- True or false based on whether any of the restricted changes noted above have been submitted
-- RemovePending
--- Indicator that we have a management state removed setting pending, resulting in deletion of all the resources the operator manages.  Note that deletions do not start while are waiting for any in progress imagestreams to complete.  This is set to true just prior to executing the deletions, and set to false when the deletions are completed.  The associated ClusterOperator object for the Samples Operator will have its Progressing condition set to `true` when this Condition is `true` (though typically the deletions occur fairly quickly).
-- ImportImageErrorsExist
--- Indicator of which imagestreams had errors during the image import phase for one of their tags
--- True when an error has occurred
--- The configmap associated with the imagestream will remain in the samples operator's namespace.  There will be a key in the configmap's data map for each imagestreamtag, where the value of the entry will be the error message reported in the imagestream status.
-- MigrationInProgress
--- This condition is deprecated as of the 4.7 branch of this repository.  Upgrade tracking is now achieved via the other conditions and both the per imagestream configmaps and the imagestream-to-image configmap. 
+- SamplesExists: Indicates the samples have been created in the openshift namespace
+- ImageChangesInProgress:
+    - This condition is deprecated as of the 4.7 branch of this repository.  `ImageStream` image imports are no longer tracked in real time via conditions on the samples config resource, nor do in progress `ImageStreams` directly affect updates to the `ClusterOperator` instance `openshift-samples`.  Prolonged errors with `ImageStreams` are reported now by Prometheus alerts. 
+    - Also, the list of pending imagestreams will be represented by a configmap for each imagestream in the samples operator's namespace (where the imagestream name is the configmap name).  When the imagestream has completed imports, the respective configmap for the imagestream is deleted.
+- ImportCredentialsExist: Credentials for pulling from `registry.redhat.io` exist in the `pull-secret` Secret in the `openshift-config` namespace ... i.e. the install pull secret
+- ConfigurationValid: True or false based on whether any of the restricted changes noted above have been submitted
+- RemovePending: Indicator that we have a management state removed setting pending, resulting in deletion of all the resources the operator manages.  Note that deletions do not start while are waiting for any in progress imagestreams to complete.  This is set to true just prior to executing the deletions, and set to false when the deletions are completed.  The associated ClusterOperator object for the Samples Operator will have its Progressing condition set to `true` when this Condition is `true` (though typically the deletions occur fairly quickly).
+- ImportImageErrorsExist:
+    - Indicator of which imagestreams had errors during the image import phase for one of their tags
+    - True when an error has occurred
+    - The configmap associated with the imagestream will remain in the samples operator's namespace.  There will be a key in the configmap's data map for each imagestreamtag, where the value of the entry will be the error message reported in the imagestream status.
+- MigrationInProgress: This condition is deprecated as of the 4.7 branch of this repository.  Upgrade tracking is now achieved via the other conditions and both the per imagestream configmaps and the imagestream-to-image configmap. 
 
 # CVO Cluster Operator Status
 
@@ -97,6 +85,11 @@ The format of the key for each entry in the `data` field in the `ConfigMap` is `
 Samples Operator will come up as `Removed` for a disconnected OCP install.  If you choose to change it to `Managed`,
 override the registry to a mirror registry available in your disconnected environment, you can use this `ConfigMap`
 as a reference for which images need to be mirrored for your `ImageStreams` of interest to properly import.
+
+# IPv6
+
+Samples Operator will bootstrap as `Removed` if it detects it is running on ipv6, since at last check, `registry.redhat.io`
+does not support ipv6.
 
 # Troubleshooting
 
@@ -143,7 +136,7 @@ spec:
 - Scale up the deployment via `oc scale deploy cluster-samples-operator --replicas=1`
 
 
-# Update the content in this repository from https://github.com/OpenShift/library
+# Update the content in this repository from https://github.com/openshift/library
 - Create a git branch in your local copy of this repository
 - ./library-sync.sh
 - Commit the changes and create a PR
