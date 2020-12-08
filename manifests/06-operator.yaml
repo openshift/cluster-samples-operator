@@ -49,6 +49,7 @@ spec:
         - cluster-samples-operator
         resources:
           requests:
+            memory: 50Mi
             cpu: 10m
         imagePullPolicy: IfNotPresent
         volumeMounts:
@@ -84,5 +85,6 @@ spec:
         imagePullPolicy: IfNotPresent
         resources:
           requests:
+            memory: 50Mi
             cpu: 10m
 
