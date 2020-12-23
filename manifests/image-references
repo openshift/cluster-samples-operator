@@ -61,4 +61,4 @@ spec:
   - name: hello-openshift
     from:
       kind: DockerImage
-      name: docker.io/openshift/hello-openshift:latest
+      name: quay.io/openshift/origin-hello-openshift:latest
