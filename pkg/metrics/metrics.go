@@ -64,7 +64,7 @@ var (
 	})
 	tbrInaccessibleOnBootStat = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: tbrInaccessibleOnBootstrapQuery,
-		Help: "Indicates that during its initial installation the samples operator could not access registry.redhat.io and it boostrapped as removed.",
+		Help: "Indicates that during its initial installation the samples operator could not access registry.redhat.io and it bootstrapped as removed.",
 	})
 	// looked into a imagestream name label on this metric but various prometheus guidance dissuaded that approach;
 	// looked into a constant metric like importsFailedDesc, but that requires more invasive changes to track the
