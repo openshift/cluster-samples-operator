@@ -44,7 +44,7 @@
 				},
 				"from": {
 					"kind": "DockerImage",
-					"name": "registry.redhat.io/openshift4/ose-jenkins:v4.0"
+					"name": "registry.redhat.io/openshift4/ose-jenkins:v4.4.0"
 				},
 				"generation": null,
 				"importPolicy": {},
