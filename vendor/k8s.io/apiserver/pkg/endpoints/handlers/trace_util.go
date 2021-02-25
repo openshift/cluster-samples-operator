@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2020 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,8 +14,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// +k8s:deepcopy-gen=package
-// +k8s:protobuf-gen=package
-// +k8s:openapi-gen=true
+package handlers
 
-package v2alpha1 // import "k8s.io/api/batch/v2alpha1"
+import (
+	"net/http"
+
+	utiltrace "k8s.io/utils/trace"
+)
+
+func traceFields(req *http.Request) []utiltrace.Field {
+	return []utiltrace.Field{
+		{Key: "url", Value: req.URL.Path},
+		{Key: "user-agent", Value: &lazyTruncatedUserAgent{req: req}},
+		{Key: "client", Value: &lazyClientIP{req: req}},
+		{Key: "accept", Value: &lazyAccept{req: req}},
+		{Key: "protocol", Value: req.Proto}}
+}
