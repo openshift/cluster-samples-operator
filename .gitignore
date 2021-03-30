@@ -6,6 +6,7 @@ cluster-samples-operator
 # Temporary Build Files
 tmp/_output
 tmp/_test
+_output/
 
 vendor/bin
 vendor/pkg
