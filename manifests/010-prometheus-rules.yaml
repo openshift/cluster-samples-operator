@@ -42,7 +42,7 @@ spec:
         message: |
           Samples operator is detecting problems with imagestream image imports.  You can look at the "openshift-samples"
           ClusterOperator object for details. Most likely there are issues with the external image registry hosting
-          the images that needs to be investigated.  Or you can consider marking samples opertaor Removed if you do not
+          the images that needs to be investigated.  Or you can consider marking samples operator Removed if you do not
           care about having sample imagestreams available.  The list of ImageStreams for which samples operator is
           retrying imports:
           {{ range query "openshift_samples_retry_imagestream_import_total > 0" }}
