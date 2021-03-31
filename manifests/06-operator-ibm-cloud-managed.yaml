@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+  name: cluster-samples-operator
+  namespace: openshift-cluster-samples-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: cluster-samples-operator
+  template:
+    metadata:
+      labels:
+        name: cluster-samples-operator
+    spec:
+      containers:
+      - command:
+        - cluster-samples-operator
+        env:
+        - name: WATCH_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: OPERATOR_NAME
+          value: cluster-samples-operator
+        - name: RELEASE_VERSION
+          value: 0.0.1-snapshot
+        - name: IMAGE_JENKINS
+          value: quay.io/openshift/origin-jenkins:latest
+        - name: IMAGE_AGENT_BASE
+          value: quay.io/openshift/origin-jenkins-agent-base:latest
+        - name: IMAGE_AGENT_NODEJS
+          value: quay.io/openshift/origin-jenkins-agent-nodejs:latest
+        - name: IMAGE_AGENT_MAVEN
+          value: quay.io/openshift/origin-jenkins-agent-maven:latest
+        image: quay.io/openshift/origin-cluster-samples-operator:latest
+        imagePullPolicy: IfNotPresent
+        name: cluster-samples-operator
+        ports:
+        - containerPort: 60000
+          name: metrics
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /etc/secrets
+          name: samples-operator-tls
+      - args:
+        - --namespace=openshift-cluster-samples-operator
+        - --process-name=cluster-samples-operator
+        - --termination-grace-period=30s
+        - --files=/etc/secrets/tls.crt,/etc/secrets/tls.key
+        command:
+        - cluster-samples-operator-watch
+        - file-watcher-watchdog
+        image: quay.io/openshift/origin-cluster-samples-operator:latest
+        imagePullPolicy: IfNotPresent
+        name: cluster-samples-operator-watch
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+      priorityClassName: system-cluster-critical
+      serviceAccountName: cluster-samples-operator
+      shareProcessNamespace: true
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 120
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 120
+      volumes:
+      - name: samples-operator-tls
+        secret:
+          secretName: samples-operator-tls

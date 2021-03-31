@@ -1,4 +1,12 @@
 REPO=openshift
+GO_REQUIRED_MIN_VERSION = 1.13
+
+include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
+    targets/openshift/operator/profile-manifests.mk \
+)
+# Adds verification of profile patches through the 'verify' target
+# as well as a way to update manifests via the 'update' target
+$(call add-profile-manifests,manifests,./profile-patches,./manifests)
 
 all: build build-image
 
