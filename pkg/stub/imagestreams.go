@@ -41,6 +41,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		if cfg == nil {
 			return nil
 		}
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		cfg, err = h.processImportStatus(is, cfg)
@@ -93,6 +94,9 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		is = nil
 	}
 
+	if is != nil {
+		is = is.DeepCopy()
+	}
 	err = h.upsertImageStream(imagestream, is, cfg)
 	if err != nil {
 		if kerrors.IsAlreadyExists(err) {
