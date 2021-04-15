@@ -46,6 +46,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 		if cfg == nil {
 			return nil
 		}
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 
 		// if we initiated the change, it will be in our cache, and we want to process
 		// the in progress, import error conditions
@@ -162,6 +163,9 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 
 	cache.AddUpsert(imagestream.Name)
 
+	if is != nil {
+		is = is.DeepCopy()
+	}
 	err = h.upsertImageStream(imagestream, is, cfg)
 	if err != nil {
 		cache.RemoveUpsert(imagestream.Name)

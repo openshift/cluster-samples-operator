@@ -100,7 +100,7 @@ func Condition(s *samplev1.Config, c samplev1.ConfigConditionType) *samplev1.Con
 	if s.Status.Conditions != nil {
 		for _, rc := range s.Status.Conditions {
 			if rc.Type == c {
-				return &rc
+				return rc.DeepCopy()
 			}
 		}
 	}
