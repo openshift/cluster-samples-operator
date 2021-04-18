@@ -539,7 +539,7 @@ func TestImageStreamEvent(t *testing.T) {
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	// expedite the stream events coming in
-	cache.ClearUpsertsCache()
+	//cache.ClearUpsertsCache()
 
 	tagVersion := int64(1)
 	is := &imagev1.ImageStream{
@@ -630,6 +630,7 @@ func TestImageStreamEvent(t *testing.T) {
 		},
 	}
 	h.processImageStreamWatchEvent(is, false)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	is = &imagev1.ImageStream{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "baz",

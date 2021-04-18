@@ -956,8 +956,8 @@ func (h *Handler) Handle(event util.Event) error {
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		if !util.ConditionTrue(cfg, v1.SamplesExist) {
-			cfg = h.refetchCfgMinimizeConflicts(cfg)
 			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
 			dbg := "exist true update"
 			logrus.Printf("CRDUPDATE %s", dbg)
@@ -967,45 +967,23 @@ func (h *Handler) Handle(event util.Event) error {
 		// it is possible that all the cached imagestream events show that
 		// the image imports are complete; hence we would not get any more
 		// events until the next relist to clear out in progress; so let's
-		// cycle through them here now
-		if cache.AllUpsertEventsArrived() && util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
-			keysToClear := []string{}
-			anyChange := false
-			ac := false
+		// clear it out now
+		if cache.AllUpsertEventsArrived() &&
+			util.ConditionTrue(cfg, v1.ImageChangesInProgress) &&
+			cfg.Spec.ManagementState == cfg.Status.ManagementState &&
+			cfg.Status.Version == h.version {
 			cfg = h.refetchCfgMinimizeConflicts(cfg)
-			for key, is := range cache.GetUpsertImageStreams() {
-				if is == nil {
-					// never got update, refetch
-					var e error
-					is, e = h.imageclientwrapper.Get(key)
-					if e != nil {
-						keysToClear = append(keysToClear, key)
-						anyChange = true
-						continue
-					}
-				}
-				cfg, _, ac = h.processImportStatus(is, cfg)
-				anyChange = anyChange || ac
+			h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
+			dbg := "updating in progress after examining cached imagestream events"
+			logrus.Printf("CRDUPDATE %s", dbg)
+
+			err = h.crdwrapper.UpdateStatus(cfg, dbg)
+			if err == nil {
+				// only clear out cache if we got the update through
+				cache.ClearUpsertsCache()
 			}
-			for _, key := range keysToClear {
-				cache.RemoveUpsert(key)
-				util.ClearNameInReason(cfg, util.Condition(cfg, v1.ImageChangesInProgress).Reason, key)
-				util.ClearNameInReason(cfg, util.Condition(cfg, v1.ImportImageErrorsExist).Reason, key)
-			}
-			if len(strings.TrimSpace(util.Condition(cfg, v1.ImageChangesInProgress).Reason)) == 0 {
-				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
-				logrus.Println("The last in progress imagestream has completed (config event loop)")
-			}
-			if anyChange {
-				dbg := "updating in progress after examining cached imagestream events"
-				logrus.Printf("CRDUPDATE %s", dbg)
-				err = h.crdwrapper.UpdateStatus(cfg, dbg)
-				if err == nil && util.ConditionFalse(cfg, v1.ImageChangesInProgress) {
-					// only clear out cache if we got the update through
-					cache.ClearUpsertsCache()
-				}
-				return err
-			}
+			return err
+
 		}
 	}
 	return nil
