@@ -259,8 +259,9 @@ type generatedCRDWrapper struct {
 }
 
 func (g *generatedCRDWrapper) UpdateStatus(sr *v1.Config, dbg string) error {
+	srCopy := sr.DeepCopy()
 	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
-		_, err := g.client.UpdateStatus(context.TODO(), sr, metav1.UpdateOptions{})
+		_, err := g.client.UpdateStatus(context.TODO(), srCopy, metav1.UpdateOptions{})
 		if err == nil {
 			return true, nil
 		}
@@ -276,8 +277,9 @@ func (g *generatedCRDWrapper) UpdateStatus(sr *v1.Config, dbg string) error {
 }
 
 func (g *generatedCRDWrapper) Update(sr *v1.Config) error {
+	srCopy := sr.DeepCopy()
 	return wait.Poll(3*time.Second, 30*time.Second, func() (bool, error) {
-		_, err := g.client.Update(context.TODO(), sr, metav1.UpdateOptions{})
+		_, err := g.client.Update(context.TODO(), srCopy, metav1.UpdateOptions{})
 		if err == nil {
 			return true, nil
 		}
@@ -303,5 +305,9 @@ func (g *generatedCRDWrapper) Create(sr *v1.Config) error {
 }
 
 func (g *generatedCRDWrapper) Get(name string) (*v1.Config, error) {
-	return g.lister.Get(name)
+	c, err := g.lister.Get(name)
+	if err == nil && c != nil {
+		return c.DeepCopy(), nil
+	}
+	return c, err
 }

@@ -16,7 +16,11 @@ import (
 func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1.Config) error {
 	for _, file := range files {
 		if file.IsDir() {
-			logrus.Printf("processing subdir %s from dir %s", file.Name(), dir)
+			if opcfg.Status.Version != h.version {
+				logrus.Printf("processing subdir %s from dir %s", file.Name(), dir)
+			} else {
+				logrus.Debugf("processing subdir %s from dir %s", file.Name(), dir)
+			}
 			subfiles, err := h.Filefinder.List(dir + "/" + file.Name())
 			if err != nil {
 				return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error reading in content: %v")
@@ -28,7 +32,11 @@ func (h *Handler) processFiles(dir string, files []os.FileInfo, opcfg *v1.Config
 
 			continue
 		}
-		logrus.Printf("processing file %s from dir %s", file.Name(), dir)
+		if opcfg.Status.Version != h.version {
+			logrus.Printf("processing file %s from dir %s", file.Name(), dir)
+		} else {
+			logrus.Debugf("processing file %s from dir %s", file.Name(), dir)
+		}
 
 		if strings.HasSuffix(dir, "imagestreams") {
 			path := dir + "/" + file.Name()
