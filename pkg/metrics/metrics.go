@@ -117,6 +117,7 @@ func (sc *samplesCollector) Collect(ch chan<- prometheus.Metric) {
 		logrus.Infof("metrics sample config retrieval failed with: %s", err.Error())
 		return
 	}
+	cfg = cfg.DeepCopy()
 
 	if cfg.Spec.ManagementState == operatorv1.Removed ||
 		cfg.Spec.ManagementState == operatorv1.Unmanaged {

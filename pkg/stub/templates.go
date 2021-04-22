@@ -16,7 +16,7 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 	// we can observe high fetch rates on the config object)
 	// imagestream image import tracking necessitates, after initial install or upgrade, requires the
 	// fetch of the config object, so we did not rework to ordering of the version check within that method
-	if t.Annotations != nil && !deleted {
+	if t != nil && t.Annotations != nil && !deleted {
 		isv, ok := t.Annotations[v1.SamplesVersionAnnotation]
 		logrus.Debugf("Comparing template/%s version %s ok %v with git version %s", t.Name, isv, ok, h.version)
 		if ok && isv == h.version {
@@ -50,6 +50,9 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 	if deleted {
 		// set t to nil so upsert will create
 		t = nil
+	}
+	if t != nil {
+		t = t.DeepCopy()
 	}
 	err = h.upsertTemplate(template, t, cfg)
 	if err != nil {

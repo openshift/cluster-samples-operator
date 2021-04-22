@@ -46,6 +46,7 @@ func TestWrongSampleResourceName(t *testing.T) {
 	cfg.Name = "foo"
 	cfg.Status.Conditions = nil
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg, []v1.ConfigConditionType{}, []corev1.ConditionStatus{}, t)
 }
 
@@ -53,6 +54,7 @@ func TestWithDist(t *testing.T) {
 	h, cfg, event := setup()
 	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 }
@@ -72,6 +74,7 @@ func TestWithArchDist(t *testing.T) {
 
 	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg,
 		conditions,
@@ -86,6 +89,7 @@ func TestWithArch(t *testing.T) {
 		v1.PPCArchitecture,
 	}
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validateArchOverride(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t, v1.PPCArchitecture)
 }
 
@@ -95,6 +99,7 @@ func TestWithBadArch(t *testing.T) {
 		"bad",
 	}
 	h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	invalidConfig(t, "architecture bad unsupported", util.Condition(cfg, v1.ConfigurationValid))
 }
 
@@ -106,6 +111,7 @@ func TestManagementState(t *testing.T) {
 	cfg.Spec.ManagementState = operatorsv1api.Unmanaged
 
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 
@@ -124,8 +130,17 @@ func TestManagementState(t *testing.T) {
 
 	cfg.ResourceVersion = "2"
 	cfg.Spec.ManagementState = operatorsv1api.Managed
+	// get status to managed
 	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
+	if cfg.Status.ManagementState != operatorsv1api.Managed {
+		t.Fatalf("status not set to managed")
+	}
+	// should go to in progress
+	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses = []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	for _, key := range iskeys {
@@ -143,6 +158,7 @@ func TestManagementState(t *testing.T) {
 	cfg.ResourceVersion = "3"
 	cfg.Spec.ManagementState = operatorsv1api.Removed
 	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	// RemovePending now true
 	statuses[4] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
@@ -153,6 +169,7 @@ func TestManagementState(t *testing.T) {
 	// verify while we are image in progress no false and the remove on hold setting is still set to true
 	cfg.ResourceVersion = "4"
 	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	// SamplesExists, ImageChangesInProgress, ImportImageErrorsExists all false
 	statuses[0] = corev1.ConditionFalse
 	statuses[3] = corev1.ConditionFalse
@@ -167,6 +184,7 @@ func TestManagementState(t *testing.T) {
 	// remove pending should be false
 	statuses[4] = corev1.ConditionFalse
 	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 }
@@ -183,6 +201,7 @@ func TestSkipped(t *testing.T) {
 	mimic(&h, x86ContentRootDir)
 
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg, conditions, []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
@@ -239,6 +258,7 @@ func TestSkipped(t *testing.T) {
 		},
 	}
 	h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	_, stillHasCM := fakecmclient.configMaps["foo"]
 	if stillHasCM {
 		t.Fatalf("clean imagestream did not result in configmap getting deleted")
@@ -250,6 +270,7 @@ func TestSkipped(t *testing.T) {
 		},
 	}
 	h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	importerror = util.Condition(cfg, v1.ImportImageErrorsExist)
 	if importerror.Status == corev1.ConditionTrue {
 		t.Fatalf("skipped imagestream still reporting error %#v", importerror)
@@ -280,13 +301,25 @@ func TestTBRInaccessibleBit(t *testing.T) {
 func TestProcessed(t *testing.T) {
 	h, cfg, event := setup()
 	event.Object = cfg
+	mimic(&h, x86ContentRootDir)
+
+	// initial boostrap creation of samples
+	h.Handle(event)
+
+	// shortcut completed initial bootstrap, and then change the samples registry setting
 	cfg.Spec.SamplesRegistry = "foo.io"
+	progress := util.Condition(cfg, v1.ImageChangesInProgress)
+	progress.Status = corev1.ConditionFalse
+	util.ConditionUpdate(cfg, progress)
+	exists := util.Condition(cfg, v1.SamplesExist)
+	exists.Status = corev1.ConditionTrue
+	util.ConditionUpdate(cfg, exists)
+	h.crdwrapper.Update(cfg)
 	iskeys := getISKeys()
 	tkeys := getTKeys()
 
-	mimic(&h, x86ContentRootDir)
-
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg,
 		conditions,
 		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
@@ -323,14 +356,30 @@ func TestProcessed(t *testing.T) {
 		}
 	}
 
+	// get status samples registry set to foo.io
+	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
+	if cfg.Status.SamplesRegistry != "foo.io" {
+		t.Fatalf("status did not pick up new samples registry")
+	}
+
 	// make sure registries are updated after already updating from the defaults
 	cfg.Spec.SamplesRegistry = "bar.io"
 	cfg.ResourceVersion = "2"
 	// clear out config map tracking
 	fakecfgmapclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
+	// lack of copy fix previously masked that complete updating means version updated as well
+	cfg.Status.Version = h.version
+	h.crdwrapper.Update(cfg)
 
 	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
+	if cfg.Status.SamplesRegistry != "bar.io" {
+		t.Fatalf("second update to status registry not in status")
+	}
+	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg,
 		conditions,
 		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
@@ -352,10 +401,17 @@ func TestProcessed(t *testing.T) {
 	cfg.ResourceVersion = "3"
 	// clear out config map tracking
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
+	h.crdwrapper.Update(cfg)
 	// reset operator image to clear out previous registry image override
 	mimic(&h, x86ContentRootDir)
 
 	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
+	if cfg.Status.SamplesRegistry != "foo.io/bar" {
+		t.Fatalf("third update to samples registry not in status")
+	}
+	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg,
 		conditions,
 		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
@@ -377,10 +433,17 @@ func TestProcessed(t *testing.T) {
 	cfg.ResourceVersion = "4"
 	// clear out config map tracking
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
+	h.crdwrapper.Update(cfg)
 	// reset operator image to clear out previous registry image override
 	mimic(&h, x86ContentRootDir)
 
 	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
+	if cfg.Status.SamplesRegistry != "foo.io:1111/bar" {
+		t.Fatalf("fourth update to samples registry no in status")
+	}
+	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg,
 		conditions,
 		[]corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}, t)
@@ -401,10 +464,17 @@ func TestProcessed(t *testing.T) {
 	cfg.Spec.SamplesRegistry = ""
 	// clear out config map tracking
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
+	h.crdwrapper.Update(cfg)
 	// reset operator image to clear out previous registry image override
 	mimic(&h, x86ContentRootDir)
 
 	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
+	if cfg.Status.SamplesRegistry != "" {
+		t.Fatalf("fifth update to samples registry not in status")
+	}
+	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	is, _ = fakeisclient.Get("foo")
 	if is == nil || strings.HasPrefix(is.Spec.DockerImageRepository, "bar.io") {
 		t.Fatalf("foo stream repo still has bar.io")
@@ -423,6 +493,7 @@ func TestImageStreamEvent(t *testing.T) {
 	h, cfg, event := setup()
 	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	// expedite the stream events coming in
@@ -462,6 +533,7 @@ func TestImageStreamEvent(t *testing.T) {
 	cfg.Status.SkippedImagestreams = []string{}
 	cfg.Status.SkippedTemplates = []string{}
 	h.processImageStreamWatchEvent(is, false)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	// now make sure when a non standard change event is not ignored and that we update
@@ -478,6 +550,7 @@ func TestImageStreamEvent(t *testing.T) {
 	// go false
 	is.Annotations[v1.SamplesVersionAnnotation] = h.version
 	h.processImageStreamWatchEvent(is, false)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg, conditions, statuses, t)
 	is = &imagev1.ImageStream{
 		ObjectMeta: metav1.ObjectMeta{
@@ -538,6 +611,7 @@ func TestImageStreamEvent(t *testing.T) {
 	}
 	h.processImageStreamWatchEvent(is, false)
 	h.processImageCondition()
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg, conditions, statuses, t)
 }
 
@@ -545,6 +619,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 	h, cfg, event := setup()
 	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 
@@ -609,6 +684,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 	}
 	event = util.Event{Object: cm}
 	h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 
 	if !util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
 		t.Fatalf("Import Error Condition not true: %#v", cfg)
@@ -630,6 +706,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 	cm, _ = fakecmclient.configMaps[is.Name]
 	event = util.Event{Object: cm}
 	h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	// refetch to see if updated
 	importError := util.Condition(cfg, v1.ImportImageErrorsExist)
 	if !importError.LastUpdateTime.Equal(&initialImportErrorLastUpdateTime) {
@@ -675,6 +752,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 		},
 	}
 	h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 
 	if util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
 		t.Fatalf("Import Error Condition still true: %#v", cfg)
@@ -685,9 +763,11 @@ func TestTemplateEvent(t *testing.T) {
 	h, cfg, event := setup()
 	mimic(&h, x86ContentRootDir)
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses[0] = corev1.ConditionTrue
 	validate(true, err, "", cfg, conditions, statuses, t)
 	// expedite the template events coming in
@@ -712,6 +792,8 @@ func setup() (Handler, *v1.Config, util.Event) {
 	h := NewTestHandler()
 	cfg, _ := h.CreateDefaultResourceIfNeeded(nil)
 	cfg = h.initConditions(cfg)
+	cfg.Status.ManagementState = operatorsv1api.Managed
+	h.StoreCurrentValidConfig(cfg)
 	h.crdwrapper.(*fakeCRDWrapper).cfg = cfg
 	//cache.ClearUpsertsCache()
 	return h, cfg, util.Event{Object: cfg}
@@ -781,6 +863,7 @@ func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 		},
 	}
 	err := h.processImageStreamWatchEvent(is, false)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -790,6 +873,7 @@ func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 	}
 	is.Name = "bar"
 	err = h.processImageStreamWatchEvent(is, false)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	cm, err = fakeconfigmapclient.Get("bar")
 	if cm != nil {
 		t.Fatal("still tracking bar after it was no longer in payload")
@@ -807,6 +891,7 @@ func TestImageStreamCreateErrorDegradedReason(t *testing.T) {
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	fakeisclient.geterrors = map[string]error{"foo": err}
 	h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	_, reason := util.AnyConditionUnknown(cfg)
 	if reason != "APIServerServiceUnavailableError" {
 		t.Fatalf("unexpected reason %s", reason)
@@ -829,6 +914,7 @@ func TestImageGetError(t *testing.T) {
 
 		statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		err := h.Handle(event)
+		cfg, _ = h.crdwrapper.Get(cfg.Name)
 		if !kerrors.IsNotFound(iserr) {
 			statuses[0] = corev1.ConditionUnknown
 			statuses[3] = corev1.ConditionFalse
@@ -851,6 +937,7 @@ func TestImageUpdateError(t *testing.T) {
 
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses[0] = corev1.ConditionUnknown
 	statuses[3] = corev1.ConditionFalse
 	validate(false, err, "upsertstreamerror", cfg, conditions, statuses, t)
@@ -1030,6 +1117,7 @@ func TestImageStreamImportError(t *testing.T) {
 		}
 		event := util.Event{Object: cm}
 		h.Handle(event)
+		cfg, _ = h.crdwrapper.Get(cfg.Name)
 		if util.ConditionFalse(cfg, v1.ImportImageErrorsExist) {
 			t.Fatalf("processImageStreamWatchEvent did not set import error to true %#v for stream %#v", cfg, is)
 		}
@@ -1101,6 +1189,7 @@ func TestImageStreamTagImportErrorRecovery(t *testing.T) {
 	dir := h.GetBaseDir(v1.X86Architecture, cfg)
 	files, _ := h.Filefinder.List(dir)
 	h.processFiles(dir, files, cfg)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	importError := util.Condition(cfg, v1.ImportImageErrorsExist)
 	importError.Status = corev1.ConditionTrue
 	cm := &corev1.ConfigMap{
@@ -1115,6 +1204,7 @@ func TestImageStreamTagImportErrorRecovery(t *testing.T) {
 	fakecmclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
 	fakecmclient.configMaps["foo"] = cm
 	util.ConditionUpdate(cfg, importError)
+	h.crdwrapper.Update(cfg)
 	err := h.processImageStreamWatchEvent(stream, false)
 	if err != nil {
 		t.Fatalf("processImageStreamWatchEvent error %#v", err)
@@ -1192,7 +1282,9 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 	fakecmclient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
 	fakecmclient.configMaps["foo"] = cm
 	util.ConditionUpdate(cfg, importError)
+	h.crdwrapper.Update(cfg)
 	err := h.processImageStreamWatchEvent(stream, false)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	if err != nil {
 		t.Fatalf("processImageStreamWatchEvent error %#v", err)
 	}
@@ -1205,6 +1297,7 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 		Object:  cm,
 	}
 	h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	if util.ConditionTrue(cfg, v1.ImportImageErrorsExist) {
 		t.Fatalf("processImageStreamWatchEvent did not set import error to false %#v", cfg)
 	}
@@ -1265,6 +1358,7 @@ func TestTemplateGetError(t *testing.T) {
 
 		statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 		err := h.Handle(event)
+		cfg, _ = h.crdwrapper.Get(cfg.Name)
 		if !kerrors.IsNotFound(terr) {
 			statuses[0] = corev1.ConditionUnknown
 			statuses[3] = corev1.ConditionFalse
@@ -1286,6 +1380,7 @@ func TestTemplateUpsertError(t *testing.T) {
 
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses[0] = corev1.ConditionUnknown
 	statuses[3] = corev1.ConditionFalse
 	validate(false, err, "upsertstreamerror", cfg, conditions, statuses, t)
@@ -1295,6 +1390,7 @@ func TestDeletedCR(t *testing.T) {
 	h, cfg, event := setup()
 	event.Deleted = true
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(true, err, "", cfg, conditions, statuses, t)
 }
@@ -1306,12 +1402,15 @@ func TestSameCR(t *testing.T) {
 
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	validate(true, err, "", cfg, conditions, statuses, t)
 
 	err = h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	// now with content, should see no change in status after duplicate event, where imagestream import status has not changed
 	validate(true, err, "", cfg, conditions, statuses, t)
 
@@ -1322,6 +1421,7 @@ func TestBadTopDirList(t *testing.T) {
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
 	fakefinder.errors = map[string]error{x86ContentRootDir: fmt.Errorf("badtopdir")}
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(false, err, "badtopdir", cfg, conditions, statuses, t)
 }
@@ -1332,6 +1432,7 @@ func TestBadSubDirList(t *testing.T) {
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
 	fakefinder.errors = map[string]error{x86ContentRootDir + "/imagestreams": fmt.Errorf("badsubdir")}
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
 	validate(false, err, "badsubdir", cfg, conditions, statuses, t)
 	_, reason := util.AnyConditionUnknown(cfg)
@@ -1346,6 +1447,7 @@ func TestBadTopLevelStatus(t *testing.T) {
 	fakestatus := h.crdwrapper.(*fakeCRDWrapper)
 	fakestatus.updateerr = fmt.Errorf("badsdkupdate")
 	err := h.Handle(event)
+	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	// with deferring sdk updates to the very end, the local object will still have valid statuses on it, even though the error
 	// error returned by h.Handle indicates etcd was not updated
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -1847,9 +1949,15 @@ type fakeCRDWrapper struct {
 	cfg       *v1.Config
 }
 
-func (f *fakeCRDWrapper) UpdateStatus(opcfg *v1.Config, dbg string) error { return f.updateerr }
+func (f *fakeCRDWrapper) UpdateStatus(opcfg *v1.Config, dbg string) error {
+	f.cfg = opcfg
+	return f.updateerr
+}
 
-func (f *fakeCRDWrapper) Update(opcfg *v1.Config) error { return f.updateerr }
+func (f *fakeCRDWrapper) Update(opcfg *v1.Config) error {
+	f.cfg = opcfg
+	return f.updateerr
+}
 
 func (f *fakeCRDWrapper) Create(opcfg *v1.Config) error { return f.createerr }
 

@@ -164,6 +164,8 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return nil, "", false, err
 	}
 
+	cfg = cfg.DeepCopy()
+
 	if cfg.DeletionTimestamp != nil {
 		// we do no return the cfg in this case because we do not want to bother with any progress tracking
 		logrus.Printf("Received watch event %s but not upserting since deletion of the Config is in progress", kind+"/"+name)
@@ -198,7 +200,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 	case "imagestream":
 		filePath, inInventory = h.imagestreamFile[name]
 		if !inInventory {
-			logrus.Printf("watch stream event %s not part of operators inventory", name)
+			logrus.Debugf("watch stream event %s not part of operators inventory", name)
 			// we now have cases where sample providers are deleting entire imagestreams;
 			// let's make sure there are no stale entries with inprogress / importerror
 			_, err := h.configmapclientwrapper.Get(name)
@@ -240,7 +242,9 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		// we have gotten events for items early in the migration list but we have not
 		// finished processing the list
 		// avoid (re)upsert, but check import status
-		logrus.Printf("watch event for %s/%s while migration in progress, image in progress is false; will not update sample because of this event", kind, name)
+		if util.ConditionTrue(cfg, v1.MigrationInProgress) {
+			logrus.Printf("watch event for %s/%s while migration in progress, image in progress is false; will not update sample because of this event", kind, name)
+		}
 		return cfg, "", false, nil
 	}
 
@@ -651,6 +655,7 @@ func (h *Handler) Handle(event util.Event) error {
 				if err != nil {
 					return err
 				}
+				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.SamplesExist)
 				dbg := "exist false update"
 				logrus.Printf("CRDUPDATE %s", dbg)
@@ -661,6 +666,7 @@ func (h *Handler) Handle(event util.Event) error {
 				}
 			} else {
 				logrus.Println("Initiating finalizer processing for a SampleResource delete attempt")
+				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				h.RemoveFinalizer(cfg)
 				dbg := "remove finalizer update"
 				logrus.Printf("CRDUPDATE %s", dbg)
@@ -760,6 +766,7 @@ func (h *Handler) Handle(event util.Event) error {
 				h.version == cfg.Status.Version {
 				logrus.Printf("At steady state: config the same and exists is true, in progress false, and version correct")
 
+				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				// migration inevitably means we need to refresh the file cache as samples are added and
 				// deleted between releases, so force file map building
 				if !util.IsUnsupportedArch(cfg) {
@@ -775,15 +782,26 @@ func (h *Handler) Handle(event util.Event) error {
 			// in progress
 			if configChangeRequiresUpsert &&
 				util.ConditionTrue(cfg, v1.ImageChangesInProgress) {
+				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
 				dbg := "change in progress from true to false for config change"
 				logrus.Printf("CRDUPDATE %s", dbg)
+				// do not transfer config changes to status since we are just turning off in progress
+				// to start a new createSamples cycle
 				return h.crdwrapper.UpdateStatus(cfg, dbg)
 			}
 		}
 
-		cfg.Status.ManagementState = operatorsv1api.Managed
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
+		if cfg.Status.ManagementState != operatorsv1api.Managed {
+			cfg.Status.ManagementState = operatorsv1api.Managed
+			dbg := "change status management state to managed"
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
+		}
+
 		// if coming from remove turn off
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		if util.ConditionTrue(cfg, v1.RemovePending) {
 			now := kapis.Now()
 			condition := util.Condition(cfg, v1.RemovePending)
@@ -791,6 +809,9 @@ func (h *Handler) Handle(event util.Event) error {
 			condition.LastUpdateTime = now
 			condition.Status = corev1.ConditionFalse
 			util.ConditionUpdate(cfg, condition)
+			dbg := "change remove pending to false"
+			logrus.Printf("CRDUPDATE %s", dbg)
+			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
@@ -805,27 +826,25 @@ func (h *Handler) Handle(event util.Event) error {
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
-		if len(cfg.Spec.Architectures) == 0 {
-			cfg = h.updateCfgArch(cfg)
-		}
-
-		h.StoreCurrentValidConfig(cfg)
-
-		// now that we have stored the skip lists in status,
 		// cycle through the skip lists and update the managed flag if needed
-		for _, name := range cfg.Status.SkippedTemplates {
+		for _, name := range cfg.Spec.SkippedTemplates {
 			h.setSampleManagedLabelToFalse("template", name)
 		}
-		for _, name := range cfg.Status.SkippedImagestreams {
+		for _, name := range cfg.Spec.SkippedImagestreams {
 			h.setSampleManagedLabelToFalse("imagestream", name)
 		}
 
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		if configChanged && !configChangeRequiresUpsert && util.ConditionTrue(cfg, v1.SamplesExist) {
 			dbg := "bypassing upserts for non invasive config change after initial create"
 			logrus.Printf("CRDUPDATE %s", dbg)
+			cfg = h.refetchCfgMinimizeConflicts(cfg)
+			// we have now "processed" the config and are executing changes, transfer current spec to status
+			h.StoreCurrentValidConfig(cfg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
+		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		if !util.ConditionTrue(cfg, v1.SamplesExist) ||
 			!util.ConditionFalse(cfg, v1.ImageChangesInProgress) ||
 			h.version != cfg.Status.Version ||
@@ -837,9 +856,6 @@ func (h *Handler) Handle(event util.Event) error {
 				h.version == cfg.Status.Version,
 				configChanged,
 				updateStatusManagementState)
-			cfg.Status.Version = h.version
-			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
-			h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
 			// pass in true to force rebuild of maps, which we do here because at this point
 			// we have taken on some form of config change
 			err = h.buildFileMaps(cfg, true)
@@ -877,17 +893,14 @@ func (h *Handler) Handle(event util.Event) error {
 			// method only returns nil error when it returns true for abortForDelete) as a subsequent delete's processing will
 			// immediately remove the cfg obj and cluster operator object that we just posted some error notice in
 			if abortForDelete {
-				// a delete has been initiated; let's revert in progress to false and allow the delete to complete,
-				// including its removal of any sample we might have upserted with the above createSamples call
-				h.GoodConditionUpdate(h.refetchCfgMinimizeConflicts(cfg), corev1.ConditionFalse, v1.ImageChangesInProgress)
+				// a delete has been initiated
 				// note, the imagestream watch cache gets cleared once the deletion/finalizer processing commences
-				dbg := "progressing false because delete has arrived"
+				dbg := "create samples aborted for delete"
 				logrus.Printf("CRDUPDATE %s", dbg)
 				return h.crdwrapper.UpdateStatus(cfg, dbg)
 			}
 
 			if err != nil {
-				cfg = h.refetchCfgMinimizeConflicts(cfg)
 				h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error creating samples: %v")
 				dbg := "setting samples exists to unknown"
 				logrus.Printf("CRDUPDATE %s", dbg)
@@ -898,12 +911,18 @@ func (h *Handler) Handle(event util.Event) error {
 				return err
 			}
 
+			cfg.Status.Version = h.version
+			h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.SamplesExist)
+			h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
 			// now that we employ status subresources, we can't populate
 			// the conditions on create; so we do initialize here, which is our "step 1"
 			// of the "make a change" flow in our state machine
 			cfg = h.initConditions(cfg)
 
 			dbg := "samples upserted; set clusteroperator ready, steady state"
+			// we have now "processed" the config and are executing changes, transfer current spec to status
+			h.StoreCurrentValidConfig(cfg)
+
 			logrus.Printf("CRDUPDATE %s", dbg)
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
@@ -920,6 +939,7 @@ func (h *Handler) setSampleManagedLabelToFalse(kind, name string) error {
 		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			stream, err = h.imageclientwrapper.Get(name)
 			if err == nil && stream != nil && stream.Labels != nil {
+				stream = stream.DeepCopy()
 				label, _ := stream.Labels[v1.SamplesManagedLabel]
 				if label == "true" {
 					stream.Labels[v1.SamplesManagedLabel] = "false"
@@ -933,6 +953,7 @@ func (h *Handler) setSampleManagedLabelToFalse(kind, name string) error {
 		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			tpl, err = h.templateclientwrapper.Get(name)
 			if err == nil && tpl != nil && tpl.Labels != nil {
+				tpl = tpl.DeepCopy()
 				label, _ := tpl.Labels[v1.SamplesManagedLabel]
 				if label == "true" {
 					tpl.Labels[v1.SamplesManagedLabel] = "false"
@@ -1001,6 +1022,9 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 			is = nil
 		}
 
+		if is != nil {
+			is = is.DeepCopy()
+		}
 		err = h.upsertImageStream(imagestream, is, cfg)
 		if err != nil {
 			return false, err
@@ -1043,6 +1067,7 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 			t = nil
 		}
 
+		t = t.DeepCopy()
 		err = h.upsertTemplate(template, t, cfg)
 		if err != nil {
 			return false, err
@@ -1057,9 +1082,9 @@ func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged
 func (h *Handler) refetchCfgMinimizeConflicts(cfg *v1.Config) *v1.Config {
 	c, e := h.crdwrapper.Get(cfg.Name)
 	if e == nil {
-		return c
+		return c.DeepCopy()
 	}
-	return cfg
+	return cfg.DeepCopy()
 }
 
 func getTemplateClient(restconfig *restclient.Config) (*templatev1client.TemplateV1Client, error) {
