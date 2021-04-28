@@ -916,8 +916,6 @@ func TestSpecManagementStateField(t *testing.T) {
 	verifyDeletedTemplatesNotRecreated(t)
 	verifyClusterOperatorConditionsComplete(t, cfg.Status.Version, cfg.Status.ManagementState)
 
-	// get timestamp to check against in progress condition
-	now = kapis.Now()
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		// now switch back to default managed for any subsequent tests
 		// and confirm all the default samples content exists
@@ -946,22 +944,10 @@ func TestSpecManagementStateField(t *testing.T) {
 		t.Fatalf("cfg status mgmt never went to managed %#v", verifyOperatorUp(t))
 	}
 
-	// wait for it to get into pending
-	err = wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
-		cfg, err = crClient.SamplesV1().Configs().Get(context.TODO(), samplesapi.ConfigName, metav1.GetOptions{})
-		if err != nil {
-			t.Logf("%v", err)
-			return false, nil
-		}
-		if util.Condition(cfg, samplesapi.ImageChangesInProgress).LastUpdateTime.After(now.Time) {
-			return true, nil
-		}
-		return false, nil
-	})
-	if err != nil {
-		dumpPod(t)
-		t.Fatalf("error waiting for Config to get into pending: %v samples resource %#v", err, cfg)
-	}
+	// note, with the copy of cfg.Spec.ManagementState occurring in a separate UpdateStatus call, the
+	// subsequent event enables our optimized, only create missing samples, path, when means we
+	// do not bother with setting in progress to true, so there is no longer a need to check its progression
+
 	// now wait for it to get out of pending
 	err = verifyConditionsCompleteSamplesAdded(t)
 	if err != nil {
