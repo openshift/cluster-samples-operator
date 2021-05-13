@@ -18,4 +18,5 @@ spec:
       caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
       serverName: metrics.openshift-cluster-samples-operator.svc
   selector:
-    name: cluster-samples-operator
+    matchLabels:
+      name: cluster-samples-operator
