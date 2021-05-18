@@ -8,6 +8,16 @@ metadata:
     include.release.openshift.io/single-node-developer: "true"
 spec: {}
 status:
+  relatedObjects:
+    - group: samples.operator.openshift.io
+      name: cluster
+      resource: configs
+    - group: ""
+      name: openshift-cluster-samples-operator
+      resource: namespaces
+    - group: ""
+      name: openshift
+      resource: namespaces
   versions:
     - name: operator
       version: "0.0.1-snapshot"
