@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"runtime"
 	"strings"
@@ -349,16 +350,25 @@ func (h *Handler) tbrInaccessible() bool {
 		}
 	}
 	err = wait.PollImmediate(5*time.Second, 3*time.Minute, func() (bool, error) {
-		tlsConf := &tls.Config{}
-		conn, err := tls.Dial("tcp", "registry.redhat.io:443", tlsConf)
+		// we have seen cases in the field with disconnected cluster where the default connection timeout can be
+		// very long (15 minutes in one case); so we do an initial non-tls connection were we can specify a quicker
+		// timeout to filter out that scenario and default to tbr inaccessible / Removed in an expedient fashion
+		connWithTimeout, err := net.DialTimeout("tcp", "registry.redhat.io:443", 15*time.Second)
 		if err != nil {
-			logrus.Infof("test connection to registry.redhat.io failed with %s", err.Error())
-			return false, nil
+			logrus.Infof("test connection with timeout failed with %s", err.Error())
+			return false, err
 		}
+		defer connWithTimeout.Close()
+		// still do the tls form of connect (using our connection with the shorter timeout) to confirm
+		// ssl handshake is OK
+		tlsConf := &tls.Config{
+			ServerName: "registry.redhat.io",
+		}
+		conn := tls.Client(connWithTimeout, tlsConf)
 		defer conn.Close()
 		err = conn.Handshake()
 		if err != nil {
-			logrus.Infof("test connection to registry.redhat.io experienced SSL handshake error %s", err.Error())
+			logrus.Infof("test tls connection to registry.redhat.io experienced SSL handshake error %s", err.Error())
 			// these can be intermittent as well so we'll retry
 			return false, nil
 		}
