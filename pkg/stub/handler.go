@@ -349,14 +349,14 @@ func (h *Handler) tbrInaccessible() bool {
 			return false
 		}
 	}
-	err = wait.PollImmediate(5*time.Second, 3*time.Minute, func() (bool, error) {
+	err = wait.PollImmediate(20*time.Second, 5*time.Minute, func() (bool, error) {
 		// we have seen cases in the field with disconnected cluster where the default connection timeout can be
 		// very long (15 minutes in one case); so we do an initial non-tls connection were we can specify a quicker
 		// timeout to filter out that scenario and default to tbr inaccessible / Removed in an expedient fashion
 		connWithTimeout, err := net.DialTimeout("tcp", "registry.redhat.io:443", 15*time.Second)
 		if err != nil {
 			logrus.Infof("test connection with timeout failed with %s", err.Error())
-			return false, err
+			return false, nil
 		}
 		defer connWithTimeout.Close()
 		// still do the tls form of connect (using our connection with the shorter timeout) to confirm
