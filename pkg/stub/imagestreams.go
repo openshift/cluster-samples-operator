@@ -201,6 +201,12 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 	imagestreamInOperatorImage.ResourceVersion = imagestreamInCluster.ResourceVersion
 	_, err = h.imageclientwrapper.Update(imagestreamInOperatorImage)
 	if err != nil {
+		// we don't generically retry on conflict error, but we don't want to go to degraded on an imagestream
+		// conflict given its highly concurrent nature and that we should eventually settle, so just return the
+		// error so the controller retries and we re-do all the logic above ^^
+		if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
+			return err
+		}
 		return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "imagestream update error: %v")
 	}
 	logrus.Printf("updated imagestream %s", imagestreamInCluster.Name)

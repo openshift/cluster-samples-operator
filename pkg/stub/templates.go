@@ -109,6 +109,12 @@ func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *tem
 	templateInOperatorImage.ResourceVersion = templateInCluster.ResourceVersion
 	_, err := h.templateclientwrapper.Update(templateInOperatorImage)
 	if err != nil {
+		// we don't generically retry on conflict error, but we don't want to go to degraded on an template
+		// conflict so just return the
+		// error so the controller retries and we re-do all the logic above ^^
+		if kerrors.IsConflict(err) || IsRetryableAPIError(err) {
+			return err
+		}
 		return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "template update error: %v")
 	}
 	logrus.Printf("updated template %s", templateInCluster.Name)
