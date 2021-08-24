@@ -123,6 +123,7 @@ const (
 	removing               = "Deleting samples at %s"
 	doneImportsFailed      = "Samples installed at %s, with image import failures for these imagestreams: %s; last import attempt %s"
 	failedImageImports     = "FailedImageImports"
+	sampleUpsertsPending   = "SampleUpsertsPending"
 	currentlyNotManaged    = "Currently%s"
 	// numConfigConditionType is a helper constant that captures the number possible conditions
 	// defined above in this const block
@@ -157,8 +158,8 @@ func ClusterOperatorStatusAvailableCondition(s *samplev1.Config) (configv1.Condi
 	// https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions
 
 	if !ConditionTrue(s, samplev1.SamplesExist) {
-		// return false for the initial state; don't set any messages yet
-		return falseRC, "", ""
+		// return false for the initial state, awaiting all the upsert attempts to complete
+		return falseRC, sampleUpsertsPending, Condition(s, samplev1.SamplesExist).Message
 	}
 
 	// otherwise version of last successful install
