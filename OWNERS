@@ -1,11 +1,10 @@
 reviewers:
 - gabemontero
 - coreydaley
-- legionus
-- dmage
+- dperaza4dustbit
 - adambkaplan
 approvers:
-- bparees
 - gabemontero
 - adambkaplan
+- dperaza4dustbit
 component: Samples
