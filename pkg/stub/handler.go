@@ -911,12 +911,16 @@ func (h *Handler) Handle(event util.Event) error {
 			}
 
 			if err != nil {
-				h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error creating samples: %v")
-				dbg := "setting samples exists to unknown"
-				logrus.Printf("CRDUPDATE %s", dbg)
-				e := h.crdwrapper.UpdateStatus(cfg, dbg)
-				if e != nil {
-					return e
+				if !IsRetryableAPIError(err) && !kerrors.IsConflict(err) {
+					h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error creating samples: %v")
+					dbg := "setting samples exists to unknown"
+					logrus.Printf("CRDUPDATE %s", dbg)
+					e := h.crdwrapper.UpdateStatus(cfg, dbg)
+					if e != nil {
+						return e
+					}
+				} else {
+					logrus.Printf("CRDUPDATE error on createSamples but retryable, not marking degraded: %s", err.Error())
 				}
 				return err
 			}

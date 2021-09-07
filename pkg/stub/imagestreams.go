@@ -103,6 +103,10 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			// it the main loop created, we will let it set the image change reason field
 			return nil
 		}
+		if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
+			logrus.Printf("CRDUPDATE: retryable error %s with imagestream update %s", err.Error(), imagestream.Name)
+			return err
+		}
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing imagestream %s", imagestream.Name)
 		dbg := fmt.Sprintf("CRDUPDATE event img update err bad api obj update %s", imagestream.Name)
@@ -169,6 +173,10 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 			if kerrors.IsAlreadyExists(err) {
 				logrus.Printf("imagestream %s recreated since delete event", imagestreamInOperatorImage.Name)
 				// return the error so the caller can decide what to do
+				return err
+			}
+			if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
+				logrus.Printf("CRDUPDATE: retryable error %s with imagestream update %s", err.Error(), imagestreamInCluster.Name)
 				return err
 			}
 			return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "imagestream create error: %v")

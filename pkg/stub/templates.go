@@ -59,6 +59,10 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 		if kerrors.IsAlreadyExists(err) {
 			return nil
 		}
+		if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
+			logrus.Printf("CRDUPDATE: retryable error %s with template update %s", err.Error(), template.Name)
+			return err
+		}
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
 		h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "%v error replacing template %s", template.Name)
 		dbg := "event temp update err bad api obj update"
@@ -98,6 +102,10 @@ func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *tem
 			if kerrors.IsAlreadyExists(err) {
 				logrus.Printf("template %s recreated since delete event", templateInOperatorImage.Name)
 				// return the error so the caller can decide what to do
+				return err
+			}
+			if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
+				logrus.Printf("CRDUPDATE: retryable error %s with template update %s", err.Error(), templateInCluster.Name)
 				return err
 			}
 			return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "template create error: %v")
