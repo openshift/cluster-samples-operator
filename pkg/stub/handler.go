@@ -306,6 +306,16 @@ func IsRetryableAPIError(err error) bool {
 	return false
 }
 
+func ShouldNotGoDegraded(err error) bool {
+	// retryable and conflict errors should be self-explanatory for not going degraded;
+	// in particular with conflicts, they are quite possible with imagestreams during startup given
+	// the multi tag, highly concurrently nature of creating / updating;
+	// for invalid, we special case this because that is what the imagestream apiserver endpoint
+	// returns if an registry is missing from the images allowed registry list, or is explicitly
+	// listed in the blocked registry list
+	return IsRetryableAPIError(err) || kerrors.IsConflict(err) || kerrors.IsInvalid(err)
+}
+
 // this method assumes it is only called on initial cfg create, or if the Architecture array len == 0
 func (h *Handler) updateCfgArch(cfg *v1.Config) *v1.Config {
 	switch {
@@ -911,7 +921,7 @@ func (h *Handler) Handle(event util.Event) error {
 			}
 
 			if err != nil {
-				if !IsRetryableAPIError(err) && !kerrors.IsConflict(err) {
+				if !ShouldNotGoDegraded(err) {
 					h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error creating samples: %v")
 					dbg := "setting samples exists to unknown"
 					logrus.Printf("CRDUPDATE %s", dbg)
