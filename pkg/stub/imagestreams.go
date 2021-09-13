@@ -176,7 +176,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 				return err
 			}
 			if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
-				logrus.Printf("CRDUPDATE: retryable error %s with imagestream update %s", err.Error(), imagestreamInCluster.Name)
+				logrus.Printf("CRDUPDATE: retryable error %s with imagestream update %s", err.Error(), imagestreamInOperatorImage.Name)
 				return err
 			}
 			return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "imagestream create error: %v")
