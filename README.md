@@ -117,7 +117,32 @@ Samples: `oc get is -n openshift`, `oc get templates -n openshift`  … use of -
 
 Deletion of the CRD instance will reset the samples operator to the default configuration, but leave the current revision of the samples operator pod running.
 
-If there is a bug in the samples operator deletion logic, to reset the samples operator configuration by stopping the current pod and starting a new one:
+You can also set the management state of the samples operator to `Removed` if you do not need samples running in your
+cluster:
+
+```yaml
+apiVersion: samples.operator.openshift.io/v1
+kind: Config
+metadata:
+  name: cluster
+spec:
+  architectures:
+  - x86_64
+  managementState: Removed
+```
+
+# "In-payload" imagestreams 
+
+The imagestreams defined at (https://github.com/openshift/cluster-samples-operator/blob/master/manifests/08-openshift-imagestreams.yaml)[https://github.com/openshift/cluster-samples-operator/blob/master/manifests/08-openshift-imagestreams.yaml]
+are not managed by the samples operator.  These are special imagestreams that point to images in the install payload, and their creation and updates are handled by the 
+[Cluster Version Operator](https://github.com/openshift/cluster-version-operator)
+
+# Development
+
+NOTE:  this next step violates your cluster support contract if you are an OCP customer.  But if your are using a cluster
+for development, and you wish to experiment with and update the samples operator code itself, you can reset the image used
+for the samples operator via the following steps:
+
 - Run `oc edit clusterversion version` and add an override entry to the spec for the Deployment of the samples operator so it is unmanaged:
 
 ```yaml
@@ -131,8 +156,8 @@ spec:
 ```
 
 - Scale down the deployment via `oc scale deploy cluster-samples-operator --replicas=0`
-- Edit the samples resource, remove the finalizer
-- Delete the samples resource, config map/secrets in operator namespace, samples in openshift namespace
+- Edit the samples resource, `oc edit config.samples cluster`, remove the finalizer
+- Delete the samples resource, `oc delete config.samples cluster`, config map/secrets in operator namespace, imagestreams and templates in openshift namespace
 - Scale up the deployment via `oc scale deploy cluster-samples-operator --replicas=1`
 
 
