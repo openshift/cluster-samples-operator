@@ -105,7 +105,7 @@ func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *tem
 				return err
 			}
 			if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
-				logrus.Printf("CRDUPDATE: retryable error %s with template update %s", err.Error(), templateInCluster.Name)
+				logrus.Printf("CRDUPDATE: retryable error %s with template update %s", err.Error(), templateInOperatorImage.Name)
 				return err
 			}
 			return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "template create error: %v")
