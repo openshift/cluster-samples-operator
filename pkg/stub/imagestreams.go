@@ -103,7 +103,7 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 			// it the main loop created, we will let it set the image change reason field
 			return nil
 		}
-		if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
+		if ShouldNotGoDegraded(err) {
 			logrus.Printf("CRDUPDATE: retryable error %s with imagestream update %s", err.Error(), imagestream.Name)
 			return err
 		}
@@ -175,7 +175,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 				// return the error so the caller can decide what to do
 				return err
 			}
-			if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
+			if ShouldNotGoDegraded(err) {
 				logrus.Printf("CRDUPDATE: retryable error %s with imagestream update %s", err.Error(), imagestreamInOperatorImage.Name)
 				return err
 			}
@@ -209,10 +209,7 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 	imagestreamInOperatorImage.ResourceVersion = imagestreamInCluster.ResourceVersion
 	_, err = h.imageclientwrapper.Update(imagestreamInOperatorImage)
 	if err != nil {
-		// we don't generically retry on conflict error, but we don't want to go to degraded on an imagestream
-		// conflict given its highly concurrent nature and that we should eventually settle, so just return the
-		// error so the controller retries and we re-do all the logic above ^^
-		if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
+		if ShouldNotGoDegraded(err) {
 			return err
 		}
 		return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "imagestream update error: %v")

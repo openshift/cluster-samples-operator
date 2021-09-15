@@ -59,7 +59,7 @@ func (h *Handler) processTemplateWatchEvent(t *templatev1.Template, deleted bool
 		if kerrors.IsAlreadyExists(err) {
 			return nil
 		}
-		if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
+		if ShouldNotGoDegraded(err) {
 			logrus.Printf("CRDUPDATE: retryable error %s with template update %s", err.Error(), template.Name)
 			return err
 		}
@@ -104,7 +104,7 @@ func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *tem
 				// return the error so the caller can decide what to do
 				return err
 			}
-			if IsRetryableAPIError(err) || kerrors.IsConflict(err) {
+			if ShouldNotGoDegraded(err) {
 				logrus.Printf("CRDUPDATE: retryable error %s with template update %s", err.Error(), templateInOperatorImage.Name)
 				return err
 			}
@@ -117,10 +117,7 @@ func (h *Handler) upsertTemplate(templateInOperatorImage, templateInCluster *tem
 	templateInOperatorImage.ResourceVersion = templateInCluster.ResourceVersion
 	_, err := h.templateclientwrapper.Update(templateInOperatorImage)
 	if err != nil {
-		// we don't generically retry on conflict error, but we don't want to go to degraded on an template
-		// conflict so just return the
-		// error so the controller retries and we re-do all the logic above ^^
-		if kerrors.IsConflict(err) || IsRetryableAPIError(err) {
+		if ShouldNotGoDegraded(err) {
 			return err
 		}
 		return h.processError(opcfg, v1.SamplesExist, corev1.ConditionUnknown, err, "template update error: %v")

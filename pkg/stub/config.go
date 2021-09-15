@@ -75,6 +75,14 @@ func (h *Handler) SpecValidation(cfg *v1.Config) error {
 			}
 		}
 	}
+
+	// if the global imagestream config prevents the creation of imagestreams with the samples registry, we mark
+	// invalid config
+	if h.imageConfigBlocksImageStreamCreation(cfg.Spec.SamplesRegistry) {
+		err := fmt.Errorf("global openshift image configuration prevents the creation of imagestreams using the registry %s", cfg.Spec.SamplesRegistry)
+		return h.processError(cfg, v1.ConfigurationValid, corev1.ConditionFalse, err, "%#v")
+	}
+
 	h.GoodConditionUpdate(cfg, corev1.ConditionTrue, v1.ConfigurationValid)
 	return nil
 }
@@ -282,14 +290,17 @@ func (h *Handler) processError(opcfg *v1.Config, ctype v1.ConfigConditionType, c
 
 		// most reasons for degraded status are handled in ClusterOperatorStatusDegradedCondition based on
 		// state in the opcfg correlated with other factors; but when the error should directly drive the
-		// reason text, we set the reason here; at this time, that means either API Server errors or
-		// errors accessing the local file system
+		// reason text, we set the reason here; at this time, that means either API Server errors,
+		// errors accessing the local file system, or global imagestream config blocking the use of our configured
+		// registry
 		reason := kerrors.ReasonForError(err)
 		switch {
 		case len(reason) > 0 && reason != kapis.StatusReasonUnknown:
 			status.Reason = fmt.Sprintf("APIServer%sError", reason)
 		case cstatus == corev1.ConditionUnknown && ctype == v1.SamplesExist:
 			status.Reason = "FileSystemError"
+		default:
+			status.Reason = "GlobalImageStreamConfigRegistryMismatch"
 		}
 
 		util.ConditionUpdate(opcfg, status)
