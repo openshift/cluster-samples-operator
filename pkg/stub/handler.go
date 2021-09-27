@@ -409,7 +409,7 @@ func (h *Handler) imageConfigBlocksImageStreamCreation(name string) bool {
 		logrus.Printf("no blocked registries items will prevent the use of %s", name)
 	}
 
-	logrus.Printf("no global imagestream configuration will block imagestream creation")
+	logrus.Printf("no global imagestream configuration will block imagestream creation using %s", name)
 
 	return false
 }
@@ -430,24 +430,29 @@ func (h *Handler) tbrInaccessible() bool {
 		h.imageConfigBlocksImageStreamCreation("quay.io") {
 		return true
 	}
-	err := wait.PollImmediate(5*time.Second, 20*time.Second, func() (bool, error) {
+
+	proxy := &configv1.Proxy{}
+	var err error
+	err = wait.PollImmediate(5*time.Second, 20*time.Second, func() (bool, error) {
 		// if a proxy is in play, the registry.redhat.io connection attempt during startup is problematic at best;
 		// assume tbr is accessible since a proxy implies external access, and not disconnected
-		proxy, err := h.configclient.Proxies().Get(context.TODO(), "cluster", metav1.GetOptions{})
+		proxy, err = h.configclient.Proxies().Get(context.TODO(), "cluster", metav1.GetOptions{})
 		if err != nil {
 			logrus.Printf("unable to retrieve proxy configuration as part of testing registry.redhat.io connectivity: %s", err.Error())
 			return false, nil
-		} else {
-			if len(proxy.Status.HTTPSProxy) > 0 || len(proxy.Status.HTTPProxy) > 0 {
-				logrus.Printf("with global proxy configured assuming registry.redhat.io is accessible, bootstrap to Managed")
-				return true, nil
-			}
 		}
-		return false, errors.New("proxy is not configured")
+		return true, nil
 	})
 	if err != nil {
+		// just logging for reference; we will move on to the registry connection tests
+		logrus.Printf("was unable to get proxy instance within a reasonable retry window")
+	}
+
+	if len(proxy.Status.HTTPSProxy) > 0 || len(proxy.Status.HTTPProxy) > 0 {
+		logrus.Printf("with global proxy configured assuming registry.redhat.io is accessible, bootstrap to Managed")
 		return false
 	}
+
 	err = wait.PollImmediate(20*time.Second, 5*time.Minute, func() (bool, error) {
 		// we have seen cases in the field with disconnected cluster where the default connection timeout can be
 		// very long (15 minutes in one case); so we do an initial non-tls connection were we can specify a quicker
