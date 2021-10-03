@@ -14,6 +14,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	v1 "github.com/openshift/api/samples/v1"
+	templatev1 "github.com/openshift/api/template/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
@@ -226,7 +228,8 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 		state.Status.RelatedObjects = []configv1.ObjectReference{
 			{Group: v1.GroupName, Resource: "configs", Name: "cluster"},
 			{Resource: "namespaces", Name: v1.OperatorNamespace},
-			{Resource: "namespaces", Name: "openshift"},
+			{Group: templatev1.GroupName, Resource: "templates", Name: "", Namespace: "openshift"},
+			{Group: imagev1.GroupName, Resource: "imagestreams", Name: "", Namespace: "openshift"},
 		}
 
 		return o.ClusterOperatorWrapper.UpdateStatus(state)
