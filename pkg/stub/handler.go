@@ -3,6 +3,7 @@ package stub
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -25,6 +26,7 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/util/retry"
 
+	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	operatorsv1api "github.com/openshift/api/operator/v1"
 	v1 "github.com/openshift/api/samples/v1"
@@ -306,6 +308,16 @@ func IsRetryableAPIError(err error) bool {
 	return false
 }
 
+func ShouldNotGoDegraded(err error) bool {
+	// retryable and conflict errors should be self-explanatory for not going degraded;
+	// in particular with conflicts, they are quite possible with imagestreams during startup given
+	// the multi tag, highly concurrent nature of creating / updating;
+	// for invalid, we special case this because that is what the imagestream apiserver endpoint
+	// returns if a registry is missing from the images allowed registry list, or is explicitly
+	// listed in the blocked registry list
+	return IsRetryableAPIError(err) || kerrors.IsConflict(err) || kerrors.IsInvalid(err)
+}
+
 // this method assumes it is only called on initial cfg create, or if the Architecture array len == 0
 func (h *Handler) updateCfgArch(cfg *v1.Config) *v1.Config {
 	switch {
@@ -327,6 +339,81 @@ func (h *Handler) updateCfgArch(cfg *v1.Config) *v1.Config {
 	return cfg
 }
 
+func (h *Handler) imageConfigBlocksImageStreamCreation(name string) bool {
+	//TODO openshift/client-go/config/clientset/versioned/fake and ConfigV1Interface has compile issues with
+	// respect to ConfigV1Client (missing method implementations), so for now we cannot use it in our
+	// unit tests.  In the actual runtime if we cannot create the client the operator errors out on startup.
+	if h.configclient == nil {
+		return false
+	}
+	var imgCfg *configv1.Image
+	err := wait.PollImmediate(5*time.Second, 20*time.Second, func() (done bool, err error) {
+		// if the image config allowed registry or blocked registry list will prevent the creation of imagestreams,
+		// we consider this inaccessible
+		imgCfg, err = h.configclient.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
+		if err != nil {
+			logrus.Printf("unable to retrieve image configuration as part of testing %s connectivity: %s", name, err.Error())
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		return true
+	}
+
+	ok := false
+	// check allowed domain list
+	if len(imgCfg.Spec.AllowedRegistriesForImport) > 0 {
+		for _, rl := range imgCfg.Spec.AllowedRegistriesForImport {
+			logrus.Printf("considering allowed registries domain %s for %s", rl.DomainName, name)
+			if strings.HasSuffix(name, rl.DomainName) {
+				logrus.Printf("the allowed registries domain %s allows imagestream creation access for search param %s", rl.DomainName, name)
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			logrus.Printf("no allowed registries items will permit the use of %s", name)
+			return true
+		}
+	}
+
+	ok = false
+	// check allowed specific registry list
+	if len(imgCfg.Spec.RegistrySources.AllowedRegistries) > 0 {
+		for _, r := range imgCfg.Spec.RegistrySources.AllowedRegistries {
+			logrus.Printf("considering allowed registry %s for %s", r, name)
+			if strings.TrimSpace(r) == strings.TrimSpace(name) {
+				logrus.Printf("the allowed registry %s allows imagestream creation for search param %s", r, name)
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			logrus.Printf("no allowed registries items will permit the use of %s", name)
+			return true
+		}
+
+	}
+
+	ok = false
+	// check blocked list
+	if len(imgCfg.Spec.RegistrySources.BlockedRegistries) > 0 {
+		for _, r := range imgCfg.Spec.RegistrySources.BlockedRegistries {
+			logrus.Printf("considering blocked registry %s for %s", r, name)
+			if strings.TrimSpace(r) == strings.TrimSpace(name) {
+				logrus.Printf("the blocked registry %s prevents imagestream creation for search param %s", r, name)
+				return true
+			}
+		}
+		logrus.Printf("no blocked registries items will prevent the use of %s", name)
+	}
+
+	logrus.Printf("no global imagestream configuration will block imagestream creation using %s", name)
+
+	return false
+}
+
 func (h *Handler) tbrInaccessible() bool {
 	if h.configclient == nil {
 		// unit test environment
@@ -338,17 +425,34 @@ func (h *Handler) tbrInaccessible() bool {
 		logrus.Print("registry.redhat.io does not support ipv6, bootstrap to removed")
 		return true
 	}
-	// if a proxy is in play, the registry.redhat.io connection attempt during startup is problematic at best;
-	// assume tbr is accessible since a proxy implies external access, and not disconnected
-	proxy, err := h.configclient.Proxies().Get(context.TODO(), "cluster", metav1.GetOptions{})
-	if err != nil {
-		logrus.Printf("unable to retrieve proxy configuration as part of testing registry.redhat.io connectivity: %s", err.Error())
-	} else {
-		if len(proxy.Status.HTTPSProxy) > 0 || len(proxy.Status.HTTPProxy) > 0 {
-			logrus.Printf("with global proxy configured assuming registry.redhat.io is accessible, bootstrap to Managed")
-			return false
-		}
+	if h.imageConfigBlocksImageStreamCreation("registry.redhat.io") ||
+		h.imageConfigBlocksImageStreamCreation("registry.access.redhat.io") ||
+		h.imageConfigBlocksImageStreamCreation("quay.io") {
+		return true
 	}
+
+	proxy := &configv1.Proxy{}
+	var err error
+	err = wait.PollImmediate(5*time.Second, 20*time.Second, func() (bool, error) {
+		// if a proxy is in play, the registry.redhat.io connection attempt during startup is problematic at best;
+		// assume tbr is accessible since a proxy implies external access, and not disconnected
+		proxy, err = h.configclient.Proxies().Get(context.TODO(), "cluster", metav1.GetOptions{})
+		if err != nil {
+			logrus.Printf("unable to retrieve proxy configuration as part of testing registry.redhat.io connectivity: %s", err.Error())
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		// just logging for reference; we will move on to the registry connection tests
+		logrus.Printf("was unable to get proxy instance within a reasonable retry window")
+	}
+
+	if len(proxy.Status.HTTPSProxy) > 0 || len(proxy.Status.HTTPProxy) > 0 {
+		logrus.Printf("with global proxy configured assuming registry.redhat.io is accessible, bootstrap to Managed")
+		return false
+	}
+
 	err = wait.PollImmediate(20*time.Second, 5*time.Minute, func() (bool, error) {
 		// we have seen cases in the field with disconnected cluster where the default connection timeout can be
 		// very long (15 minutes in one case); so we do an initial non-tls connection were we can specify a quicker
@@ -642,7 +746,7 @@ func (h *Handler) Handle(event util.Event) error {
 			// here, we get started with the delete, which will ultimately reset the conditions
 			// and samples, when it is false again, regardless of whether the imagestream imports are done
 			if h.upsertInProgress {
-				return fmt.Errorf("A delete attempt has come in while creating samples; initiating retry; creation loop should abort soon")
+				return errors.New("A delete attempt has come in while creating samples; initiating retry; creation loop should abort soon")
 			}
 
 			// nuke any registered upserts
@@ -911,12 +1015,16 @@ func (h *Handler) Handle(event util.Event) error {
 			}
 
 			if err != nil {
-				h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error creating samples: %v")
-				dbg := "setting samples exists to unknown"
-				logrus.Printf("CRDUPDATE %s", dbg)
-				e := h.crdwrapper.UpdateStatus(cfg, dbg)
-				if e != nil {
-					return e
+				if !ShouldNotGoDegraded(err) {
+					h.processError(cfg, v1.SamplesExist, corev1.ConditionUnknown, err, "error creating samples: %v")
+					dbg := "setting samples exists to unknown"
+					logrus.Printf("CRDUPDATE %s", dbg)
+					e := h.crdwrapper.UpdateStatus(cfg, dbg)
+					if e != nil {
+						return e
+					}
+				} else {
+					logrus.Printf("CRDUPDATE error on createSamples but retryable, not marking degraded: %s", err.Error())
 				}
 				return err
 			}
