@@ -15,9 +15,14 @@ status:
     - group: ""
       name: openshift-cluster-samples-operator
       resource: namespaces
-    - group: ""
-      name: openshift
-      resource: namespaces
+    - group: template.openshift.io
+      name: ""
+      resource: templates
+      namespace: openshift
+    - group: image.openshift.io
+      name: ""
+      resource: imagestreams
+      namespace: openshift
   versions:
     - name: operator
       version: "0.0.1-snapshot"
