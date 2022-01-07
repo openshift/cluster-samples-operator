@@ -21,6 +21,7 @@ import (
 	operatorsv1api "github.com/openshift/api/operator/v1"
 	v1 "github.com/openshift/api/samples/v1"
 	templatev1 "github.com/openshift/api/template/v1"
+	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	imagev1client "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 
 	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
@@ -274,6 +275,275 @@ func TestSkipped(t *testing.T) {
 	importerror = util.Condition(cfg, v1.ImportImageErrorsExist)
 	if importerror.Status == corev1.ConditionTrue {
 		t.Fatalf("skipped imagestream still reporting error %#v", importerror)
+	}
+}
+
+type BlockTestScenario struct {
+	Name           string
+	RegistryName   string
+	ImageConfig    configv1.Image
+	ExpectedResult bool
+}
+
+func buildBlockTestScenarios() []BlockTestScenario {
+	testSecenarios := []BlockTestScenario{
+		{
+			Name:         "Test AllowRegistriesForImport whitelisted",
+			RegistryName: "registry.redhat.io",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					AllowedRegistriesForImport: []configv1.RegistryLocation{
+						{
+							DomainName: "redhat.io",
+						},
+					},
+				},
+			},
+			ExpectedResult: false,
+		},
+		{
+			Name:         "Test AllowRegistriesForImport whitelisted but empty registry name (1)",
+			RegistryName: "",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					AllowedRegistriesForImport: []configv1.RegistryLocation{
+						{
+							DomainName: "redhat.io",
+						},
+						{
+							DomainName: "quay.io",
+						},
+					},
+				},
+			},
+			ExpectedResult: false,
+		},
+		{
+			Name:         "Test AllowRegistriesForImport whitelisted but empty registry name (2)",
+			RegistryName: "",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					AllowedRegistriesForImport: []configv1.RegistryLocation{
+						{
+							DomainName: "registry.redhat.io",
+						},
+						{
+							DomainName: "access.redhat.io",
+						},
+						{
+							DomainName: "quay.io",
+						},
+					},
+				},
+			},
+			ExpectedResult: false,
+		},
+		{
+			Name:         "Test AllowRegistriesForImport whitelisted but empty registry name (2)",
+			RegistryName: "",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					AllowedRegistriesForImport: []configv1.RegistryLocation{
+						{
+							DomainName: "registry.redhat.io",
+						},
+						{
+							DomainName: "registry.access.redhat.io",
+						},
+						{
+							DomainName: "quay.io",
+						},
+					},
+				},
+			},
+			ExpectedResult: false,
+		},
+		{
+			Name:         "Test AllowRegistriesForImport not whitelisted but empty registry name (1)",
+			RegistryName: "",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					AllowedRegistriesForImport: []configv1.RegistryLocation{
+						{
+							DomainName: "quay.io",
+						},
+					},
+				},
+			},
+			ExpectedResult: true,
+		},
+		{
+			Name:         "Test AllowRegistriesForImport not whitelisted but empty registry name (2)",
+			RegistryName: "",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					AllowedRegistriesForImport: []configv1.RegistryLocation{
+						{
+							DomainName: "quay.io",
+						},
+						{
+							DomainName: "access.redhat.io",
+						},
+					},
+				},
+			},
+			ExpectedResult: true,
+		},
+		{
+			Name:         "Test AllowRegistriesForImport not whitelisted but empty registry name (3)",
+			RegistryName: "",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					AllowedRegistriesForImport: []configv1.RegistryLocation{
+						{
+							DomainName: "quay.io",
+						},
+						{
+							DomainName: "registry.redhat.io",
+						},
+					},
+				},
+			},
+			ExpectedResult: true,
+		},
+		{
+			Name:         "Test AllowRegistriesForImport not whitelisted",
+			RegistryName: "registry.redhat.io",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					AllowedRegistriesForImport: []configv1.RegistryLocation{
+						{
+							DomainName: "quay.io",
+						},
+					},
+				},
+			},
+			ExpectedResult: true,
+		},
+		{
+			Name:         "Test AllowRegistries whitelisted",
+			RegistryName: "registry.redhat.io",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					RegistrySources: configv1.RegistrySources{
+						AllowedRegistries: []string{"registry.redhat.io"},
+					},
+				},
+			},
+			ExpectedResult: false,
+		},
+		{
+			Name:         "Test AllowRegistries whitelisted but empty registry name",
+			RegistryName: "",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					RegistrySources: configv1.RegistrySources{
+						AllowedRegistries: []string{
+							"registry.redhat.io",
+							"registry.access.redhat.io",
+							"quay.io",
+						},
+					},
+				},
+			},
+			ExpectedResult: false,
+		},
+		{
+			Name:         "Test AllowRegistries not whitelisted but empty registry name",
+			RegistryName: "",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					RegistrySources: configv1.RegistrySources{
+						AllowedRegistries: []string{
+							"registry.redhat.io",
+							"registry.access.redhat.io",
+						},
+					},
+				},
+			},
+			ExpectedResult: true,
+		},
+		{
+			Name:         "Test AllowRegistries not whitelisted",
+			RegistryName: "registry.redhat.io",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					RegistrySources: configv1.RegistrySources{
+						AllowedRegistries: []string{"quay.io"},
+					},
+				},
+			},
+			ExpectedResult: true,
+		},
+		{
+			Name:         "Test BlockedRegistries whitelisted",
+			RegistryName: "registry.redhat.io",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					RegistrySources: configv1.RegistrySources{
+						BlockedRegistries: []string{"registry.redhat.io"},
+					},
+				},
+			},
+			ExpectedResult: true,
+		},
+		{
+			Name:         "Test BlockedRegistries not whitelisted but emtpy registry name ",
+			RegistryName: "",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					RegistrySources: configv1.RegistrySources{
+						BlockedRegistries: []string{"registry.redhat.io"},
+					},
+				},
+			},
+			ExpectedResult: false,
+		},
+		{
+			Name:         "Test BlockedRegistries not whitelisted",
+			RegistryName: "registry.redhat.io",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					RegistrySources: configv1.RegistrySources{
+						BlockedRegistries: []string{"quay.io"},
+					},
+				},
+			},
+			ExpectedResult: false,
+		},
+		{
+			Name:         "Test None whitelisted",
+			RegistryName: "registry.redhat.io",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{},
+			},
+			ExpectedResult: false,
+		},
+		{
+			Name:         "Test None whitelisted and empty registry name",
+			RegistryName: "",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{},
+			},
+			ExpectedResult: false,
+		},
+	}
+
+	return testSecenarios
+}
+
+func TestImageConfigBlocksImageStreamCreation(t *testing.T) {
+	h, _, _ := setup()
+	h.configclient = new(configv1client.ConfigV1Client)
+	testSecenarios := buildBlockTestScenarios()
+	for _, scenario := range testSecenarios {
+		getImageConfig = func(h *Handler) (*configv1.Image, error) {
+			return &scenario.ImageConfig, nil
+		}
+		blocked := h.imageConfigBlocksImageStreamCreation(scenario.RegistryName)
+		if blocked != scenario.ExpectedResult {
+			t.Errorf("Scenario failed: %s", scenario.Name)
+		}
 	}
 }
 
