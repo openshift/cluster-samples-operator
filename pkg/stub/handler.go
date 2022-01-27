@@ -339,6 +339,38 @@ func (h *Handler) updateCfgArch(cfg *v1.Config) *v1.Config {
 	return cfg
 }
 
+func redHatRegistriesFound(allowedRegistries map[string]bool) bool {
+	// Empty Sample Registry will be allowed as long as allowed registries contanis:
+	// - registry.redhat.io
+	// - registry.access.redhat.com
+	// - quay.io
+	return allowedRegistries["registry.redhat.io"] &&
+		allowedRegistries["registry.access.redhat.io"] &&
+		allowedRegistries["quay.io"]
+}
+
+func redHatRegistriesDomainFound(allowedDomains map[string]bool) bool {
+	// Empty Sample Registry will be allowed as long as allowed domains contanis:
+	// - registry.redhat.io
+	// - registry.access.redhat.com
+	// - quay.io
+	// or a domain combination that covers above registries
+	return (allowedDomains["registry.redhat.io"] &&
+		allowedDomains["registry.access.redhat.io"] &&
+		allowedDomains["quay.io"]) ||
+		(allowedDomains["redhat.io"] &&
+			allowedDomains["quay.io"]) ||
+		(allowedDomains["registry.redhat.io"] &&
+			allowedDomains["access.redhat.io"] &&
+			allowedDomains["quay.io"])
+
+}
+
+var getImageConfig = func(h *Handler) (*configv1.Image, error) {
+	// Extracting call to ConfigV1Client as a functor to simplify unit testing
+	return h.configclient.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
+}
+
 func (h *Handler) imageConfigBlocksImageStreamCreation(name string) bool {
 	//TODO openshift/client-go/config/clientset/versioned/fake and ConfigV1Interface has compile issues with
 	// respect to ConfigV1Client (missing method implementations), so for now we cannot use it in our
@@ -350,7 +382,8 @@ func (h *Handler) imageConfigBlocksImageStreamCreation(name string) bool {
 	err := wait.PollImmediate(5*time.Second, 20*time.Second, func() (done bool, err error) {
 		// if the image config allowed registry or blocked registry list will prevent the creation of imagestreams,
 		// we consider this inaccessible
-		imgCfg, err = h.configclient.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
+		//imgCfg, err = h.configclient.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
+		imgCfg, err = getImageConfig(h)
 		if err != nil {
 			logrus.Printf("unable to retrieve image configuration as part of testing %s connectivity: %s", name, err.Error())
 			return false, nil
@@ -364,7 +397,10 @@ func (h *Handler) imageConfigBlocksImageStreamCreation(name string) bool {
 	ok := false
 	// check allowed domain list
 	if len(imgCfg.Spec.AllowedRegistriesForImport) > 0 {
+		var visitedDomains = make(map[string]bool)
+
 		for _, rl := range imgCfg.Spec.AllowedRegistriesForImport {
+			visitedDomains[rl.DomainName] = true
 			logrus.Printf("considering allowed registries domain %s for %s", rl.DomainName, name)
 			if strings.HasSuffix(name, rl.DomainName) {
 				logrus.Printf("the allowed registries domain %s allows imagestream creation access for search param %s", rl.DomainName, name)
@@ -372,6 +408,13 @@ func (h *Handler) imageConfigBlocksImageStreamCreation(name string) bool {
 				break
 			}
 		}
+
+		// Checking if Sample Registry is empty (default scenario)
+		if len(name) == 0 && redHatRegistriesDomainFound(visitedDomains) {
+			logrus.Printf("imagestream creation will be allowed when sample registry config is empty")
+			ok = true
+		}
+
 		if !ok {
 			logrus.Printf("no allowed registries items will permit the use of %s", name)
 			return true
@@ -381,7 +424,10 @@ func (h *Handler) imageConfigBlocksImageStreamCreation(name string) bool {
 	ok = false
 	// check allowed specific registry list
 	if len(imgCfg.Spec.RegistrySources.AllowedRegistries) > 0 {
+		var visitedRegistries = make(map[string]bool)
+
 		for _, r := range imgCfg.Spec.RegistrySources.AllowedRegistries {
+			visitedRegistries[strings.TrimSpace(r)] = true
 			logrus.Printf("considering allowed registry %s for %s", r, name)
 			if strings.TrimSpace(r) == strings.TrimSpace(name) {
 				logrus.Printf("the allowed registry %s allows imagestream creation for search param %s", r, name)
@@ -389,6 +435,13 @@ func (h *Handler) imageConfigBlocksImageStreamCreation(name string) bool {
 				break
 			}
 		}
+
+		// Checking if Sample Registry is empty (default scenario)
+		if len(name) == 0 && redHatRegistriesFound(visitedRegistries) {
+			logrus.Printf("imagestream creation will be allowed when sample registry config is empty")
+			ok = true
+		}
+
 		if !ok {
 			logrus.Printf("no allowed registries items will permit the use of %s", name)
 			return true
