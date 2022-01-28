@@ -1,9 +1,9 @@
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.11 AS builder
 WORKDIR /go/src/github.com/openshift/cluster-samples-operator
 COPY . .
 RUN make build
 
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-base-openshift-4.10
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-base-openshift-4.11
 COPY --from=builder /go/src/github.com/openshift/cluster-samples-operator/cluster-samples-operator /usr/bin/
 RUN ln -f /usr/bin/cluster-samples-operator /usr/bin/cluster-samples-operator-watch
 COPY manifests/image-references manifests/0* /manifests/
