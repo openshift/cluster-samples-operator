@@ -3,6 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
+    capability.openshift.io/name: openshift-samples
     include.release.openshift.io/ibm-cloud-managed: "true"
   name: cluster-samples-operator
   namespace: openshift-cluster-samples-operator

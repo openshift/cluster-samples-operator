@@ -4,6 +4,7 @@ metadata:
   name: cluster-samples-operator-openshift-edit
   namespace: openshift
   annotations:
+    capability.openshift.io/name: openshift-samples
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
 subjects:

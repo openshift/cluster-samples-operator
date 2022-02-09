@@ -4,6 +4,7 @@ metadata:
   name: coreos-pull-secret-reader
   namespace: openshift-config
   annotations:
+    capability.openshift.io/name: openshift-samples
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
 rules:
@@ -24,6 +25,7 @@ metadata:
   name: cluster-samples-operator-openshift-config-secret-reader
   namespace: openshift-config
   annotations:
+    capability.openshift.io/name: openshift-samples
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
 subjects:
