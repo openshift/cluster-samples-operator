@@ -125,9 +125,6 @@ func (h *Handler) processImageStreamWatchEvent(is *imagev1.ImageStream, deleted 
 }
 
 func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInCluster *imagev1.ImageStream, opcfg *v1.Config) error {
-	// handle jenkins mutations if needed
-	imagestreamInOperatorImage = jenkinsOverrides(imagestreamInOperatorImage)
-
 	// whether we are now skipping this imagestream, or are upserting it, remove any prior import errors;
 	// in the skip case, we don't want errors to a now skipped stream blocking availability status; in the upsert
 	// case, any errors will cause the imagestream controller to attempt another image import
@@ -220,17 +217,6 @@ func (h *Handler) upsertImageStream(imagestreamInOperatorImage, imagestreamInClu
 
 func (h *Handler) updateDockerPullSpec(oldies []string, imagestream *imagev1.ImageStream, opcfg *v1.Config) {
 	logrus.Debugf("updateDockerPullSpec stream %s has repo %s", imagestream.Name, imagestream.Spec.DockerImageRepository)
-	// we always want to leave the jenkins images as using the payload set to the IMAGE* env's;
-	switch imagestream.Name {
-	case "jenkins":
-		return
-	case "jenkins-agent-base":
-		return
-	case "jenkins-agent-nodejs":
-		return
-	case "jenkins-agent-maven":
-		return
-	}
 
 	// don't mess with deprecated field unless it is actually set with something
 	if len(imagestream.Spec.DockerImageRepository) > 0 &&

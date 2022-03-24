@@ -31,14 +31,6 @@ spec:
           value: cluster-samples-operator
         - name: RELEASE_VERSION
           value: 0.0.1-snapshot
-        - name: IMAGE_JENKINS
-          value: quay.io/openshift/origin-jenkins:latest
-        - name: IMAGE_AGENT_BASE
-          value: quay.io/openshift/origin-jenkins-agent-base:latest
-        - name: IMAGE_AGENT_NODEJS
-          value: quay.io/openshift/origin-jenkins-agent-nodejs:latest
-        - name: IMAGE_AGENT_MAVEN
-          value: quay.io/openshift/origin-jenkins-agent-maven:latest
         image: quay.io/openshift/origin-cluster-samples-operator:latest
         imagePullPolicy: IfNotPresent
         name: cluster-samples-operator
