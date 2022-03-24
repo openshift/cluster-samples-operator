@@ -26,22 +26,6 @@ spec:
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-installer-artifacts:v4.0
-  - name: jenkins
-    from:
-      kind: DockerImage
-      name: quay.io/openshift/origin-jenkins:latest
-  - name: jenkins-agent-base
-    from:
-      kind: DockerImage
-      name: quay.io/openshift/origin-jenkins-agent-base:latest
-  - name: jenkins-agent-nodejs
-    from:
-      kind: DockerImage
-      name: quay.io/openshift/origin-jenkins-agent-nodejs:latest
-  - name: jenkins-agent-maven
-    from:
-      kind: DockerImage
-      name: quay.io/openshift/origin-jenkins-agent-maven:latest
   - name: tests
     from:
       kind: DockerImage
