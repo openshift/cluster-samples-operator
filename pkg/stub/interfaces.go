@@ -169,6 +169,9 @@ func (g *DefaultImageStreamFromFileGetter) Get(fullFilePath string) (is *imagev1
 		return nil, err
 	}
 
+	// Making sure the image stream api version is groupified
+	imagestream.APIVersion = "image.openshift.io/v1"
+
 	return imagestream, nil
 }
 
@@ -189,6 +192,9 @@ func (g *DefaultTemplateFromFileGetter) Get(fullFilePath string) (t *templatev1.
 	if err != nil {
 		return nil, err
 	}
+
+	// Making sure the template api version is groupified
+	template.APIVersion = "template.openshift.io/v1"
 
 	return template, nil
 }
