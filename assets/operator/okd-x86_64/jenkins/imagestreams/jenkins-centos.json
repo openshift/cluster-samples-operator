@@ -63,7 +63,7 @@
 				},
 				"from": {
 					"kind": "DockerImage",
-					"name": "quay.io/openshift/origin-jenkins:latest"
+					"name": "quay.io/openshift/origin-jenkins:4.11"
 				},
 				"generation": null,
 				"importPolicy": {},
