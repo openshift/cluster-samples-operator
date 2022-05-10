@@ -227,6 +227,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 			logrus.Printf("watch template event %s not part of operators inventory", name)
 			return nil, "", false, nil
 		}
+		// checking template being skipped
 		_, skipped = h.skippedTemplates[name]
 	}
 
