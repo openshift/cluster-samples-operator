@@ -3,7 +3,7 @@ name: Autocommunicate Workflow
 on:
   push:
     branches:
-      - main
+      - master
   workflow_dispatch:
     inputs:
       repo-type:
