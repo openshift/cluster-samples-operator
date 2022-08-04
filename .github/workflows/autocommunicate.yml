@@ -1,6 +1,7 @@
 name: Autocommunicate Workflow
 
 on:
+  [push]
   pull_request_target:
     types: [opened,edited]
   workflow_dispatch:
