@@ -2,12 +2,6 @@ name: Autocommunicate Workflow
 
 on:
   push:
-    branches:
-      - master
-  pull_request:
-    branches: [ master ]
-    paths:
-    - '**.py'
   workflow_dispatch:
     inputs:
       repo-type:
