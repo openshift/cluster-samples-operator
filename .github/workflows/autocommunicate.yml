@@ -27,5 +27,16 @@ jobs:
           python3 -m venv ve1
           cd scripts && ../ve1/bin/pip3 install -r requirements.txt && cd ..
           cd scripts && ../ve1/bin/python3 setup.py install && cd ..
-
-     
+      
+      - name: Auto Communicate
+        id: auto_communicate
+        env:
+          github_token: ${{secrets.GITHUB_TOKEN}}
+        run: |
+          if [[ "${{github.event_name}}" == "workflow_dispatch" ]]; then
+            if [[ "${{github.event.inputs.repo-type}}" == "all" ]]; then
+              ve1/bin/python3 create_issue.py  --repoType=all 
+            elif [[ "${{github.event.inputs.repo-type}}" == "templates" ]]; then
+              ve1/bin/python3 create_issue.py  --repoType=templates 
+            elif [[ "${{github.event.inputs.repo-type}}" == "imagestreams" ]]; then
+              ve1/bin/python3 create_issue.py  --repoType=imagestreams
