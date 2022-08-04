@@ -1,9 +1,9 @@
 name: Autocommunicate Workflow
 
 on:
-  [push]
-  pull_request_target:
-    types: [opened,edited]
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       repo-type:
