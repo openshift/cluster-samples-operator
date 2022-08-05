@@ -42,3 +42,5 @@ jobs:
               ve1/bin/python3 library.py  --repoType=imagestreams
             elif [[ "${{github.event.inputs.repo-type}}" == "test" ]]; then
               ve1/bin/python3 library.py  --repoType=test
+            fi
+          fi
