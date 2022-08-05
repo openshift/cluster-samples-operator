@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       repo-type:
-        description: "Repo type {all,imagestreams,tempelates}"
+        description: "Repo type {all,imagestreams,templates,test}"
         required: true
-        default: "all"
+        default: "test"
 
 jobs:
   workflow-autocommunicate:
@@ -35,8 +35,10 @@ jobs:
         run: |
           if [[ "${{github.event_name}}" == "workflow_dispatch" ]]; then
             if [[ "${{github.event.inputs.repo-type}}" == "all" ]]; then
-              ve1/bin/python3 create_issue.py  --repoType=all 
+              ve1/bin/python3 library.py  --repoType=all 
             elif [[ "${{github.event.inputs.repo-type}}" == "templates" ]]; then
-              ve1/bin/python3 create_issue.py  --repoType=templates 
+              ve1/bin/python3 library.py  --repoType=templates 
             elif [[ "${{github.event.inputs.repo-type}}" == "imagestreams" ]]; then
-              ve1/bin/python3 create_issue.py  --repoType=imagestreams
+              ve1/bin/python3 library.py  --repoType=imagestreams
+            elif [[ "${{github.event.inputs.repo-type}}" == "test" ]]; then
+              ve1/bin/python3 library.py  --repoType=test
