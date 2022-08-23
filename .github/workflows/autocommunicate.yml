@@ -31,7 +31,7 @@ jobs:
       - name: Auto Communicate
         id: auto_communicate
         env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [[ "${{github.event.inputs.repo-type}}" == "all" ]]; then
             ve1/bin/python3 scripts/library.py  --repoType=all 
