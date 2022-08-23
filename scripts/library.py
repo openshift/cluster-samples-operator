@@ -82,6 +82,7 @@ else:
     exit()
 for repoName in targetDict.keys():
     repoList = targetDict[repoName]
+    print("Creating Repo : ", repoList)
     for repo in repoList:
         create_an_issue(title="sample issue",description="sample description", repo=str(repo))
         print("created the issues in target repos")
