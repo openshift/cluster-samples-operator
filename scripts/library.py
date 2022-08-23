@@ -30,6 +30,8 @@ def load_yaml():
     global templateDict
     global combinedDict
 
+    print("Loading the repo list from official.yaml")
+
     LIBRARY_FILE= requests.get("https://github.com/openshift/library/blob/master/official.yaml?raw=true")
     filedata = yaml.safe_load(LIBRARY_FILE.text)
     githubcontent=filedata["data"]
@@ -43,7 +45,7 @@ def load_yaml():
                 temp = (str(location).split("//")[1]).split("/")
                 repo1,repo2 = temp[1], temp[2]
                 #finalUrl = "https://github.com/" + str(repo1) +"/" + str(repo2)
-                finalUrl = str(repo1) + "/" + str(repo2)
+                finalUrl = f"{str(repo1)}/{str(repo2)}"
                 imagestreamLocationSet.add(finalUrl)
             imageStreamDict[reponame] = list(imagestreamLocationSet)
         templateLocationSet = set() #Re-Initialize the location list
@@ -54,30 +56,32 @@ def load_yaml():
                 temp = (str(location).split("//")[1]).split("/")
                 repo1,repo2 = temp[1], temp[2]
                 #finalUrl = "https://github.com/" + str(repo1) +"/" + str(repo2)
-                finalUrl = str(repo1) + "/" + str(repo2)
+                finalUrl = f"{str(repo1)}/{str(repo2)}"
                 templateLocationSet.add(finalUrl)
             templateDict[reponame] = list(templateLocationSet)
         imagestreamLocationSet.update(templateLocationSet)
         combinedDict[reponame] = list(imagestreamLocationSet)
-    return True
-
-if(load_yaml()):
-    targetDict = {}
-    if(user_input == "all"):
-        targetDict = combinedDict
-    elif(user_input == "templates"):
-        targetDict = templateDict
-    elif(user_input == "imagestreams"):
-        targetDict = imageStreamDict
-    elif(user_input == "test"):
-        targetDict = testDict
-    else:
-        print("Invalid input")
-        exit()
-    for repoName in targetDict.keys():
-        repoList = targetDict[repoName]
-        for repo in repoList:
-            create_an_issue(title="sample issue",description="sample description", repo=str(repo))
-            input("Check for the issue")
+print("completed the division of the  repos into imagestreams and templates")
+load_yaml()
+targetDict = {}
+if(user_input == "all"):
+    targetDict = combinedDict
+    print("Going to create the issue in target repos")
+elif(user_input == "templates"):
+    targetDict = templateDict
+    print("Going to create the issue in target repos")
+elif(user_input == "imagestreams"):
+    targetDict = imageStreamDict
+    print("Going to create the issue in target repos")
+elif(user_input == "test"):
+    targetDict = testDict
+    print("Going to create the issue in target repos")
 else:
-    print("Error")
+    print("Invalid input")
+    exit()
+for repoName in targetDict.keys():
+    repoList = targetDict[repoName]
+    for repo in repoList:
+        create_an_issue(title="sample issue",description="sample description", repo=str(repo))
+        input("Check for the issue")
+        print("created the issues in target repos")

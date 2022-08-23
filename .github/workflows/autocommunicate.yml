@@ -33,14 +33,12 @@ jobs:
         env:
           github_token: ${{secrets.GITHUB_TOKEN}}
         run: |
-          if [[ "${{github.event_name}}" == "workflow_dispatch" ]]; then
-            if [[ "${{github.event.inputs.repo-type}}" == "all" ]]; then
-              ve1/bin/python3 scripts/library.py  --repoType=all 
-            elif [[ "${{github.event.inputs.repo-type}}" == "templates" ]]; then
-              ve1/bin/python3 scripts/library.py  --repoType=templates 
-            elif [[ "${{github.event.inputs.repo-type}}" == "imagestreams" ]]; then
-              ve1/bin/python3 scripts/library.py  --repoType=imagestreams
-            elif [[ "${{github.event.inputs.repo-type}}" == "test" ]]; then
-              ve1/bin/python3 scripts/library.py  --repoType=test
-            fi
+          if [[ "${{github.event.inputs.repo-type}}" == "all" ]]; then
+            ve1/bin/python3 scripts/library.py  --repoType all 
+          elif [[ "${{github.event.inputs.repo-type}}" == "templates" ]]; then
+            ve1/bin/python3 scripts/library.py  --repoType templates 
+          elif [[ "${{github.event.inputs.repo-type}}" == "imagestreams" ]]; then
+            ve1/bin/python3 scripts/library.py  --repoType imagestreams
+          elif [[ "${{github.event.inputs.repo-type}}" == "test" ]]; then
+            ve1/bin/python3 scripts/library.py  --repoType test
           fi
