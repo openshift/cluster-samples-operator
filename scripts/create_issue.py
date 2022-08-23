@@ -22,8 +22,8 @@ def _make_gihub_request(method="post", uri="issues", body=None, params={}, heade
     headers.update({"Authorization": f'Bearer {endpoint_data["access_token"]}',
                     "Accept": "application/vnd.github.v3+json"})    
     print(headers)
-    url = f'{GITHUB_BASE_URL}/repos/{repo}/{uri}'
-
+    #url = f'{GITHUB_BASE_URL}/repos/{repo}/{uri}'
+    url = f'{GITHUB_BASE_URL}/{repo}/{uri}'
     print(f"API url: {url}")
     request_method = requests.get
     response = request_method(url, params=params, headers=headers, json=body)
