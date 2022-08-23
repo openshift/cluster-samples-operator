@@ -24,7 +24,7 @@ def _make_gihub_request(method="post", uri="issues", body=None, params={}, heade
     print(headers)
     url = f'{GITHUB_BASE_URL}/repos/{repo}/{uri}'
     print(f"API url: {url}")
-    request_method = requests.get
+    request_method = requests.post
     response = request_method(url, params=params, headers=headers, json=body)
     try:
         response.raise_for_status()
