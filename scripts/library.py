@@ -9,6 +9,7 @@ import argparse
 from create_issue import *
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--repoType", action="store_true")
 parser.parse_args()
 
 user_input = parser.repoType
