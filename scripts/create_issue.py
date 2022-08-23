@@ -47,4 +47,6 @@ def create_an_issue(title, description="description", repo=""):
             }
     _make_gihub_request(method, uri, body=body, verbose=False, repo=repo)
 
+_set_endpoint()
+
 #create_an_issue(title="title", description="description1", repo="")
