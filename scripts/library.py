@@ -45,7 +45,6 @@ def load_yaml():
                 location = ele["location"]
                 temp = (str(location).split("//")[1]).split("/")
                 repo1,repo2 = temp[1], temp[2]
-                #finalUrl = "https://github.com/" + str(repo1) +"/" + str(repo2)
                 finalUrl = f"{str(repo1)}/{str(repo2)}"
                 imagestreamLocationSet.add(finalUrl)
             imageStreamDict[reponame] = list(imagestreamLocationSet)
@@ -56,27 +55,27 @@ def load_yaml():
                 location = ele["location"]
                 temp = (str(location).split("//")[1]).split("/")
                 repo1,repo2 = temp[1], temp[2]
-                #finalUrl = "https://github.com/" + str(repo1) +"/" + str(repo2)
                 finalUrl = f"{str(repo1)}/{str(repo2)}"
                 templateLocationSet.add(finalUrl)
             templateDict[reponame] = list(templateLocationSet)
         imagestreamLocationSet.update(templateLocationSet)
         combinedDict[reponame] = list(imagestreamLocationSet)
 print("completed the division of the  repos into imagestreams and templates")
+
 load_yaml()
 targetDict = {}
 if(user_input == "all"):
     targetDict = combinedDict
-    print("Going to create the issue in target repos")
+    print("Going to create the issue in ALL combined target repos")
 elif(user_input == "templates"):
     targetDict = templateDict
-    print("Going to create the issue in target repos")
+    print("Going to create the issue in Template target repos")
 elif(user_input == "imagestreams"):
     targetDict = imageStreamDict
-    print("Going to create the issue in target repos")
+    print("Going to create the issue in Imagestreams target repos")
 elif(user_input == "test"):
     targetDict = testDict
-    print("Going to create the issue in target repos")
+    print("Going to create the issue in Test target repos")
 else:
     print("Invalid input")
     exit()
@@ -84,5 +83,5 @@ for repoName in targetDict.keys():
     repoList = targetDict[repoName]
     print("Creating Repo : ", repoList)
     for repo in repoList:
-        create_an_issue(title="sample issue",description="sample description", repo=str(repo))
-        print("created the issues in target repos")
+        create_an_issue(title="Changes in Samples Operator",description="Samples Operator is making changes for the release", repo=str(repo))
+        print("Created the issues in target repos")

@@ -2,16 +2,6 @@ from os import access
 import requests
 import json
 import os
-endpoint_data = {}
-
-
-def _set_endpoint_key(key, env_var):
-    if key not in endpoint_data:
-        if env_var in os.environ:
-            endpoint_data[key] = os.environ[env_var]
-        else:
-            raise Exception(
-                f"Environment variables {env_var} is required to connect to github")
 
 
 def _make_gihub_request(method="post", uri="issues", body=None, params={}, headers={}, verbose=False, repo=""):
