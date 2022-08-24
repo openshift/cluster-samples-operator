@@ -14,12 +14,9 @@ def _set_endpoint_key(key, env_var):
                 f"Environment variables {env_var} is required to connect to github")
 
 
-def _set_endpoint():
-    _set_endpoint_key("access_token", "GITHUB_TOKEN")
-
 def _make_gihub_request(method="post", uri="issues", body=None, params={}, headers={}, verbose=False, repo=""):
     GITHUB_BASE_URL = "https://api.github.com"
-    headers.update({"Authorization": f'Bearer {endpoint_data["access_token"]}',
+    headers.update({"Authorization": f'Bearer {os.environ["GITHUB_TOKEN"]}',
                     "Accept": "application/vnd.github.v3+json"})    
     print(headers)
     url = f'{GITHUB_BASE_URL}/repos/{repo}/{uri}'
@@ -46,6 +43,3 @@ def create_an_issue(title, description="description", repo=""):
             }
     _make_gihub_request(method, uri, body=body, verbose=False, repo=repo)
 
-_set_endpoint()
-
-#create_an_issue(title="title", description="description1", repo="")
