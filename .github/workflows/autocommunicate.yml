@@ -6,7 +6,15 @@ on:
       repo-type:
         description: "Repo type {all,imagestreams,templates,testimagestreams,testtemplates,testall}"
         required: true
-        default: "test"
+        default: "testall"
+      issue-title:
+        description: "Title of the Issue to be created"
+        required: true
+        default: "Sample Issue"
+      issue-description:
+        description: "Description of the issue to be created"
+        required: true
+        default: "Sample Issue Description"
 
 jobs:
   workflow-autocommunicate:
@@ -33,16 +41,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.BOT_TOKEN }}
         run: |
-          if [[ "${{github.event.inputs.repo-type}}" == "all" ]]; then
-            ve1/bin/python3 scripts/library.py  --repoType=all 
-          elif [[ "${{github.event.inputs.repo-type}}" == "templates" ]]; then
-            ve1/bin/python3 scripts/library.py  --repoType=templates 
-          elif [[ "${{github.event.inputs.repo-type}}" == "imagestreams" ]]; then
-            ve1/bin/python3 scripts/library.py  --repoType=imagestreams
-          elif [[ "${{github.event.inputs.repo-type}}" == "testimagestreams" ]]; then
-            ve1/bin/python3 scripts/library.py  --repoType=testimagestreams
-          elif [[ "${{github.event.inputs.repo-type}}" == "testtemplates" ]]; then
-            ve1/bin/python3 scripts/library.py  --repoType=testtemplates
-          elif [[ "${{github.event.inputs.repo-type}}" == "testall" ]]; then
-            ve1/bin/python3 scripts/library.py  --repoType=testall
-          fi
+          ve1/bin/python3 scripts/library.py --repoType=${{github.event.inputs.repo-type}} --issueTitle=${{github.event.inputs.issue-title}} --issueDescription=${{github.event.inputs.issue-description}}
+          

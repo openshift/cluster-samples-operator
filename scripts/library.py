@@ -10,9 +10,13 @@ from create_issue import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--repoType", help="Store the Repo Type")
+parser.add_argument("--issueTitle", help="Store the Repo Type")
+parser.add_argument("--issueDescription", help="Store the Repo Type")
 args = parser.parse_args()
 
 user_input = args.repoType
+issueTitle = args.issueTitle
+issueDescription = args.issueDescription
 print("Selected Repo Type: ",user_input)
 
 try:
@@ -25,8 +29,8 @@ imageStreamDict = {}
 templateDict = {}
 combinedDict = {}
 testimagestreamsDict = {"testimage":["fbm3307/test-learn"], "testimagest":["fbm3307/testimagestreams1"]}
-testtemplatesDict = {"testemp":["openshift-helm-charts/development"], "testtemplate":["fbm3307/testtemplates"]}
-testallDict = {"testimage":["fbm3307/test-learn"], "testimagest":["fbm3307/testimagestreams1"], "testemp":["openshift-helm-charts/development"], "testtemplate":["fbm3307/testtemplates"]}
+testtemplatesDict = {"testtemplate":["fbm3307/testtemplates"]}
+testallDict = {"testimage":["fbm3307/test-learn"], "testimagest":["fbm3307/testimagestreams1"], "testtemplate":["fbm3307/testtemplates"]}
 
 def load_yaml():
     global imageStreamDict
@@ -94,5 +98,8 @@ for repoName in targetDict.keys():
     repoList = targetDict[repoName]
     print("Initiating creation of issues in Repos : ", repoList)
     for repo in repoList:
-        create_an_issue(title="Testing in Samples Operator",description="Testing: Samples Operator is making changes for the release", repo=str(repo))
-        print("Created the issues in target repos")
+        isSuccess = create_an_issue(title=issueTitle,description=issueDescription, repo=str(repo))
+        if(isSuccess):
+            print("Created the issues in: ", repo)
+        else:
+            print("Error while creating issue in ", repo)

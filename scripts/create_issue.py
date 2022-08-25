@@ -25,11 +25,16 @@ def _make_gihub_request(method="post", uri="issues", body=None, params={}, heade
         print(json.dumps(resp_json, indent=4, sort_keys=True))
     return resp_json
 
-def create_an_issue(title, description="description", repo=""):
-    uri = "issues"
-    method = "post"
-    body = {"title": title,
-            "body": description
-            }
-    _make_gihub_request(method, uri, body=body, verbose=False, repo=repo)
-
+def create_an_issue(title, description="Description", repo=""):
+    try:
+        uri = "issues"
+        method = "post"
+        body = {"title": title,
+                "body": description
+                }
+        result=_make_gihub_request(method, uri, body=body, verbose=False, repo=repo)
+        print(result)
+        return True
+    except Exception as e:
+        print("Error while creating the issue " + str(e))
+        return False
