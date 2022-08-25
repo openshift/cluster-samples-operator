@@ -24,7 +24,9 @@ except ImportError:
 imageStreamDict = {}
 templateDict = {}
 combinedDict = {}
-testDict = {"test":["fbm3307/test-learn"]}
+testimagestreamsDict = {"testimage":["fbm3307/test-learn"], "testimagest":["fbm3307/testimagestreams1"]}
+testtemplatesDict = {"testemp":["openshift-helm-charts/development"], "testtemplate":["fbm3307/testtemplates"]}
+testallDict = {"testimage":["fbm3307/test-learn"], "testimagest":["fbm3307/testimagestreams1"], "testemp":["openshift-helm-charts/development"], "testtemplate":["fbm3307/testtemplates"]}
 
 def load_yaml():
     global imageStreamDict
@@ -62,7 +64,9 @@ def load_yaml():
         combinedDict[reponame] = list(imagestreamLocationSet)
 print("completed the division of the  repos into imagestreams and templates")
 
-load_yaml()
+if(user_input == "all" | user_input == "templates" | user_input == "imagestreams"):
+    load_yaml()
+
 targetDict = {}
 if(user_input == "all"):
     targetDict = combinedDict
@@ -73,15 +77,22 @@ elif(user_input == "templates"):
 elif(user_input == "imagestreams"):
     targetDict = imageStreamDict
     print("Going to create the issue in Imagestreams target repos")
-elif(user_input == "test"):
-    targetDict = testDict
-    print("Going to create the issue in Test target repos")
+elif(user_input == "testimagestreams"):
+    targetDict = testimagestreamsDict
+    print("Going to create the issue in Testimagestreams target repos")
+elif(user_input == "testtemplates"):
+    targetDict = testtemplatesDict
+    print("Going to create the issue in TestTemplate target repos")
+elif(user_input == "testall"):
+    targetDict = testallDict
+    print("Going to create the issue in TestAll target repos")
 else:
     print("Invalid input")
     exit()
+
 for repoName in targetDict.keys():
     repoList = targetDict[repoName]
-    print("Creating Repo : ", repoList)
+    print("Initiating creation of issues in Repos : ", repoList)
     for repo in repoList:
-        create_an_issue(title="Changes in Samples Operator",description="Samples Operator is making changes for the release", repo=str(repo))
+        create_an_issue(title="Testing in Samples Operator",description="Testing: Samples Operator is making changes for the release", repo=str(repo))
         print("Created the issues in target repos")

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       repo-type:
-        description: "Repo type {all,imagestreams,templates,test}"
+        description: "Repo type {all,imagestreams,templates,testimagestreams,testtemplates,testall}"
         required: true
         default: "test"
 
@@ -39,6 +39,10 @@ jobs:
             ve1/bin/python3 scripts/library.py  --repoType=templates 
           elif [[ "${{github.event.inputs.repo-type}}" == "imagestreams" ]]; then
             ve1/bin/python3 scripts/library.py  --repoType=imagestreams
-          elif [[ "${{github.event.inputs.repo-type}}" == "test" ]]; then
-            ve1/bin/python3 scripts/library.py  --repoType=test
+          elif [[ "${{github.event.inputs.repo-type}}" == "testimagestreams" ]]; then
+            ve1/bin/python3 scripts/library.py  --repoType=testimagestreams
+          elif [[ "${{github.event.inputs.repo-type}}" == "testtemplates" ]]; then
+            ve1/bin/python3 scripts/library.py  --repoType=testtemplates
+          elif [[ "${{github.event.inputs.repo-type}}" == "testall" ]]; then
+            ve1/bin/python3 scripts/library.py  --repoType=testall
           fi
