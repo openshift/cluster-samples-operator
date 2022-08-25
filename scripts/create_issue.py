@@ -32,8 +32,7 @@ def create_an_issue(title, description="Description", repo=""):
         body = {"title": title,
                 "body": description
                 }
-        result=_make_gihub_request(method, uri, body=body, verbose=False, repo=repo)
-        print(result)
+        _make_gihub_request(method, uri, body=body, verbose=False, repo=repo)
         return True
     except Exception as e:
         print("Error while creating the issue " + str(e))
