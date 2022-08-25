@@ -41,5 +41,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.BOT_TOKEN }}
         run: |
-          ve1/bin/python3 scripts/library.py --repoType=${{github.event.inputs.repo-type}} --issueTitle=${{github.event.inputs.issue-title}} --issueDescription=${{github.event.inputs.issue-description}}
+          ve1/bin/python3 scripts/library.py --repoType=${{github.event.inputs.repo-type}} --issueTitle="${{github.event.inputs.issue-title}}" --issueDescription="${{github.event.inputs.issue-description}}"
           
