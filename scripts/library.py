@@ -64,7 +64,7 @@ def load_yaml():
         combinedDict[reponame] = list(imagestreamLocationSet)
 print("completed the division of the  repos into imagestreams and templates")
 
-if(user_input == "all" | user_input == "templates" | user_input == "imagestreams"):
+if(user_input == "all" or user_input == "templates" or user_input == "imagestreams"):
     load_yaml()
 
 targetDict = {}
