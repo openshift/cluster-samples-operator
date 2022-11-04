@@ -308,7 +308,7 @@ func buildBlockTestScenarios() []BlockTestScenario {
 				Spec: configv1.ImageSpec{
 					AllowedRegistriesForImport: []configv1.RegistryLocation{
 						{
-							DomainName: "redhat.io",
+							DomainName: "registry.redhat.io",
 						},
 						{
 							DomainName: "quay.io",
