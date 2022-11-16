@@ -399,7 +399,7 @@ func buildBlockTestScenarios() []BlockTestScenario {
 							DomainName: "quay.io",
 						},
 						{
-							DomainName: "registry.redhat.io",
+							DomainName: "redhat.io",
 						},
 					},
 				},
