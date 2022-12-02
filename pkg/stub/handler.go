@@ -362,7 +362,11 @@ func redHatRegistriesDomainFound(allowedDomains map[string]bool) bool {
 			allowedDomains["quay.io"]) ||
 		(allowedDomains["registry.redhat.io"] &&
 			allowedDomains["access.redhat.com"] &&
-			allowedDomains["quay.io"])
+			allowedDomains["quay.io"]) ||
+		(allowedDomains["registry.access.redhat.com"] &&
+			allowedDomains["quay.io"]) ||
+		(allowedDomains["registry.access.redhat.com"] &&
+			allowedDomains["registry.redhat.io"])
 
 }
 
