@@ -1087,7 +1087,7 @@ func (h *Handler) Handle(event util.Event) error {
 			h.GoodConditionUpdate(cfg, corev1.ConditionFalse, v1.ImageChangesInProgress)
 			// now that we employ status subresources, we can't populate
 			// the conditions on create; so we do initialize here, which is our "step 1"
-			// of the "make a change" flow in our state machine
+			// of the "make a change" flow in our state machine.
 			cfg = h.initConditions(cfg)
 
 			dbg := "samples upserted; set clusteroperator ready, steady state"
