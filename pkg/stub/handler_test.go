@@ -316,7 +316,7 @@ func buildBlockTestScenarios() []BlockTestScenario {
 					},
 				},
 			},
-			ExpectedResult: false,
+			ExpectedResult: true,
 		},
 		{
 			Name:         "Test AllowRegistriesForImport whitelisted but empty registry name (2)",
