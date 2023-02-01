@@ -308,7 +308,7 @@ func buildBlockTestScenarios() []BlockTestScenario {
 				Spec: configv1.ImageSpec{
 					AllowedRegistriesForImport: []configv1.RegistryLocation{
 						{
-							DomainName: "redhat.io",
+							DomainName: "registry.redhat.io",
 						},
 						{
 							DomainName: "quay.io",
@@ -328,7 +328,7 @@ func buildBlockTestScenarios() []BlockTestScenario {
 							DomainName: "registry.redhat.io",
 						},
 						{
-							DomainName: "access.redhat.io",
+							DomainName: "access.redhat.com",
 						},
 						{
 							DomainName: "quay.io",
@@ -348,7 +348,7 @@ func buildBlockTestScenarios() []BlockTestScenario {
 							DomainName: "registry.redhat.io",
 						},
 						{
-							DomainName: "registry.access.redhat.io",
+							DomainName: "registry.access.redhat.com",
 						},
 						{
 							DomainName: "quay.io",
@@ -382,7 +382,7 @@ func buildBlockTestScenarios() []BlockTestScenario {
 							DomainName: "quay.io",
 						},
 						{
-							DomainName: "access.redhat.io",
+							DomainName: "access.redhat.com",
 						},
 					},
 				},
@@ -399,7 +399,7 @@ func buildBlockTestScenarios() []BlockTestScenario {
 							DomainName: "quay.io",
 						},
 						{
-							DomainName: "registry.redhat.io",
+							DomainName: "redhat.io",
 						},
 					},
 				},
@@ -440,7 +440,7 @@ func buildBlockTestScenarios() []BlockTestScenario {
 					RegistrySources: configv1.RegistrySources{
 						AllowedRegistries: []string{
 							"registry.redhat.io",
-							"registry.access.redhat.io",
+							"registry.access.redhat.com",
 							"quay.io",
 						},
 					},
@@ -456,7 +456,7 @@ func buildBlockTestScenarios() []BlockTestScenario {
 					RegistrySources: configv1.RegistrySources{
 						AllowedRegistries: []string{
 							"registry.redhat.io",
-							"registry.access.redhat.io",
+							"registry.access.redhat.com",
 						},
 					},
 				},
