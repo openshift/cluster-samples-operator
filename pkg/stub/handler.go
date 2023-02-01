@@ -345,7 +345,7 @@ func redHatRegistriesFound(allowedRegistries map[string]bool) bool {
 	// - registry.access.redhat.com
 	// - quay.io
 	return allowedRegistries["registry.redhat.io"] &&
-		allowedRegistries["registry.access.redhat.io"] &&
+		allowedRegistries["registry.access.redhat.com"] &&
 		allowedRegistries["quay.io"]
 }
 
@@ -356,12 +356,22 @@ func redHatRegistriesDomainFound(allowedDomains map[string]bool) bool {
 	// - quay.io
 	// or a domain combination that covers above registries
 	return (allowedDomains["registry.redhat.io"] &&
-		allowedDomains["registry.access.redhat.io"] &&
+		allowedDomains["registry.access.redhat.com"] &&
 		allowedDomains["quay.io"]) ||
-		(allowedDomains["redhat.io"] &&
+		(allowedDomains["registry.redhat.io"] &&
+			allowedDomains["access.redhat.com"] &&
 			allowedDomains["quay.io"]) ||
 		(allowedDomains["registry.redhat.io"] &&
-			allowedDomains["access.redhat.io"] &&
+			allowedDomains["redhat.com"] &&
+			allowedDomains["quay.io"]) ||
+		(allowedDomains["redhat.io"] &&
+			allowedDomains["registry.access.redhat.com"] &&
+			allowedDomains["quay.io"]) ||
+		(allowedDomains["redhat.io"] &&
+			allowedDomains["access.redhat.com"] &&
+			allowedDomains["quay.io"]) ||
+		(allowedDomains["redhat.io"] &&
+			allowedDomains["redhat.com"] &&
 			allowedDomains["quay.io"])
 
 }
@@ -479,7 +489,7 @@ func (h *Handler) tbrInaccessible() bool {
 		return true
 	}
 	if h.imageConfigBlocksImageStreamCreation("registry.redhat.io") ||
-		h.imageConfigBlocksImageStreamCreation("registry.access.redhat.io") ||
+		h.imageConfigBlocksImageStreamCreation("registry.access.redhat.com") ||
 		h.imageConfigBlocksImageStreamCreation("quay.io") {
 		return true
 	}
