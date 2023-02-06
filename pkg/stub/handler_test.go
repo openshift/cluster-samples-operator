@@ -339,7 +339,7 @@ func buildBlockTestScenarios() []BlockTestScenario {
 			ExpectedResult: false,
 		},
 		{
-			Name:         "Test AllowRegistriesForImport whitelisted but empty registry name (2)",
+			Name:         "Test AllowRegistriesForImport whitelisted but empty registry name (3)",
 			RegistryName: "",
 			ImageConfig: configv1.Image{
 				Spec: configv1.ImageSpec{
@@ -449,7 +449,34 @@ func buildBlockTestScenarios() []BlockTestScenario {
 			ExpectedResult: false,
 		},
 		{
-			Name:         "Test AllowRegistries not whitelisted but empty registry name",
+			Name:         "Test AllowRegistriesforimport and allowedregistries whitelisted but empty registry name",
+			RegistryName: "",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					AllowedRegistriesForImport: []configv1.RegistryLocation{
+						{
+							DomainName: "registry.redhat.io",
+						},
+						{
+							DomainName: "registry.access.redhat.com",
+						},
+						{
+							DomainName: "quay.io",
+						},
+					},
+					RegistrySources: configv1.RegistrySources{
+						AllowedRegistries: []string{
+							"registry.redhat.io",
+							"registry.access.redhat.com",
+							"quay.io",
+						},
+					},
+				},
+			},
+			ExpectedResult: false,
+		},
+		{
+			Name:         "Test AllowRegistries not whitelisted but empty registry name(1)",
 			RegistryName: "",
 			ImageConfig: configv1.Image{
 				Spec: configv1.ImageSpec{
@@ -502,6 +529,18 @@ func buildBlockTestScenarios() []BlockTestScenario {
 		{
 			Name:         "Test BlockedRegistries not whitelisted",
 			RegistryName: "registry.redhat.io",
+			ImageConfig: configv1.Image{
+				Spec: configv1.ImageSpec{
+					RegistrySources: configv1.RegistrySources{
+						BlockedRegistries: []string{"quay.io"},
+					},
+				},
+			},
+			ExpectedResult: false,
+		},
+		{
+			Name:         "Test BlockedRegistries not whitelisted",
+			RegistryName: "registry.access.redhat.com",
 			ImageConfig: configv1.Image{
 				Spec: configv1.ImageSpec{
 					RegistrySources: configv1.RegistrySources{
