@@ -167,3 +167,21 @@ spec:
       from:
         kind: DockerImage
         name: quay.io/openshift/origin-hello-openshift:latest
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
+  name: network-tools
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+spec:
+  tags:
+  - name: latest
+    importPolicy:
+      scheduled: true
+      importMode: PreserveOriginal
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-network-tools:4.13
