@@ -42,3 +42,7 @@ spec:
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-oauth-proxy-samples:v4.4
+  - name: network-tools
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-network-tools:4.13
