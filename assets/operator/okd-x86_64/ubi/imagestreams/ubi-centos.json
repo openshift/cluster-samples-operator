@@ -1,0 +1,160 @@
+{
+	"kind": "ImageStream",
+	"apiVersion": "image.openshift.io/v1",
+	"metadata": {
+		"name": "ubi",
+		"creationTimestamp": null,
+		"annotations": {
+			"openshift.io/display-name": "Red Hat Universal Base Image"
+		}
+	},
+	"spec": {
+		"lookupPolicy": {
+			"local": false
+		},
+		"tags": [
+			{
+				"name": "latest",
+				"annotations": {
+					"description": "The Universal Base Image is designed and engineered to be the base layer for all of your containerized applications, middleware and utilities.",
+					"iconClass": "icon-redhat",
+					"openshift.io/display-name": "Red Hat Universal Base Image (Latest)",
+					"openshift.io/provider-display-name": "Red Hat, Inc.",
+					"tags": "redhat,hidden"
+				},
+				"from": {
+					"kind": "ImageStreamTag",
+					"name": "ubi9"
+				},
+				"generation": null,
+				"importPolicy": {},
+				"referencePolicy": {
+					"type": "Local"
+				}
+			},
+			{
+				"name": "ubi9",
+				"annotations": {
+					"description": "The Universal Base Image is designed and engineered to be the base layer for all of your containerized applications, middleware and utilities.",
+					"iconClass": "icon-redhat",
+					"openshift.io/display-name": "Red Hat Universal Base Image 9",
+					"openshift.io/provider-display-name": "Red Hat, Inc.",
+					"tags": "redhat,hidden",
+					"version": "9"
+				},
+				"from": {
+					"kind": "DockerImage",
+					"name": "registry.redhat.io/ubi9:latest"
+				},
+				"generation": null,
+				"importPolicy": {},
+				"referencePolicy": {
+					"type": "Local"
+				}
+			},
+			{
+				"name": "ubi9-minimal",
+				"annotations": {
+					"description": "The Universal Base Image is designed and engineered to be the base layer for all of your containerized applications, middleware and utilities.",
+					"iconClass": "icon-redhat",
+					"openshift.io/display-name": "Red Hat Universal Base Image 9 Minimal",
+					"openshift.io/provider-display-name": "Red Hat, Inc.",
+					"tags": "redhat,hidden",
+					"version": "9"
+				},
+				"from": {
+					"kind": "DockerImage",
+					"name": "registry.redhat.io/ubi9-minimal:latest"
+				},
+				"generation": null,
+				"importPolicy": {},
+				"referencePolicy": {
+					"type": "Local"
+				}
+			},
+			{
+				"name": "ubi9-micro",
+				"annotations": {
+					"description": "The Universal Base Image is designed and engineered to be the base layer for all of your containerized applications, middleware and utilities.",
+					"iconClass": "icon-redhat",
+					"openshift.io/display-name": "Red Hat Universal Base Image 9 Micro",
+					"openshift.io/provider-display-name": "Red Hat, Inc.",
+					"tags": "redhat,hidden",
+					"version": "9"
+				},
+				"from": {
+					"kind": "DockerImage",
+					"name": "registry.redhat.io/ubi9-micro:latest"
+				},
+				"generation": null,
+				"importPolicy": {},
+				"referencePolicy": {
+					"type": "Local"
+				}
+			},
+			{
+				"name": "ubi8",
+				"annotations": {
+					"description": "The Universal Base Image is designed and engineered to be the base layer for all of your containerized applications, middleware and utilities.",
+					"iconClass": "icon-redhat",
+					"openshift.io/display-name": "Red Hat Universal Base Image 8",
+					"openshift.io/provider-display-name": "Red Hat, Inc.",
+					"tags": "redhat,hidden",
+					"version": "8"
+				},
+				"from": {
+					"kind": "DockerImage",
+					"name": "registry.redhat.io/ubi8:latest"
+				},
+				"generation": null,
+				"importPolicy": {},
+				"referencePolicy": {
+					"type": "Local"
+				}
+			},
+			{
+				"name": "ubi8-minimal",
+				"annotations": {
+					"description": "The Universal Base Image is designed and engineered to be the base layer for all of your containerized applications, middleware and utilities.",
+					"iconClass": "icon-redhat",
+					"openshift.io/display-name": "Red Hat Universal Base Image 8 Minimal",
+					"openshift.io/provider-display-name": "Red Hat, Inc.",
+					"tags": "redhat,hidden",
+					"version": "8"
+				},
+				"from": {
+					"kind": "DockerImage",
+					"name": "registry.redhat.io/ubi8-minimal:latest"
+				},
+				"generation": null,
+				"importPolicy": {},
+				"referencePolicy": {
+					"type": "Local"
+				}
+			},
+			{
+				"name": "ubi8-micro",
+				"annotations": {
+					"description": "The Universal Base Image is designed and engineered to be the base layer for all of your containerized applications, middleware and utilities.",
+					"iconClass": "icon-redhat",
+					"openshift.io/display-name": "Red Hat Universal Base Image 8 Micro",
+					"openshift.io/provider-display-name": "Red Hat, Inc.",
+					"tags": "redhat,hidden",
+					"version": "8"
+				},
+				"from": {
+					"kind": "DockerImage",
+					"name": "registry.redhat.io/ubi8-micro:latest"
+				},
+				"generation": null,
+				"importPolicy": {},
+				"referencePolicy": {
+					"type": "Local"
+				}
+			}
+		]
+	},
+	"status": {
+		"dockerImageRepository": ""
+	}
+}
