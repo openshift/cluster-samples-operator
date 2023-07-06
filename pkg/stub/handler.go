@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"os"
 	"runtime"
@@ -21,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	corev1lister "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
@@ -44,6 +46,11 @@ import (
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
+
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/release"
 )
 
 const (
@@ -157,6 +164,7 @@ type Handler struct {
 // - err: if a problem occurred getting the Config, we return the error to bubble up and initiate a retry
 func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[string]string, deleted bool) (*v1.Config, string, bool, error) {
 	cfg, err := h.crdwrapper.Get(v1.ConfigName)
+
 	if cfg == nil || err != nil {
 		// if not found, then this also would mean a deletion event
 		if kerrors.IsNotFound(err) {
@@ -176,6 +184,15 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return nil, "", false, nil
 	}
 
+	for _, helm := range cfg.Spec.HelmChartList {
+		logrus.Printf("starting to install helmchart")
+
+		inhelm, err := InstallChart(helm.Namespace, helm.ReleaseName, helm.URL)
+		if err != nil {
+			logrus.Printf(err.Error())
+		}
+		logrus.Printf("installed helmchart: %v", inhelm)
+	}
 	// we do not return the cfg in these cases because we do not want to bother with any progress tracking
 	switch cfg.Spec.ManagementState {
 	case operatorsv1api.Removed:
@@ -759,6 +776,7 @@ func (h *Handler) CleanUpOpenshiftNamespaceOnDelete(cfg *v1.Config) error {
 }
 
 func (h *Handler) Handle(event util.Event) error {
+
 	switch event.Object.(type) {
 	case *corev1.ConfigMap:
 		cm, _ := event.Object.(*corev1.ConfigMap)
@@ -773,6 +791,7 @@ func (h *Handler) Handle(event util.Event) error {
 			return nil
 		}
 		err := h.processImageStreamWatchEvent(is, event.Deleted)
+
 		return err
 
 	case *templatev1.Template:
@@ -1105,6 +1124,7 @@ func (h *Handler) Handle(event util.Event) error {
 			h.StoreCurrentValidConfig(cfg)
 
 			logrus.Printf("CRDUPDATE %s", dbg)
+
 			return h.crdwrapper.UpdateStatus(cfg, dbg)
 		}
 
@@ -1392,4 +1412,56 @@ func (h *Handler) numOfManagedImageStreamsPresent() int {
 		rc++
 	}
 	return rc
+}
+
+func InstallChart(ns, name, url string) (*release.Release, error) {
+	//actionConfig := actionConfig()
+	os.Setenv("HELM_DRIVER", "secrets")
+	actionConfig := new(action.Configuration)
+	if err := actionConfig.Init(
+		&genericclioptions.ConfigFlags{
+			Namespace: &ns,
+		},
+		ns,
+		os.Getenv("HELM_DRIVER"),
+		log.Printf,
+	); err != nil {
+		return nil, err
+	}
+	cmd := action.NewInstall(actionConfig)
+	logrus.Printf("Inside Install")
+
+	releaseName, chartName, err := cmd.NameAndChart([]string{name, url})
+	if err != nil {
+		return nil, err
+	}
+	cmd.ReleaseName = releaseName
+
+	logrus.Printf("Chartname %s", chartName)
+
+	cp, err := cmd.ChartPathOptions.LocateChart(chartName, settings)
+	if err != nil {
+		return nil, err
+	}
+	logrus.Printf("releasename %s", releaseName)
+	ch, err := loader.Load(cp)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd.Namespace = ns
+	release, err := cmd.Run(ch, nil)
+	if err != nil {
+		return nil, err
+	}
+	logrus.Printf("namespace %s", ns)
+	return release, nil
+}
+
+var settings = initSettings()
+
+func initSettings() *cli.EnvSettings {
+	conf := cli.New()
+	conf.RepositoryCache = "/tmp"
+	return conf
 }

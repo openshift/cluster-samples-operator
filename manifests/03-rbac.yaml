@@ -18,6 +18,7 @@ rules:
   - events
   - configmaps
   - secrets
+  - buildconfigs
   verbs:
   - "*"
 - apiGroups:

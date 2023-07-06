@@ -12,7 +12,8 @@ package v1
 
 // AUTO-GENERATED FUNCTIONS START HERE
 var map_Config = map[string]string{
-	"": "Config contains the configuration and detailed condition status for the Samples Operator.",
+	"":         "Config contains the configuration and detailed condition status for the Samples Operator.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
 }
 
 func (Config) SwaggerDoc() map[string]string {
@@ -33,6 +34,15 @@ func (ConfigCondition) SwaggerDoc() map[string]string {
 	return map_ConfigCondition
 }
 
+var map_ConfigList = map[string]string{
+	"":         "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+}
+
+func (ConfigList) SwaggerDoc() map[string]string {
+	return map_ConfigList
+}
+
 var map_ConfigSpec = map[string]string{
 	"":                    "ConfigSpec contains the desired configuration and state for the Samples Operator, controlling various behavior around the imagestreams and templates it creates/updates in the openshift namespace.",
 	"managementState":     "managementState is top level on/off type of switch for all operators. When \"Managed\", this operator processes config and manipulates the samples accordingly. When \"Unmanaged\", this operator ignores any updates to the resources it watches. When \"Removed\", it reacts that same wasy as it does if the Config object is deleted, meaning any ImageStreams or Templates it manages (i.e. it honors the skipped lists) and the registry secret are deleted, along with the ConfigMap in the operator's namespace that represents the last config used to manipulate the samples,",
@@ -40,6 +50,7 @@ var map_ConfigSpec = map[string]string{
 	"architectures":       "architectures determine which hardware architecture(s) to install, where x86_64, ppc64le, and s390x are the only supported choices currently.",
 	"skippedImagestreams": "skippedImagestreams specifies names of image streams that should NOT be created/updated.  Admins can use this to allow them to delete content they don’t want.  They will still have to manually delete the content but the operator will not recreate(or update) anything listed here.",
 	"skippedTemplates":    "skippedTemplates specifies names of templates that should NOT be created/updated.  Admins can use this to allow them to delete content they don’t want.  They will still have to manually delete the content but the operator will not recreate(or update) anything listed here.",
+	"helmChartList":       "helmchart list specifies the list of helmcharts that the samples operator will install",
 }
 
 func (ConfigSpec) SwaggerDoc() map[string]string {
