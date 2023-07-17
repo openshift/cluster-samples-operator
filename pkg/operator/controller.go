@@ -475,9 +475,11 @@ func (c *Controller) clusterOperatorInformerEventHandler() cache.ResourceEventHa
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(o interface{}) {
+				fmt.Printf("#### clusteroperator added\n")
 				c.crWorkqueue.Add("cluster")
 			},
 			UpdateFunc: func(o, n interface{}) {
+				fmt.Printf("#### clusteroperator updated\n")
 				c.crWorkqueue.Add("cluster")
 			},
 			DeleteFunc: func(o interface{}) {

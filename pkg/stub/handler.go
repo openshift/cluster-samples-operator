@@ -784,6 +784,7 @@ func (h *Handler) Handle(event util.Event) error {
 		return err
 
 	case *v1.Config:
+		fmt.Printf("#### Syncing the operator\n")
 		cfg, _ := event.Object.(*v1.Config)
 
 		if cfg.Name != v1.ConfigName || cfg.Namespace != "" {
@@ -874,6 +875,7 @@ func (h *Handler) Handle(event util.Event) error {
 		// Every time we see a change to the Config object, update the ClusterOperator status
 		// based on the current conditions of the Config.
 		cfg = h.refetchCfgMinimizeConflicts(cfg)
+		fmt.Printf("#### updating status\n")
 		err := h.cvowrapper.UpdateOperatorStatus(cfg, false, h.tbrCheckFailed, h.activeImageStreams())
 		if err != nil {
 			logrus.Errorf("error updating cluster operator status: %v", err)
