@@ -130,8 +130,8 @@
 			}
 		},
 		{
-			"apiVersion": "apps.openshift.io/v1",
-			"kind": "DeploymentConfig",
+			"apiVersion": "apps/v1",
+			"kind": "Deployment",
 			"metadata": {
 				"creationTimestamp": null,
 				"labels": {
@@ -148,7 +148,7 @@
 				"selector": {
 					"app": "${APP_NAME}",
 					"component": "${APP_NAME}",
-					"deploymentconfig": "${APP_NAME}",
+					"deployment": "${APP_NAME}",
 					"group": "quickstarts",
 					"provider": "s2i",
 					"version": "${APP_VERSION}"
@@ -160,7 +160,7 @@
 							"app": "${APP_NAME}",
 							"com.company": "Red_Hat",
 							"component": "${APP_NAME}",
-							"deploymentconfig": "${APP_NAME}",
+							"deployment": "${APP_NAME}",
 							"group": "quickstarts",
 							"provider": "s2i",
 							"rht.comp": "${APP_NAME}",

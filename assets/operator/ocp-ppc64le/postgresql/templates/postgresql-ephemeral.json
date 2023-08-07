@@ -64,8 +64,8 @@
 			}
 		},
 		{
-			"apiVersion": "apps.openshift.io/v1",
-			"kind": "DeploymentConfig",
+			"apiVersion": "apps/v1",
+			"kind": "Deployment",
 			"metadata": {
 				"annotations": {
 					"template.alpha.openshift.io/wait-for-ready": "true"
@@ -176,27 +176,7 @@
 							}
 						]
 					}
-				},
-				"triggers": [
-					{
-						"imageChangeParams": {
-							"automatic": true,
-							"containerNames": [
-								"postgresql"
-							],
-							"from": {
-								"kind": "ImageStreamTag",
-								"name": "postgresql:${POSTGRESQL_VERSION}",
-								"namespace": "${NAMESPACE}"
-							},
-							"lastTriggeredImage": ""
-						},
-						"type": "ImageChange"
-					},
-					{
-						"type": "ConfigChange"
-					}
-				]
+				}
 			},
 			"status": {}
 		}

@@ -140,8 +140,8 @@
 			}
 		},
 		{
-			"apiVersion": "apps.openshift.io/v1",
-			"kind": "DeploymentConfig",
+			"apiVersion": "apps/v1",
+			"kind": "Deployment",
 			"metadata": {
 				"annotations": {
 					"description": "Defines how to deploy the application server",
@@ -280,25 +280,7 @@
 							}
 						]
 					}
-				},
-				"triggers": [
-					{
-						"imageChangeParams": {
-							"automatic": true,
-							"containerNames": [
-								"${NAME}"
-							],
-							"from": {
-								"kind": "ImageStreamTag",
-								"name": "${NAME}:latest"
-							}
-						},
-						"type": "ImageChange"
-					},
-					{
-						"type": "ConfigChange"
-					}
-				]
+				}
 			}
 		},
 		{
@@ -324,8 +306,8 @@
 			}
 		},
 		{
-			"apiVersion": "apps.openshift.io/v1",
-			"kind": "DeploymentConfig",
+			"apiVersion": "apps/v1",
+			"kind": "Deployment",
 			"metadata": {
 				"annotations": {
 					"description": "Defines how to deploy the database",
@@ -429,26 +411,7 @@
 							}
 						]
 					}
-				},
-				"triggers": [
-					{
-						"imageChangeParams": {
-							"automatic": true,
-							"containerNames": [
-								"postgresql"
-							],
-							"from": {
-								"kind": "ImageStreamTag",
-								"name": "postgresql:12-el8",
-								"namespace": "${NAMESPACE}"
-							}
-						},
-						"type": "ImageChange"
-					},
-					{
-						"type": "ConfigChange"
-					}
-				]
+				}
 			}
 		}
 	],

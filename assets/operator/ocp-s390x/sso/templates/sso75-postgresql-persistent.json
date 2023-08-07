@@ -39,7 +39,7 @@
 					}
 				],
 				"selector": {
-					"deploymentConfig": "${APPLICATION_NAME}"
+					"deployment": "${APPLICATION_NAME}"
 				}
 			}
 		},
@@ -64,7 +64,7 @@
 					}
 				],
 				"selector": {
-					"deploymentConfig": "${APPLICATION_NAME}"
+					"deployment": "${APPLICATION_NAME}"
 				}
 			}
 		},
@@ -88,7 +88,7 @@
 					}
 				],
 				"selector": {
-					"deploymentConfig": "${APPLICATION_NAME}-postgresql"
+					"deployment": "${APPLICATION_NAME}-postgresql"
 				}
 			}
 		},
@@ -114,7 +114,7 @@
 				],
 				"publishNotReadyAddresses": true,
 				"selector": {
-					"deploymentConfig": "${APPLICATION_NAME}"
+					"deployment": "${APPLICATION_NAME}"
 				}
 			}
 		},
@@ -162,8 +162,8 @@
 			}
 		},
 		{
-			"apiVersion": "apps.openshift.io/v1",
-			"kind": "DeploymentConfig",
+			"apiVersion": "apps/v1",
+			"kind": "Deployment",
 			"metadata": {
 				"labels": {
 					"application": "${APPLICATION_NAME}"
@@ -173,7 +173,7 @@
 			"spec": {
 				"replicas": 1,
 				"selector": {
-					"deploymentConfig": "${APPLICATION_NAME}"
+					"deployment": "${APPLICATION_NAME}"
 				},
 				"strategy": {
 					"type": "Recreate"
@@ -182,7 +182,7 @@
 					"metadata": {
 						"labels": {
 							"application": "${APPLICATION_NAME}",
-							"deploymentConfig": "${APPLICATION_NAME}"
+							"deployment": "${APPLICATION_NAME}"
 						},
 						"name": "${APPLICATION_NAME}"
 					},
@@ -432,8 +432,8 @@
 			}
 		},
 		{
-			"apiVersion": "apps.openshift.io/v1",
-			"kind": "DeploymentConfig",
+			"apiVersion": "apps/v1",
+			"kind": "Deployment",
 			"metadata": {
 				"labels": {
 					"application": "${APPLICATION_NAME}"
@@ -443,7 +443,7 @@
 			"spec": {
 				"replicas": 1,
 				"selector": {
-					"deploymentConfig": "${APPLICATION_NAME}-postgresql"
+					"deployment": "${APPLICATION_NAME}-postgresql"
 				},
 				"strategy": {
 					"type": "Recreate"
@@ -452,7 +452,7 @@
 					"metadata": {
 						"labels": {
 							"application": "${APPLICATION_NAME}",
-							"deploymentConfig": "${APPLICATION_NAME}-postgresql"
+							"deployment": "${APPLICATION_NAME}-postgresql"
 						},
 						"name": "${APPLICATION_NAME}-postgresql"
 					},
