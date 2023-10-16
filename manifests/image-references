@@ -45,4 +45,4 @@ spec:
   - name: network-tools
     from:
       kind: DockerImage
-      name: quay.io/openshift/origin-network-tools:4.13
+      name: quay.io/openshift/origin-network-tools:latest
