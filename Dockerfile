@@ -17,3 +17,4 @@ USER cluster-samples-operator
 ENTRYPOINT []
 CMD ["/usr/bin/cluster-samples-operator"]
 LABEL io.openshift.release.operator true
+
