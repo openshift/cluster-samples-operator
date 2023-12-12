@@ -26,6 +26,7 @@ import (
 
 	operator "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -2287,4 +2288,10 @@ func (f *fakeCVOWrapper) Create(state *configv1.ClusterOperator) error { return 
 
 func (f *fakeCVOWrapper) Get(name string) (*configv1.ClusterOperator, error) {
 	return f.state, f.geterr
+}
+
+func TestIndexFile(t *testing.T) {
+	charts, err := helmIndex()
+	require.NoError(t, err)
+	require.NotNil(t, charts)
 }

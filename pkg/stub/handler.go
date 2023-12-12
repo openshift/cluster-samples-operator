@@ -6,25 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
+	"net/http"
 	"os"
 	"runtime"
+
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
-
-	corev1 "k8s.io/api/core/v1"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilnet "k8s.io/apimachinery/pkg/util/net"
-	"k8s.io/apimachinery/pkg/util/wait"
-	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
-	corev1lister "k8s.io/client-go/listers/core/v1"
-	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/util/retry"
+	"golang.org/x/mod/semver"
+	"gopkg.in/yaml.v2"
 
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
@@ -38,12 +32,26 @@ import (
 	configv1lister "github.com/openshift/client-go/samples/listers/samples/v1"
 	templatev1client "github.com/openshift/client-go/template/clientset/versioned/typed/template/v1"
 	templatev1lister "github.com/openshift/client-go/template/listers/template/v1"
-
 	"github.com/openshift/cluster-samples-operator/pkg/cache"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/release"
+	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	corev1lister "k8s.io/client-go/listers/core/v1"
+	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/util/retry"
 )
 
 const (
@@ -148,6 +156,21 @@ type Handler struct {
 	version          string
 	tbrCheckFailed   bool
 }
+type Chart struct {
+	// Chart is the chart name as define
+	// in the Chart.yaml or in the Helm repo.
+	Name string `json:"name"`
+	// url of the chart
+	churl string `json:"url"`
+	// Version is the chart version as define in the
+	// Chart.yaml or in the Helm repo.
+	Version string `json:"version,omitempty"`
+}
+
+type Helmch struct {
+	HelmChName string  `json:"helmChName"`
+	HelmCh     []Chart `json:"helmCh"`
+}
 
 // prepSamplesWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
 // the return values:
@@ -176,6 +199,36 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return nil, "", false, nil
 	}
 
+	helmChartList, _ := helmIndex()
+	for _, helmChart := range helmChartList {
+
+		name := ""
+		val := helmChart.HelmCh
+		versionFinal := ""
+		urlFinal := ""
+		for _, v := range val {
+			url := v.churl
+			version := v.Version
+			name = v.Name
+			if versionFinal == "" {
+				versionFinal = version
+				urlFinal = url
+			} else {
+				isNewer := semver.Compare("v"+versionFinal, "v"+version)
+				if isNewer == -1 {
+					versionFinal = version
+					urlFinal = url
+				}
+			}
+		}
+		logrus.Printf("starting to install helmchart")
+
+		inhelm, err := InstallChart("openshift", name, urlFinal)
+		if err != nil {
+			logrus.Printf(err.Error())
+		}
+		logrus.Printf("installed helmchart: %v", inhelm)
+	}
 	// we do not return the cfg in these cases because we do not want to bother with any progress tracking
 	switch cfg.Spec.ManagementState {
 	case operatorsv1api.Removed:
@@ -1393,3 +1446,187 @@ func (h *Handler) numOfManagedImageStreamsPresent() int {
 	}
 	return rc
 }
+
+func isChartNeeded(chartArray []string, str string) bool {
+	for i := 0; i < len(chartArray); i++ {
+		if chartArray[i] == str {
+			return true
+		}
+	}
+	return false
+}
+
+func helmIndex() ([]Helmch, error) {
+
+	var chartsValue Chart
+	var HelmchCharts []Helmch
+	var HelmChValue Helmch
+	indexFile := make(map[interface{}]interface{})
+	s2iCharts := []string{"redhat-redhat-nodejs-imagestreams", "redhat-nginx-imagestreams"}
+
+	indexURL := "https://charts.openshift.io/index.yaml"
+
+	resp, err := http.Get(indexURL)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.New(fmt.Sprintf("Response for %v returned %v with status code %v", indexURL, resp, resp.StatusCode))
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	err = yaml.Unmarshal(body, &indexFile)
+	if err != nil {
+		return nil, err
+	}
+	entries := indexFile["entries"]
+
+	for chartName, chartValue := range entries.(map[interface{}]interface{}) {
+		chName := fmt.Sprintf("%v", chartName)
+		if !isChartNeeded(s2iCharts, chName) {
+			continue
+		}
+		HelmChValue.HelmChName = fmt.Sprintf("%v", chartName)
+		var charts []Chart
+		for _, v := range chartValue.([]interface{}) {
+			for k1, v1 := range v.(map[interface{}]interface{}) {
+				// Individual Annotations
+				if k1 == "name" {
+					chartsValue.Name = fmt.Sprintf("%v", v1)
+				}
+				if k1 == "version" {
+					chartsValue.Version = fmt.Sprintf("%v", v1)
+				}
+				if k1 == "urls" {
+					chartsValue.churl = fmt.Sprintf("%v", v1)
+					chartsValue.churl = chartsValue.churl[1 : len(chartsValue.churl)-1]
+				}
+			}
+
+			charts = append(charts, chartsValue)
+			HelmChValue.HelmCh = charts
+		}
+		HelmchCharts = append(HelmchCharts, HelmChValue)
+
+	}
+	return HelmchCharts, nil
+}
+func InstallChart(ns, name, url string) (*release.Release, error) {
+	//actionConfig := actionConfig()
+	os.Setenv("HELM_DRIVER", "secrets")
+	actionConfig := new(action.Configuration)
+	if err := actionConfig.Init(
+		&genericclioptions.ConfigFlags{
+			Namespace: &ns,
+		},
+		ns,
+		os.Getenv("HELM_DRIVER"),
+		log.Printf,
+	); err != nil {
+		return nil, err
+	}
+	cmd := action.NewUpgrade(actionConfig)
+	cmd.Install = true
+	logrus.Printf("Inside Upgrade")
+
+	// releaseName, chartName, err := cmd.NameAndChart([]string{name, url})
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// cmd.ReleaseName = releaseName
+
+	//logrus.Printf("Chartname %s", chartName)
+
+	cp, err := cmd.ChartPathOptions.LocateChart(url, settings)
+	if err != nil {
+		return nil, err
+	}
+	logrus.Printf("releasename %s", name)
+	ch, err := loader.Load(cp)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd.Namespace = ns
+	release, err := cmd.Run(name, ch, nil)
+	// if strings.Contains(err.Error(), "has no deployed releases") &&
+	// 	!strings.Contains(err.Error(), "another operation (install/upgrade/rollback) is in progress") &&
+	// 	!strings.Contains(err.Error(), "release: already exists") {
+
+	// 	logrus.Printf("Inside Install, as there are no releases available")
+	// 	cmd := action.NewInstall(actionConfig)
+
+	// 	releaseName, chartName, err := cmd.NameAndChart([]string{name, url})
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	cmd.ReleaseName = releaseName
+	// 	cp, err := cmd.ChartPathOptions.LocateChart(chartName, settings)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	//logrus.Printf("releasename %s", releaseName)
+	// 	ch, err := loader.Load(cp)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+
+	// 	cmd.Namespace = ns
+	// 	release, err := cmd.Run(ch, nil)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	logrus.Printf("namespace %s", ns)
+	// 	logrus.Println("Installed helmcharts")
+	// 	return release, nil
+	// }
+	if err != nil {
+		fmt.Println(err)
+		fmt.Println("value of install: ", cmd.Install)
+		return nil, err
+	}
+	logrus.Printf("namespace %s", ns)
+	logrus.Println("Upgraded helmcharts")
+	return release, nil
+}
+
+var settings = initSettings()
+
+func initSettings() *cli.EnvSettings {
+	conf := cli.New()
+	conf.RepositoryCache = "/tmp"
+	return conf
+}
+
+// func helmIndexTest() {
+// 	helmChartList, _ := helmIndex()
+// 	for _, helmChart := range helmChartList {
+// 		name := helmChart.HelmChName
+// 		val := helmChart.HelmCh
+// 		fmt.Println("Name", name)
+// 		versionFinal := ""
+// 		urlFinal := ""
+// 		for _, v := range val {
+// 			url := v.churl
+// 			version := v.Version
+// 			fmt.Println("version", version)
+// 			if versionFinal == "" {
+// 				fmt.Println("VersionFinal:", versionFinal)
+// 				versionFinal = version
+// 				urlFinal = url
+// 				fmt.Println("VersionFinal:", versionFinal)
+// 			} else {
+// 				fmt.Println("VersionFinal;version:", versionFinal, version)
+// 				isNewer := semver.Compare("v"+versionFinal, "v"+version)
+// 				fmt.Println("IsNewer:", isNewer)
+// 				if isNewer == -1 {
+// 					versionFinal = version
+// 					urlFinal = url
+// 				}
+// 			}
+
+//			}
+//		}
+//	}
