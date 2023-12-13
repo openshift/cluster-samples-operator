@@ -384,7 +384,7 @@ github.com/opencontainers/go-digest
 ## explicit; go 1.18
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/openshift/api v0.0.0-20230804122727-754e59a61dd3
+# github.com/openshift/api v0.0.0-20230804122727-754e59a61dd3 => github.com/fbm3307/api v0.0.0-20231204165744-0a89de2c091e
 ## explicit; go 1.20
 github.com/openshift/api/config/v1
 github.com/openshift/api/image/docker10
@@ -1569,3 +1569,4 @@ sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
+# github.com/openshift/api => github.com/fbm3307/api v0.0.0-20231204165744-0a89de2c091e

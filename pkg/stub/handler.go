@@ -222,12 +222,18 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 			}
 		}
 		logrus.Printf("starting to install helmchart")
+		if cfg.Spec.SkippedHelmCharts != nil {
+			if isChartIncluded(cfg.Spec.SkippedHelmCharts, name) {
+				continue
+			}
+		}
 
 		inhelm, err := InstallChart("openshift", name, urlFinal)
 		if err != nil {
 			logrus.Printf(err.Error())
 		}
 		logrus.Printf("installed helmchart: %v", inhelm)
+
 	}
 	// we do not return the cfg in these cases because we do not want to bother with any progress tracking
 	switch cfg.Spec.ManagementState {
@@ -1447,7 +1453,7 @@ func (h *Handler) numOfManagedImageStreamsPresent() int {
 	return rc
 }
 
-func isChartNeeded(chartArray []string, str string) bool {
+func isChartIncluded(chartArray []string, str string) bool {
 	for i := 0; i < len(chartArray); i++ {
 		if chartArray[i] == str {
 			return true
@@ -1485,7 +1491,7 @@ func helmIndex() ([]Helmch, error) {
 
 	for chartName, chartValue := range entries.(map[interface{}]interface{}) {
 		chName := fmt.Sprintf("%v", chartName)
-		if !isChartNeeded(s2iCharts, chName) {
+		if !isChartIncluded(s2iCharts, chName) {
 			continue
 		}
 		HelmChValue.HelmChName = fmt.Sprintf("%v", chartName)
@@ -1527,69 +1533,63 @@ func InstallChart(ns, name, url string) (*release.Release, error) {
 	); err != nil {
 		return nil, err
 	}
-	cmd := action.NewUpgrade(actionConfig)
-	cmd.Install = true
-	logrus.Printf("Inside Upgrade")
 
-	// releaseName, chartName, err := cmd.NameAndChart([]string{name, url})
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// cmd.ReleaseName = releaseName
+	rel := action.NewGet(actionConfig)
+	installedreleases, err := rel.Run(name)
 
-	//logrus.Printf("Chartname %s", chartName)
+	if installedreleases == nil && err != nil {
 
-	cp, err := cmd.ChartPathOptions.LocateChart(url, settings)
-	if err != nil {
-		return nil, err
+		logrus.Printf("Inside Install, as there are no releases available")
+		cmd := action.NewInstall(actionConfig)
+
+		releaseName, chartName, err := cmd.NameAndChart([]string{name, url})
+		if err != nil {
+			return nil, err
+		}
+		cmd.ReleaseName = releaseName
+		cp, err := cmd.ChartPathOptions.LocateChart(chartName, settings)
+		if err != nil {
+			return nil, err
+		}
+		ch, err := loader.Load(cp)
+		if err != nil {
+			return nil, err
+		}
+
+		cmd.Namespace = ns
+		release, err := cmd.Run(ch, nil)
+		if err != nil {
+			return nil, err
+		}
+		logrus.Printf("namespace %s", ns)
+		logrus.Println("Installed helmcharts")
+		return release, nil
+	} else {
+		fmt.Println("releases", installedreleases.Name)
+		cmd := action.NewUpgrade(actionConfig)
+		logrus.Printf("Inside Upgrade as there is already a helmchart")
+
+		cp, err := cmd.ChartPathOptions.LocateChart(url, settings)
+		if err != nil {
+			return nil, err
+		}
+		logrus.Printf("releasename %s", name)
+		ch, err := loader.Load(cp)
+		if err != nil {
+			return nil, err
+		}
+
+		cmd.Namespace = ns
+		release, err := cmd.Run(name, ch, nil)
+
+		if err != nil {
+			fmt.Println(err)
+			return nil, err
+		}
+		logrus.Printf("namespace %s", ns)
+		logrus.Println("Upgraded helmcharts")
+		return release, nil
 	}
-	logrus.Printf("releasename %s", name)
-	ch, err := loader.Load(cp)
-	if err != nil {
-		return nil, err
-	}
-
-	cmd.Namespace = ns
-	release, err := cmd.Run(name, ch, nil)
-	// if strings.Contains(err.Error(), "has no deployed releases") &&
-	// 	!strings.Contains(err.Error(), "another operation (install/upgrade/rollback) is in progress") &&
-	// 	!strings.Contains(err.Error(), "release: already exists") {
-
-	// 	logrus.Printf("Inside Install, as there are no releases available")
-	// 	cmd := action.NewInstall(actionConfig)
-
-	// 	releaseName, chartName, err := cmd.NameAndChart([]string{name, url})
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	cmd.ReleaseName = releaseName
-	// 	cp, err := cmd.ChartPathOptions.LocateChart(chartName, settings)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	//logrus.Printf("releasename %s", releaseName)
-	// 	ch, err := loader.Load(cp)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-
-	// 	cmd.Namespace = ns
-	// 	release, err := cmd.Run(ch, nil)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	logrus.Printf("namespace %s", ns)
-	// 	logrus.Println("Installed helmcharts")
-	// 	return release, nil
-	// }
-	if err != nil {
-		fmt.Println(err)
-		fmt.Println("value of install: ", cmd.Install)
-		return nil, err
-	}
-	logrus.Printf("namespace %s", ns)
-	logrus.Println("Upgraded helmcharts")
-	return release, nil
 }
 
 var settings = initSettings()
@@ -1599,34 +1599,3 @@ func initSettings() *cli.EnvSettings {
 	conf.RepositoryCache = "/tmp"
 	return conf
 }
-
-// func helmIndexTest() {
-// 	helmChartList, _ := helmIndex()
-// 	for _, helmChart := range helmChartList {
-// 		name := helmChart.HelmChName
-// 		val := helmChart.HelmCh
-// 		fmt.Println("Name", name)
-// 		versionFinal := ""
-// 		urlFinal := ""
-// 		for _, v := range val {
-// 			url := v.churl
-// 			version := v.Version
-// 			fmt.Println("version", version)
-// 			if versionFinal == "" {
-// 				fmt.Println("VersionFinal:", versionFinal)
-// 				versionFinal = version
-// 				urlFinal = url
-// 				fmt.Println("VersionFinal:", versionFinal)
-// 			} else {
-// 				fmt.Println("VersionFinal;version:", versionFinal, version)
-// 				isNewer := semver.Compare("v"+versionFinal, "v"+version)
-// 				fmt.Println("IsNewer:", isNewer)
-// 				if isNewer == -1 {
-// 					versionFinal = version
-// 					urlFinal = url
-// 				}
-// 			}
-
-//			}
-//		}
-//	}
