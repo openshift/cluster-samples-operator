@@ -1473,7 +1473,6 @@ func helmIndex() ([]Helmch, error) {
 		"redhat-nginx-imagestreams",
 		"redhat-redhat-ruby-imagestreams",
 		"redhat-redhat-python-imagestreams",
-		"redhat-redhat-perl-imagestreams",
 		"redhat-redhat-php-imagestreams",
 		"redhat-httpd-imagestreams"}
 
