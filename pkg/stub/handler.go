@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime"
 
 	"strings"
@@ -229,7 +230,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 			}
 		}
 
-		_, err := InstallChart("openshift", name, versionFinal, urlFinal)
+		_, err := h.InstallChart(cfg, "openshift", name, versionFinal, urlFinal)
 		if err != nil {
 			logrus.Printf(err.Error())
 		}
@@ -1469,7 +1470,7 @@ func helmIndex() ([]Helmch, error) {
 	var HelmchCharts []Helmch
 	var HelmChValue Helmch
 	indexFile := make(map[interface{}]interface{})
-	s2iCharts := []string{"redhat-redhat-nodejs-imagestreams",
+	s2iCharts := []string{"redhat-redhat-perl-imagestreams", "redhat-redhat-nodejs-imagestreams",
 		"redhat-nginx-imagestreams",
 		"redhat-redhat-ruby-imagestreams",
 		"redhat-redhat-python-imagestreams",
@@ -1525,10 +1526,12 @@ func helmIndex() ([]Helmch, error) {
 	}
 	return HelmchCharts, nil
 }
-func InstallChart(ns, name, ver, url string) (*release.Release, error) {
+func (h *Handler) InstallChart(cfg *v1.Config, ns, name, ver, url string) (*release.Release, error) {
 	//actionConfig := actionConfig()
 	os.Setenv("HELM_DRIVER", "secrets")
 	actionConfig := new(action.Configuration)
+	assetDirs := [4]string{x86ContentRootDir, armContentRootDir, ppcContentRootDir, zContentRootDir}
+	errString := "Unable to continue with install: ImageStream \"[a-zA-Z0-9]+\" in namespace \"openshift\" exists+"
 	if err := actionConfig.Init(
 		&genericclioptions.ConfigFlags{
 			Namespace: &ns,
@@ -1560,12 +1563,33 @@ func InstallChart(ns, name, ver, url string) (*release.Release, error) {
 		if err != nil {
 			return nil, err
 		}
-
+		// This is comment
 		cmd.Namespace = ns
 		release, err := cmd.Run(ch, nil)
 		if err != nil {
+			re2, _ := regexp.Compile(errString)
+			match := re2.MatchString(err.Error())
+			if match {
+				re3, _ := regexp.Compile("\"[a-zA-Z0-9]+\"")
+				pkgName := re3.FindString(err.Error())
+				pkg := pkgName[1 : len(pkgName)-1]
+				for _, path := range assetDirs {
+					absPath := path + "/" + pkg + "/imagestreams"
+					if _, err := os.Stat(absPath); os.IsNotExist(err) {
+						fmt.Println("Imagestreams path does not exists. Delete me")
+						err := h.deleteimagestreamforhelm(cfg, pkg)
+						if err != nil {
+							fmt.Printf("Error Deleting imagestream: %v", err)
+						}
+					}
+					fmt.Println("Dir Exists:" + absPath)
+
+				}
+			}
 			return nil, err
 		}
+		fmt.Println("No Error")
+
 		logrus.Printf("namespace %s", ns)
 		logrus.Println("Installed helmcharts")
 		return release, nil
@@ -1610,4 +1634,14 @@ func initSettings() *cli.EnvSettings {
 	conf := cli.New()
 	conf.RepositoryCache = "/tmp"
 	return conf
+}
+
+func (h *Handler) deleteimagestreamforhelm(cfg *v1.Config, Name string) error {
+
+	err := h.imageclientwrapper.Delete(Name, &metav1.DeleteOptions{})
+	if err != nil && !kerrors.IsNotFound(err) {
+		logrus.Warnf("Problem deleting openshift imagestream %s ", Name)
+		return err
+	}
+	return err
 }
