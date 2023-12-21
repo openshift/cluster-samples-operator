@@ -1525,7 +1525,7 @@ func (h *Handler) InstallChart(cfg *v1.Config, ns, name, ver, url string) (*rele
 	os.Setenv("HELM_DRIVER", "secrets")
 	actionConfig := new(action.Configuration)
 	assetDirs := [4]string{x86ContentRootDir, armContentRootDir, ppcContentRootDir, zContentRootDir}
-	errString := "Unable to continue with install: ImageStream \"[a-zA-Z0-9]+\" in namespace \"openshift\" exists+"
+	errString := "Unable to continue with install: ImageStream \".*\" in namespace \"openshift\" exists+"
 	if err := actionConfig.Init(
 		&genericclioptions.ConfigFlags{
 			Namespace: &ns,
@@ -1563,7 +1563,7 @@ func (h *Handler) InstallChart(cfg *v1.Config, ns, name, ver, url string) (*rele
 			re2, _ := regexp.Compile(errString)
 			match := re2.MatchString(err.Error())
 			if match {
-				re3, _ := regexp.Compile("\"[a-zA-Z0-9]+\"")
+				re3, _ := regexp.Compile("\".*\"")
 				pkgName := re3.FindString(err.Error())
 				pkg := pkgName[1 : len(pkgName)-1]
 				for _, path := range assetDirs {
