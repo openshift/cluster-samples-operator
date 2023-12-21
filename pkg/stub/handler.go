@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -214,28 +215,23 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 			if versionFinal == "" {
 				versionFinal = version
 				urlFinal = url
-			} else {
-				isNewer := semver.Compare("v"+versionFinal, "v"+version)
-				if isNewer == -1 {
-					versionFinal = version
-					urlFinal = url
-				}
+			}
+			isNewer := semver.Compare("v"+versionFinal, "v"+version)
+			if isNewer == -1 {
+				versionFinal = version
+				urlFinal = url
 			}
 		}
-		logrus.Printf("starting to install helmchart")
 		if cfg.Spec.SkippedHelmCharts != nil {
 			if isChartIncluded(cfg.Spec.SkippedHelmCharts, name) {
 				fmt.Printf("The Helmchart is in skipped list hence skipping the watch for %v", name)
 				continue
 			}
 		}
-
 		_, err := h.InstallChart(cfg, "openshift", name, versionFinal, urlFinal)
 		if err != nil {
 			logrus.Printf(err.Error())
 		}
-		//logrus.Printf("installed/upgraded helmchartas required")
-
 	}
 	// we do not return the cfg in these cases because we do not want to bother with any progress tracking
 	switch cfg.Spec.ManagementState {
@@ -1470,12 +1466,14 @@ func helmIndex() ([]Helmch, error) {
 	var HelmchCharts []Helmch
 	var HelmChValue Helmch
 	indexFile := make(map[interface{}]interface{})
-	s2iCharts := []string{"redhat-redhat-perl-imagestreams", "redhat-redhat-nodejs-imagestreams",
+	s2iCharts := []string{"redhat-redhat-perl-imagestreams",
+		"redhat-redhat-nodejs-imagestreams",
 		"redhat-nginx-imagestreams",
 		"redhat-redhat-ruby-imagestreams",
 		"redhat-redhat-python-imagestreams",
 		"redhat-redhat-php-imagestreams",
-		"redhat-httpd-imagestreams"}
+		"redhat-httpd-imagestreams",
+		"redhat-redhat-dotnet-imagestreams"}
 
 	indexURL := "https://charts.openshift.io/index.yaml"
 
@@ -1486,7 +1484,7 @@ func helmIndex() ([]Helmch, error) {
 	if resp.StatusCode != 200 {
 		return nil, errors.New(fmt.Sprintf("Response for %v returned %v with status code %v", indexURL, resp, resp.StatusCode))
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -1495,7 +1493,6 @@ func helmIndex() ([]Helmch, error) {
 		return nil, err
 	}
 	entries := indexFile["entries"]
-
 	for chartName, chartValue := range entries.(map[interface{}]interface{}) {
 		chName := fmt.Sprintf("%v", chartName)
 		if !isChartIncluded(s2iCharts, chName) {
@@ -1506,13 +1503,12 @@ func helmIndex() ([]Helmch, error) {
 		for _, v := range chartValue.([]interface{}) {
 			for k1, v1 := range v.(map[interface{}]interface{}) {
 				// Individual Annotations
-				if k1 == "name" {
+				switch k1 {
+				case "name":
 					chartsValue.Name = fmt.Sprintf("%v", v1)
-				}
-				if k1 == "version" {
+				case "version":
 					chartsValue.Version = fmt.Sprintf("%v", v1)
-				}
-				if k1 == "urls" {
+				case "urls":
 					chartsValue.churl = fmt.Sprintf("%v", v1)
 					chartsValue.churl = chartsValue.churl[1 : len(chartsValue.churl)-1]
 				}
@@ -1522,12 +1518,10 @@ func helmIndex() ([]Helmch, error) {
 			HelmChValue.HelmCh = charts
 		}
 		HelmchCharts = append(HelmchCharts, HelmChValue)
-
 	}
 	return HelmchCharts, nil
 }
 func (h *Handler) InstallChart(cfg *v1.Config, ns, name, ver, url string) (*release.Release, error) {
-	//actionConfig := actionConfig()
 	os.Setenv("HELM_DRIVER", "secrets")
 	actionConfig := new(action.Configuration)
 	assetDirs := [4]string{x86ContentRootDir, armContentRootDir, ppcContentRootDir, zContentRootDir}
@@ -1563,7 +1557,6 @@ func (h *Handler) InstallChart(cfg *v1.Config, ns, name, ver, url string) (*rele
 		if err != nil {
 			return nil, err
 		}
-		// This is comment
 		cmd.Namespace = ns
 		release, err := cmd.Run(ch, nil)
 		if err != nil {
@@ -1576,55 +1569,50 @@ func (h *Handler) InstallChart(cfg *v1.Config, ns, name, ver, url string) (*rele
 				for _, path := range assetDirs {
 					absPath := path + "/" + pkg + "/imagestreams"
 					if _, err := os.Stat(absPath); os.IsNotExist(err) {
-						fmt.Println("Imagestreams path does not exists. Delete me")
+						fmt.Printf("Imagestreams path does not exists. Deleting the imagestream %v", pkg)
 						err := h.deleteimagestreamforhelm(cfg, pkg)
 						if err != nil {
 							fmt.Printf("Error Deleting imagestream: %v", err)
 						}
 					}
-					fmt.Println("Dir Exists:" + absPath)
-
+					fmt.Printf("Did not Delete the imagestream %v", pkg)
 				}
 			}
 			return nil, err
 		}
-		fmt.Println("No Error")
-
-		logrus.Printf("namespace %s", ns)
-		logrus.Println("Installed helmcharts")
 		return release, nil
-	} else {
-		instVersion = fmt.Sprintf("%v", installedreleases.Chart.AppVersion())
-		isNewver := semver.Compare("v"+instVersion, "v"+ver)
-
-		if isNewver == -1 {
-
-			fmt.Println("releases", installedreleases.Name)
-			cmd := action.NewUpgrade(actionConfig)
-			logrus.Printf("Inside Upgrade as there is already a helmchart with old version")
-
-			cp, err := cmd.ChartPathOptions.LocateChart(url, settings)
-			if err != nil {
-				return nil, err
-			}
-			logrus.Printf("releasename %s", name)
-			ch, err := loader.Load(cp)
-			if err != nil {
-				return nil, err
-			}
-
-			cmd.Namespace = ns
-			release, err := cmd.Run(name, ch, nil)
-
-			if err != nil {
-				fmt.Println(err)
-				return nil, err
-			}
-			logrus.Printf("namespace %s", ns)
-			logrus.Println("Upgraded helmcharts")
-			return release, nil
-		}
 	}
+	instVersion = fmt.Sprintf("%v", installedreleases.Chart.AppVersion())
+	isNewver := semver.Compare("v"+instVersion, "v"+ver)
+
+	if isNewver == -1 {
+
+		fmt.Println("releases", installedreleases.Name)
+		cmd := action.NewUpgrade(actionConfig)
+		logrus.Printf("Inside Upgrade as there is already a helmchart with old version")
+
+		cp, err := cmd.ChartPathOptions.LocateChart(url, settings)
+		if err != nil {
+			return nil, err
+		}
+		logrus.Printf("releasename %s", name)
+		ch, err := loader.Load(cp)
+		if err != nil {
+			return nil, err
+		}
+
+		cmd.Namespace = ns
+		release, err := cmd.Run(name, ch, nil)
+
+		if err != nil {
+			fmt.Println(err)
+			return nil, err
+		}
+		logrus.Printf("namespace %s", ns)
+		logrus.Println("Upgraded helmcharts")
+		return release, nil
+	}
+
 	return nil, err
 }
 
@@ -1637,7 +1625,6 @@ func initSettings() *cli.EnvSettings {
 }
 
 func (h *Handler) deleteimagestreamforhelm(cfg *v1.Config, Name string) error {
-
 	err := h.imageclientwrapper.Delete(Name, &metav1.DeleteOptions{})
 	if err != nil && !kerrors.IsNotFound(err) {
 		logrus.Warnf("Problem deleting openshift imagestream %s ", Name)
