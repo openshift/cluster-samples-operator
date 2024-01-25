@@ -61,6 +61,7 @@ spec:
             drop:
             - ALL
         imagePullPolicy: IfNotPresent
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: samples-operator-tls
           mountPath: /etc/secrets
@@ -84,6 +85,7 @@ spec:
         - --termination-grace-period=30s
         - --files=/etc/secrets/tls.crt,/etc/secrets/tls.key
         imagePullPolicy: IfNotPresent
+        terminationMessagePolicy: FallbackToLogsOnError
         resources:
           requests:
             memory: 50Mi
