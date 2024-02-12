@@ -54,7 +54,7 @@ func TestWrongSampleResourceName(t *testing.T) {
 
 func TestWithDist(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -74,7 +74,7 @@ func TestWithArchDist(t *testing.T) {
 		t.Errorf("arch set to %s instead of %s", cfg.Spec.Architectures[0], runtime.GOARCH)
 	}
 
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -109,7 +109,7 @@ func TestManagementState(t *testing.T) {
 	h, cfg, event := setup()
 	iskeys := getISKeys()
 	tkeys := getTKeys()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	cfg.Spec.ManagementState = operatorsv1api.Unmanaged
 
 	err := h.Handle(event)
@@ -182,7 +182,7 @@ func TestManagementState(t *testing.T) {
 	}
 
 	cfg.ResourceVersion = "5"
-	err = h.Handle(event)
+	_ = h.Handle(event)
 	// remove pending should be false
 	statuses[4] = corev1.ConditionFalse
 	err = h.Handle(event)
@@ -200,7 +200,7 @@ func TestSkipped(t *testing.T) {
 	cfg.Status.SkippedImagestreams = iskeys
 	cfg.Status.SkippedTemplates = tkeys
 
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
@@ -611,7 +611,7 @@ func TestTBRInaccessibleBit(t *testing.T) {
 func TestProcessed(t *testing.T) {
 	h, cfg, event := setup()
 	event.Object = cfg
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 
 	// initial boostrap creation of samples
 	h.Handle(event)
@@ -667,7 +667,7 @@ func TestProcessed(t *testing.T) {
 	}
 
 	// get status samples registry set to foo.io
-	err = h.Handle(event)
+	_ = h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	if cfg.Status.SamplesRegistry != "foo.io" {
 		t.Fatalf("status did not pick up new samples registry")
@@ -683,7 +683,7 @@ func TestProcessed(t *testing.T) {
 	cfg.Status.Version = h.version
 	h.crdwrapper.Update(cfg)
 
-	err = h.Handle(event)
+	_ = h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	if cfg.Status.SamplesRegistry != "bar.io" {
 		t.Fatalf("second update to status registry not in status")
@@ -713,9 +713,9 @@ func TestProcessed(t *testing.T) {
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	h.crdwrapper.Update(cfg)
 	// reset operator image to clear out previous registry image override
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 
-	err = h.Handle(event)
+	_ = h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	if cfg.Status.SamplesRegistry != "foo.io/bar" {
 		t.Fatalf("third update to samples registry not in status")
@@ -745,9 +745,9 @@ func TestProcessed(t *testing.T) {
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	h.crdwrapper.Update(cfg)
 	// reset operator image to clear out previous registry image override
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 
-	err = h.Handle(event)
+	_ = h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	if cfg.Status.SamplesRegistry != "foo.io:1111/bar" {
 		t.Fatalf("fourth update to samples registry no in status")
@@ -776,14 +776,14 @@ func TestProcessed(t *testing.T) {
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	h.crdwrapper.Update(cfg)
 	// reset operator image to clear out previous registry image override
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 
-	err = h.Handle(event)
+	_ = h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	if cfg.Status.SamplesRegistry != "" {
 		t.Fatalf("fifth update to samples registry not in status")
 	}
-	err = h.Handle(event)
+	_ = h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	is, _ = fakeisclient.Get("foo")
 	if is == nil || strings.HasPrefix(is.Spec.DockerImageRepository, "bar.io") {
@@ -801,7 +801,7 @@ func TestProcessed(t *testing.T) {
 
 func TestImageStreamEvent(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -927,7 +927,7 @@ func TestImageStreamEvent(t *testing.T) {
 
 func TestImageStreamErrorRetry(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -1071,7 +1071,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 
 func TestTemplateEvent(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -1098,7 +1098,7 @@ func TestTemplateEvent(t *testing.T) {
 
 }
 
-func setup() (Handler, *v1.Config, util.Event) {
+func setup() (*Handler, *v1.Config, util.Event) {
 	h := NewTestHandler()
 	cfg, _ := h.CreateDefaultResourceIfNeeded(nil)
 	cfg = h.initConditions(cfg)
@@ -1111,7 +1111,7 @@ func setup() (Handler, *v1.Config, util.Event) {
 
 func TestTemplateRemovedFromPayload(t *testing.T) {
 	h, _, _ := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 
 	_, filePath, doUpsert, err := h.prepSamplesWatchEvent("template", "no-longer-exists", map[string]string{}, false)
 	switch {
@@ -1126,7 +1126,7 @@ func TestTemplateRemovedFromPayload(t *testing.T) {
 
 func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 	h, cfg, _ := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	errors := util.Condition(cfg, v1.ImportImageErrorsExist)
 	util.ConditionUpdate(cfg, errors)
 	cm := &corev1.ConfigMap{}
@@ -1197,7 +1197,7 @@ func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 func TestImageStreamCreateErrorDegradedReason(t *testing.T) {
 	err := kerrors.NewServiceUnavailable("BadService")
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	fakeisclient.geterrors = map[string]error{"foo": err}
 	h.Handle(event)
@@ -1217,7 +1217,7 @@ func TestImageGetError(t *testing.T) {
 	for _, iserr := range errors {
 		h, cfg, event := setup()
 
-		mimic(&h, x86ContentRootDir)
+		mimic(h, x86ContentRootDir)
 
 		fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 		fakeisclient.geterrors = map[string]error{"foo": iserr}
@@ -1240,7 +1240,7 @@ func TestImageUpdateError(t *testing.T) {
 
 	h, cfg, event := setup()
 
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	fakeisclient.upserterrors = map[string]error{"foo": kerrors.NewServiceUnavailable("upsertstreamerror")}
@@ -1405,7 +1405,7 @@ func TestImageStreamImportError(t *testing.T) {
 	}
 	for _, is := range streams {
 		h, cfg, _ := setup()
-		mimic(&h, x86ContentRootDir)
+		mimic(h, x86ContentRootDir)
 		dir := h.GetBaseDir(v1.X86Architecture, cfg)
 		files, _ := h.Filefinder.List(dir)
 		h.processFiles(dir, files, cfg)
@@ -1495,7 +1495,7 @@ func TestImageStreamTagImportErrorRecovery(t *testing.T) {
 		},
 	}
 	h, cfg, _ := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	dir := h.GetBaseDir(v1.X86Architecture, cfg)
 	files, _ := h.Filefinder.List(dir)
 	h.processFiles(dir, files, cfg)
@@ -1577,7 +1577,7 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 		},
 	}
 	h, cfg, _ := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	dir := h.GetBaseDir(v1.X86Architecture, cfg)
 	files, _ := h.Filefinder.List(dir)
 	h.processFiles(dir, files, cfg)
@@ -1661,7 +1661,7 @@ func TestTemplateGetError(t *testing.T) {
 	for _, terr := range errors {
 		h, cfg, event := setup()
 
-		mimic(&h, x86ContentRootDir)
+		mimic(h, x86ContentRootDir)
 
 		faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 		faketclient.geterrors = map[string]error{"bo": terr}
@@ -1683,7 +1683,7 @@ func TestTemplateGetError(t *testing.T) {
 func TestTemplateUpsertError(t *testing.T) {
 	h, cfg, event := setup()
 
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 
 	faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 	faketclient.upserterrors = map[string]error{"bo": kerrors.NewServiceUnavailable("upsertstreamerror")}
@@ -1707,7 +1707,7 @@ func TestDeletedCR(t *testing.T) {
 
 func TestSameCR(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	cfg.ResourceVersion = "a"
 
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -1738,7 +1738,7 @@ func TestBadTopDirList(t *testing.T) {
 
 func TestBadSubDirList(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
 	fakefinder.errors = map[string]error{x86ContentRootDir + "/imagestreams": fmt.Errorf("badsubdir")}
 	err := h.Handle(event)
@@ -1753,7 +1753,7 @@ func TestBadSubDirList(t *testing.T) {
 
 func TestBadTopLevelStatus(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(h, x86ContentRootDir)
 	fakestatus := h.crdwrapper.(*fakeCRDWrapper)
 	fakestatus.updateerr = fmt.Errorf("badsdkupdate")
 	err := h.Handle(event)
@@ -1946,7 +1946,7 @@ func validate(succeed bool, err error, errstr string, cfg *v1.Config, statuses [
 	validateArchOverride(succeed, err, errstr, cfg, statuses, conditions, t, runtime.GOARCH)
 }
 
-func NewTestHandler() Handler {
+func NewTestHandler() *Handler {
 	h := Handler{}
 
 	h.initter = &fakeInClusterInitter{}
@@ -2002,7 +2002,7 @@ func NewTestHandler() Handler {
 	h.imagestreamRetry = make(map[string]metav1.Time)
 	h.version = TestVersion
 
-	return h
+	return &h
 }
 
 type fakeFileInfo struct {

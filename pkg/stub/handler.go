@@ -163,7 +163,7 @@ type Chart struct {
 	// in the Chart.yaml or in the Helm repo.
 	Name string `json:"name"`
 	// url of the chart
-	churl string `json:"url"`
+	Churl string `json:"url"`
 	// Version is the chart version as define in the
 	// Chart.yaml or in the Helm repo.
 	Version string `json:"version,omitempty"`
@@ -209,7 +209,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		versionFinal := ""
 		urlFinal := ""
 		for _, v := range val {
-			url := v.churl
+			url := v.Churl
 			version := v.Version
 			name = v.Name
 			if versionFinal == "" {
@@ -1510,8 +1510,8 @@ func helmIndex() ([]Helmch, error) {
 				case "version":
 					chartsValue.Version = fmt.Sprintf("%v", v1)
 				case "urls":
-					chartsValue.churl = fmt.Sprintf("%v", v1)
-					chartsValue.churl = chartsValue.churl[1 : len(chartsValue.churl)-1]
+					chartsValue.Churl = fmt.Sprintf("%v", v1)
+					chartsValue.Churl = chartsValue.Churl[1 : len(chartsValue.Churl)-1]
 				}
 			}
 
