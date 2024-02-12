@@ -5,30 +5,23 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"log"
 	"net"
+	"net/http"
 	"os"
+	"regexp"
 	"runtime"
+
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
-	corev1 "k8s.io/api/core/v1"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilnet "k8s.io/apimachinery/pkg/util/net"
-	"k8s.io/apimachinery/pkg/util/wait"
-	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
-	corev1lister "k8s.io/client-go/listers/core/v1"
-	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/util/retry"
-
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	operatorsv1api "github.com/openshift/api/operator/v1"
+	samplesv1 "github.com/openshift/api/samples/v1"
 	v1 "github.com/openshift/api/samples/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
@@ -38,12 +31,29 @@ import (
 	configv1lister "github.com/openshift/client-go/samples/listers/samples/v1"
 	templatev1client "github.com/openshift/client-go/template/clientset/versioned/typed/template/v1"
 	templatev1lister "github.com/openshift/client-go/template/listers/template/v1"
-
 	"github.com/openshift/cluster-samples-operator/pkg/cache"
 	sampopclient "github.com/openshift/cluster-samples-operator/pkg/client"
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/mod/semver"
+	"gopkg.in/yaml.v2"
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/release"
+	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	kapis "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	corev1lister "k8s.io/client-go/listers/core/v1"
+	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/util/retry"
 )
 
 const (
@@ -148,6 +158,21 @@ type Handler struct {
 	version          string
 	tbrCheckFailed   bool
 }
+type Chart struct {
+	// Chart is the chart name as define
+	// in the Chart.yaml or in the Helm repo.
+	Name string `json:"name"`
+	// url of the chart
+	Churl string `json:"url"`
+	// Version is the chart version as define in the
+	// Chart.yaml or in the Helm repo.
+	Version string `json:"version,omitempty"`
+}
+
+type Helmch struct {
+	HelmChName string  `json:"helmChName"`
+	HelmCh     []Chart `json:"helmCh"`
+}
 
 // prepSamplesWatchEvent decides whether an upsert of the sample should be done, as well as data for either doing the upsert or checking the status of a prior upsert;
 // the return values:
@@ -176,6 +201,39 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 		return nil, "", false, nil
 	}
 
+	helmChartList, _ := helmIndex()
+	for _, helmChart := range helmChartList {
+
+		name := ""
+		val := helmChart.HelmCh
+		versionFinal := ""
+		urlFinal := ""
+		for _, v := range val {
+			url := v.Churl
+			version := v.Version
+			name = v.Name
+			if versionFinal == "" {
+				versionFinal = version
+				urlFinal = url
+			}
+			isNewer := semver.Compare("v"+versionFinal, "v"+version)
+			if isNewer == -1 {
+				versionFinal = version
+				urlFinal = url
+			}
+		}
+
+		if cfg.Spec.SkippedHelmCharts != nil {
+			if isChartIncluded(cfg.Spec.SkippedHelmCharts, name) {
+				fmt.Printf("The Helmchart is in skipped list hence skipping the watch for %v", name)
+				continue
+			}
+		}
+		_, err := h.InstallChart(cfg, "openshift", name, versionFinal, urlFinal)
+		if err != nil {
+			logrus.Printf(err.Error())
+		}
+	}
 	// we do not return the cfg in these cases because we do not want to bother with any progress tracking
 	switch cfg.Spec.ManagementState {
 	case operatorsv1api.Removed:
@@ -1392,4 +1450,186 @@ func (h *Handler) numOfManagedImageStreamsPresent() int {
 		rc++
 	}
 	return rc
+}
+
+func isChartIncluded(chartArray []samplesv1.HelmChartName, str string) bool {
+	for i := 0; i < len(chartArray); i++ {
+		if string(chartArray[i]) == str {
+			return true
+		}
+	}
+	return false
+}
+
+func helmIndex() ([]Helmch, error) {
+
+	var chartsValue Chart
+	var HelmchCharts []Helmch
+	var HelmChValue Helmch
+	indexFile := make(map[interface{}]interface{})
+	s2iCharts := []samplesv1.HelmChartName{"redhat-redhat-perl-imagestreams",
+		"redhat-redhat-nodejs-imagestreams",
+		"redhat-nginx-imagestreams",
+		"redhat-redhat-ruby-imagestreams",
+		"redhat-redhat-python-imagestreams",
+		"redhat-redhat-php-imagestreams",
+		"redhat-httpd-imagestreams",
+		"redhat-redhat-dotnet-imagestreams"}
+
+	indexURL := "https://charts.openshift.io/index.yaml"
+
+	resp, err := http.Get(indexURL)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.New(fmt.Sprintf("Response for %v returned %v with status code %v", indexURL, resp, resp.StatusCode))
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	err = yaml.Unmarshal(body, &indexFile)
+	if err != nil {
+		return nil, err
+	}
+	entries := indexFile["entries"]
+	for chartName, chartValue := range entries.(map[interface{}]interface{}) {
+		chName := fmt.Sprintf("%v", chartName)
+		if !isChartIncluded(s2iCharts, chName) {
+			continue
+		}
+		HelmChValue.HelmChName = fmt.Sprintf("%v", chartName)
+		var charts []Chart
+		for _, v := range chartValue.([]interface{}) {
+			for k1, v1 := range v.(map[interface{}]interface{}) {
+				// Individual Annotations
+				switch k1 {
+				case "name":
+					chartsValue.Name = fmt.Sprintf("%v", v1)
+				case "version":
+					chartsValue.Version = fmt.Sprintf("%v", v1)
+				case "urls":
+					chartsValue.Churl = fmt.Sprintf("%v", v1)
+					chartsValue.Churl = chartsValue.Churl[1 : len(chartsValue.Churl)-1]
+				}
+			}
+
+			charts = append(charts, chartsValue)
+			HelmChValue.HelmCh = charts
+		}
+		HelmchCharts = append(HelmchCharts, HelmChValue)
+	}
+	return HelmchCharts, nil
+}
+func (h *Handler) InstallChart(cfg *v1.Config, ns, name, ver, url string) (*release.Release, error) {
+	os.Setenv("HELM_DRIVER", "secrets")
+	actionConfig := new(action.Configuration)
+	assetDirs := [4]string{x86ContentRootDir, armContentRootDir, ppcContentRootDir, zContentRootDir}
+	errString := "Unable to continue with install: ImageStream \".*\" in namespace \"openshift\" exists+"
+	if err := actionConfig.Init(
+		&genericclioptions.ConfigFlags{
+			Namespace: &ns,
+		},
+		ns,
+		os.Getenv("HELM_DRIVER"),
+		log.Printf,
+	); err != nil {
+		return nil, err
+	}
+
+	rel := action.NewGet(actionConfig)
+	installedreleases, err := rel.Run(name)
+	instVersion := ""
+	if installedreleases == nil && err != nil {
+		logrus.Printf("Inside Install, as there are no releases available")
+		cmd := action.NewInstall(actionConfig)
+
+		releaseName, chartName, err := cmd.NameAndChart([]string{name, url})
+		if err != nil {
+			return nil, err
+		}
+		cmd.ReleaseName = releaseName
+		cp, err := cmd.ChartPathOptions.LocateChart(chartName, settings)
+		if err != nil {
+			return nil, err
+		}
+		ch, err := loader.Load(cp)
+		if err != nil {
+			return nil, err
+		}
+		cmd.Namespace = ns
+		release, err := cmd.Run(ch, nil)
+		if err != nil {
+			re2, _ := regexp.Compile(errString)
+			match := re2.MatchString(err.Error())
+			if match {
+				re3, _ := regexp.Compile("\".*\"")
+				pkgName := re3.FindString(err.Error())
+				pkg := pkgName[1 : len(pkgName)-1]
+				for _, path := range assetDirs {
+					absPath := path + "/" + pkg + "/imagestreams"
+					if _, err := os.Stat(absPath); os.IsNotExist(err) {
+						fmt.Printf("Imagestreams path does not exists. Deleting the imagestream %v", pkg)
+						err := h.deleteimagestreamforhelm(cfg, pkg)
+						if err != nil {
+							fmt.Printf("Error Deleting imagestream: %v", err)
+						}
+					}
+					fmt.Printf("Did not Delete the imagestream %v", pkg)
+				}
+			}
+			return nil, err
+		}
+		return release, nil
+	}
+	instVersion = fmt.Sprintf("%v", installedreleases.Chart.AppVersion())
+	isNewver := semver.Compare("v"+instVersion, "v"+ver)
+
+	if isNewver == -1 {
+
+		fmt.Println("releases", installedreleases.Name)
+		cmd := action.NewUpgrade(actionConfig)
+		logrus.Printf("Inside Upgrade as there is already a helmchart with old version")
+
+		cp, err := cmd.ChartPathOptions.LocateChart(url, settings)
+		if err != nil {
+			return nil, err
+		}
+		logrus.Printf("releasename %s", name)
+		ch, err := loader.Load(cp)
+		if err != nil {
+			return nil, err
+		}
+
+		cmd.Namespace = ns
+		release, err := cmd.Run(name, ch, nil)
+
+		if err != nil {
+			fmt.Println(err)
+			return nil, err
+		}
+		logrus.Printf("namespace %s", ns)
+		logrus.Println("Upgraded helmcharts")
+		return release, nil
+	}
+
+	return nil, err
+}
+
+var settings = initSettings()
+
+func initSettings() *cli.EnvSettings {
+	conf := cli.New()
+	conf.RepositoryCache = "/tmp"
+	return conf
+}
+
+func (h *Handler) deleteimagestreamforhelm(cfg *v1.Config, Name string) error {
+	err := h.imageclientwrapper.Delete(Name, &metav1.DeleteOptions{})
+	if err != nil && !kerrors.IsNotFound(err) {
+		logrus.Warnf("Problem deleting openshift imagestream %s ", Name)
+		return err
+	}
+	return err
 }
