@@ -159,8 +159,10 @@ type FeatureGateEnabledDisabled struct {
 var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 	Default: defaultFeatures,
 	CustomNoUpgrade: {
-		Enabled:  []FeatureGateDescription{},
-		Disabled: []FeatureGateDescription{},
+		Enabled: []FeatureGateDescription{},
+		Disabled: []FeatureGateDescription{
+			disableKubeletCloudCredentialProviders, // We do not currently ship the correct config to use the external credentials provider.
+		},
 	},
 	TechPreviewNoUpgrade: newDefaultFeatures().
 		with(validatingAdmissionPolicy).
@@ -174,15 +176,26 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		without(eventedPleg).
 		with(sigstoreImageVerification).
 		with(gcpLabelsTags).
+		with(gcpClusterHostedDNS).
 		with(vSphereStaticIPs).
 		with(routeExternalCertificate).
 		with(automatedEtcdBackup).
-		with(vSphereControlPlaneMachineset).
 		without(machineAPIOperatorDisableMachineHealthCheckController).
 		with(adminNetworkPolicy).
 		with(dnsNameResolver).
 		with(machineConfigNodes).
-		with(clusterAPIInstall).
+		with(metricsServer).
+		with(installAlternateInfrastructureAWS).
+		without(clusterAPIInstall).
+		with(mixedCPUsAllocation).
+		with(managedBootImages).
+		without(disableKubeletCloudCredentialProviders).
+		with(onClusterBuild).
+		with(signatureStores).
+		with(pinnedImages).
+		with(upgradeStatus).
+		with(translateStreamCloseWebsocketRequests).
+		with(volumeGroupSnapshot).
 		toFeatures(defaultFeatures),
 	LatencySensitive: newDefaultFeatures().
 		toFeatures(defaultFeatures),
@@ -200,8 +213,13 @@ var defaultFeatures = &FeatureGateEnabledDisabled{
 		externalCloudProviderExternal,
 		privateHostedZoneAWS,
 		buildCSIVolumes,
+		kmsv1,
+		vSphereControlPlaneMachineset,
+		sdnLiveMigration,
 	},
-	Disabled: []FeatureGateDescription{},
+	Disabled: []FeatureGateDescription{
+		disableKubeletCloudCredentialProviders, // We do not currently ship the correct config to use the external credentials provider.
+	},
 }
 
 type featureSetBuilder struct {

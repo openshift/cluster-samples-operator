@@ -18,13 +18,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
-	"golang.org/x/mod/semver"
-	"gopkg.in/yaml.v2"
-
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	operatorsv1api "github.com/openshift/api/operator/v1"
+	samplesv1 "github.com/openshift/api/samples/v1"
 	v1 "github.com/openshift/api/samples/v1"
 	templatev1 "github.com/openshift/api/template/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
@@ -39,6 +36,9 @@ import (
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
 	operatorstatus "github.com/openshift/cluster-samples-operator/pkg/operatorstatus"
 	"github.com/openshift/cluster-samples-operator/pkg/util"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/mod/semver"
+	"gopkg.in/yaml.v2"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
@@ -222,6 +222,7 @@ func (h *Handler) prepSamplesWatchEvent(kind, name string, annotations map[strin
 				urlFinal = url
 			}
 		}
+
 		if cfg.Spec.SkippedHelmCharts != nil {
 			if isChartIncluded(cfg.Spec.SkippedHelmCharts, name) {
 				fmt.Printf("The Helmchart is in skipped list hence skipping the watch for %v", name)
@@ -1451,9 +1452,9 @@ func (h *Handler) numOfManagedImageStreamsPresent() int {
 	return rc
 }
 
-func isChartIncluded(chartArray []string, str string) bool {
+func isChartIncluded(chartArray []samplesv1.HelmChartName, str string) bool {
 	for i := 0; i < len(chartArray); i++ {
-		if chartArray[i] == str {
+		if string(chartArray[i]) == str {
 			return true
 		}
 	}
@@ -1466,7 +1467,7 @@ func helmIndex() ([]Helmch, error) {
 	var HelmchCharts []Helmch
 	var HelmChValue Helmch
 	indexFile := make(map[interface{}]interface{})
-	s2iCharts := []string{"redhat-redhat-perl-imagestreams",
+	s2iCharts := []samplesv1.HelmChartName{"redhat-redhat-perl-imagestreams",
 		"redhat-redhat-nodejs-imagestreams",
 		"redhat-nginx-imagestreams",
 		"redhat-redhat-ruby-imagestreams",
