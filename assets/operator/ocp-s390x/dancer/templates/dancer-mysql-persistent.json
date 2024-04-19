@@ -138,12 +138,11 @@
 			}
 		},
 		{
-			"apiVersion": "apps/v1",
-			"kind": "Deployment",
+			"apiVersion": "apps.openshift.io/v1",
+			"kind": "DeploymentConfig",
 			"metadata": {
 				"annotations": {
 					"description": "Defines how to deploy the application server",
-					"image.openshift.io/triggers": "[{\"from\":{\"kind\":\"ImageStreamTag\",\"name\":\"${NAME}:latest\"},\"fieldPath\": \"spec.template.spec.containers[0].image\"}]",
 					"template.alpha.openshift.io/wait-for-ready": "true"
 				},
 				"name": "${NAME}"
@@ -151,9 +150,7 @@
 			"spec": {
 				"replicas": 1,
 				"selector": {
-					"matchLabels": {
-						"name": "${NAME}"
-					}
+					"name": "${NAME}"
 				},
 				"strategy": {
 					"type": "Recreate"
@@ -240,7 +237,25 @@
 							}
 						]
 					}
-				}
+				},
+				"triggers": [
+					{
+						"imageChangeParams": {
+							"automatic": true,
+							"containerNames": [
+								"dancer-mysql-persistent"
+							],
+							"from": {
+								"kind": "ImageStreamTag",
+								"name": "${NAME}:latest"
+							}
+						},
+						"type": "ImageChange"
+					},
+					{
+						"type": "ConfigChange"
+					}
+				]
 			}
 		},
 		{
@@ -283,12 +298,11 @@
 			}
 		},
 		{
-			"apiVersion": "apps/v1",
-			"kind": "Deployment",
+			"apiVersion": "apps.openshift.io/v1",
+			"kind": "DeploymentConfig",
 			"metadata": {
 				"annotations": {
 					"description": "Defines how to deploy the database",
-					"image.openshift.io/triggers": "[{\"from\":{\"kind\":\"ImageStreamTag\",\"name\":\"mysql:${MYSQL_VERSION}\"},\"fieldPath\": \"spec.template.spec.containers[0].image\"}]",
 					"template.alpha.openshift.io/wait-for-ready": "true"
 				},
 				"name": "${DATABASE_SERVICE_NAME}"
@@ -296,9 +310,7 @@
 			"spec": {
 				"replicas": 1,
 				"selector": {
-					"matchLabels": {
-						"name": "${DATABASE_SERVICE_NAME}"
-					}
+					"name": "${DATABASE_SERVICE_NAME}"
 				},
 				"strategy": {
 					"type": "Recreate"
@@ -389,7 +401,26 @@
 							}
 						]
 					}
-				}
+				},
+				"triggers": [
+					{
+						"imageChangeParams": {
+							"automatic": true,
+							"containerNames": [
+								"mysql"
+							],
+							"from": {
+								"kind": "ImageStreamTag",
+								"name": "mysql:8.0-el8",
+								"namespace": "${NAMESPACE}"
+							}
+						},
+						"type": "ImageChange"
+					},
+					{
+						"type": "ConfigChange"
+					}
+				]
 			}
 		}
 	],
@@ -413,13 +444,6 @@
 			"displayName": "Version of Perl Image",
 			"description": "Version of Perl image to be used (5.30-el7, 5.30-ubi8, or latest).",
 			"value": "5.30-ubi8",
-			"required": true
-		},
-		{
-			"name": "MYSQL_VERSION",
-			"displayName": "Version of MySQL Image",
-			"description": "Version of MySQL image to be used (8.0-el8, 8.0-el9, or latest).",
-			"value": "8.0-el8",
 			"required": true
 		},
 		{

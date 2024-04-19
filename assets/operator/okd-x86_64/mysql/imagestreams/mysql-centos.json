@@ -24,7 +24,7 @@
 				},
 				"from": {
 					"kind": "ImageStreamTag",
-					"name": "8.0-el9"
+					"name": "8.0-c9s"
 				},
 				"generation": null,
 				"importPolicy": {},
@@ -53,7 +53,7 @@
 				}
 			},
 			{
-				"name": "8.0-el9",
+				"name": "8.0-c9s",
 				"annotations": {
 					"description": "Provides a MySQL 8.0 database on CentOS 9 Stream. For more information about using this database image, including OpenShift considerations, see https://github.com/sclorg/mysql-container/blob/master/README.md.",
 					"iconClass": "icon-mysql-database",
@@ -73,7 +73,7 @@
 				}
 			},
 			{
-				"name": "8.0-el8",
+				"name": "8.0-c8s",
 				"annotations": {
 					"description": "Provides a MySQL 8.0 database on CentOS 8 Stream. For more information about using this database image, including OpenShift considerations, see https://github.com/sclorg/mysql-container/blob/master/README.md.",
 					"iconClass": "icon-mysql-database",
@@ -113,7 +113,7 @@
 				}
 			},
 			{
-				"name": "8.0-el9",
+				"name": "8.0",
 				"annotations": {
 					"description": "Provides a MySQL 8.0 database on CentOS 9 Stream. For more information about using this database image, including OpenShift considerations, see https://github.com/sclorg/mysql-container/blob/master/README.md.",
 					"iconClass": "icon-mysql-database",

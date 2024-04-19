@@ -5,7 +5,7 @@
 		"name": "httpd",
 		"creationTimestamp": null,
 		"annotations": {
-			"openshift.io/display-name": "Apache HTTP Server"
+			"openshift.io/display-name": "Apache HTTP Server (httpd)"
 		}
 	},
 	"spec": {
@@ -14,19 +14,19 @@
 		},
 		"tags": [
 			{
-				"name": "2.4-ubi8",
+				"name": "latest",
 				"annotations": {
-					"description": "Build and serve static content via Apache HTTP Server (httpd) 2.4 on UBI 8. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.",
-					"iconClass": "icon-httpd",
-					"openshift.io/display-name": "Apache HTTP Server 2.4 (UBI 8)",
+					"description": "Build and serve static content via Apache HTTP Server (httpd) on RHEL. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.\n\nWARNING: By selecting this tag, your application will automatically update to use the latest version of Httpd available on OpenShift, including major version updates.",
+					"iconClass": "icon-apache",
+					"openshift.io/display-name": "Apache HTTP Server (Latest)",
 					"openshift.io/provider-display-name": "Red Hat, Inc.",
 					"sampleRepo": "https://github.com/sclorg/httpd-ex.git",
-					"tags": "builder,httpd",
-					"version": "2.4"
+					"supports": "httpd",
+					"tags": "builder,httpd"
 				},
 				"from": {
-					"kind": "DockerImage",
-					"name": "registry.redhat.io/ubi8/httpd-24:latest"
+					"kind": "ImageStreamTag",
+					"name": "2.4-ubi8"
 				},
 				"generation": null,
 				"importPolicy": {},
@@ -38,10 +38,11 @@
 				"name": "2.4-ubi9",
 				"annotations": {
 					"description": "Build and serve static content via Apache HTTP Server (httpd) 2.4 on UBI 9. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.",
-					"iconClass": "icon-httpd",
+					"iconClass": "icon-apache",
 					"openshift.io/display-name": "Apache HTTP Server 2.4 (UBI 9)",
 					"openshift.io/provider-display-name": "Red Hat, Inc.",
 					"sampleRepo": "https://github.com/sclorg/httpd-ex.git",
+					"supports": "httpd",
 					"tags": "builder,httpd",
 					"version": "2.4"
 				},
@@ -56,19 +57,20 @@
 				}
 			},
 			{
-				"name": "2.4-el7",
+				"name": "2.4-ubi8",
 				"annotations": {
-					"description": "Build and serve static content via Apache HTTP Server (httpd) 2.4 on RHEL 7. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.",
-					"iconClass": "icon-httpd",
-					"openshift.io/display-name": "Apache HTTP Server 2.4 (RHEL 7)",
+					"description": "Build and serve static content via Apache HTTP Server (httpd) 2.4 on RHEL 8. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.",
+					"iconClass": "icon-apache",
+					"openshift.io/display-name": "Apache HTTP Server 2.4 (UBI 8)",
 					"openshift.io/provider-display-name": "Red Hat, Inc.",
 					"sampleRepo": "https://github.com/sclorg/httpd-ex.git",
+					"supports": "httpd",
 					"tags": "builder,httpd",
 					"version": "2.4"
 				},
 				"from": {
 					"kind": "DockerImage",
-					"name": "registry.redhat.io/rhscl/httpd-24-rhel7:latest"
+					"name": "registry.redhat.io/ubi8/httpd-24:latest"
 				},
 				"generation": null,
 				"importPolicy": {},
@@ -80,16 +82,17 @@
 				"name": "2.4-el8",
 				"annotations": {
 					"description": "Build and serve static content via Apache HTTP Server (httpd) 2.4 on RHEL 8. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.",
-					"iconClass": "icon-httpd",
+					"iconClass": "icon-apache",
 					"openshift.io/display-name": "Apache HTTP Server 2.4 (RHEL 8)",
 					"openshift.io/provider-display-name": "Red Hat, Inc.",
 					"sampleRepo": "https://github.com/sclorg/httpd-ex.git",
-					"tags": "builder,httpd",
+					"supports": "httpd",
+					"tags": "builder,httpd,hidden",
 					"version": "2.4"
 				},
 				"from": {
 					"kind": "DockerImage",
-					"name": "registry.redhat.io/rhel8/httpd-24:latest"
+					"name": "registry.redhat.io/rhel8/httpd-24"
 				},
 				"generation": null,
 				"importPolicy": {},
@@ -98,19 +101,42 @@
 				}
 			},
 			{
-				"name": "latest",
+				"name": "2.4-el7",
 				"annotations": {
-					"description": "Build and serve static content via Apache HTTP Server (httpd) 2.4 on UBI 8. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.\n\nWARNING: By selecting this tag, your application will automatically update to use the latest version available on OpenShift, including major version updates.\n",
-					"iconClass": "icon-httpd",
-					"openshift.io/display-name": "Apache HTTP Server 2.4 (Latest)",
+					"description": "Build and serve static content via Apache HTTP Server (httpd) 2.4 on RHEL 7. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.",
+					"iconClass": "icon-apache",
+					"openshift.io/display-name": "Apache HTTP Server 2.4 (RHEL 7)",
 					"openshift.io/provider-display-name": "Red Hat, Inc.",
 					"sampleRepo": "https://github.com/sclorg/httpd-ex.git",
+					"supports": "httpd",
 					"tags": "builder,httpd",
 					"version": "2.4"
 				},
 				"from": {
-					"kind": "ImageStreamTag",
-					"name": "2.4-ubi8"
+					"kind": "DockerImage",
+					"name": "registry.redhat.io/rhscl/httpd-24-rhel7"
+				},
+				"generation": null,
+				"importPolicy": {},
+				"referencePolicy": {
+					"type": "Local"
+				}
+			},
+			{
+				"name": "2.4",
+				"annotations": {
+					"description": "Build and serve static content via Apache HTTP Server (httpd) 2.4 on RHEL 7. For more information about using this builder image, including OpenShift considerations, see https://github.com/sclorg/httpd-container/blob/master/2.4/README.md.",
+					"iconClass": "icon-apache",
+					"openshift.io/display-name": "Apache HTTP Server 2.4",
+					"openshift.io/provider-display-name": "Red Hat, Inc.",
+					"sampleRepo": "https://github.com/sclorg/httpd-ex.git",
+					"supports": "httpd",
+					"tags": "builder,httpd,hidden",
+					"version": "2.4"
+				},
+				"from": {
+					"kind": "DockerImage",
+					"name": "registry.redhat.io/rhscl/httpd-24-rhel7"
 				},
 				"generation": null,
 				"importPolicy": {},
