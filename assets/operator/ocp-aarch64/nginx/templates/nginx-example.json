@@ -124,12 +124,11 @@
 			}
 		},
 		{
-			"apiVersion": "apps/v1",
-			"kind": "Deployment",
+			"apiVersion": "apps.openshift.io/v1",
+			"kind": "DeploymentConfig",
 			"metadata": {
 				"annotations": {
 					"description": "Defines how to deploy the application server",
-					"image.openshift.io/triggers": "[{\"from\":{\"kind\":\"ImageStreamTag\",\"name\":\"${NAME}:latest\"},\"fieldPath\": \"spec.template.spec.containers[0].image\"}]",
 					"template.alpha.openshift.io/wait-for-ready": "true"
 				},
 				"name": "${NAME}"
@@ -137,20 +136,17 @@
 			"spec": {
 				"replicas": 1,
 				"selector": {
-					"matchLabels": {
-						"app": "${NAME}",
-						"name": "${NAME}"
-					}
+					"name": "${NAME}"
 				},
 				"strategy": {
-					"type": "RollingUpdate"
+					"type": "Rolling"
 				},
 				"template": {
 					"metadata": {
 						"labels": {
-							"app": "${NAME}",
 							"name": "${NAME}"
-						}
+						},
+						"name": "${NAME}"
 					},
 					"spec": {
 						"containers": [
@@ -187,7 +183,25 @@
 							}
 						]
 					}
-				}
+				},
+				"triggers": [
+					{
+						"imageChangeParams": {
+							"automatic": true,
+							"containerNames": [
+								"nginx-example"
+							],
+							"from": {
+								"kind": "ImageStreamTag",
+								"name": "${NAME}:latest"
+							}
+						},
+						"type": "ImageChange"
+					},
+					{
+						"type": "ConfigChange"
+					}
+				]
 			}
 		}
 	],
@@ -258,7 +272,6 @@
 		}
 	],
 	"labels": {
-		"app": "${NAME}",
-		"template": "${NAME}"
+		"template": "nginx-example"
 	}
 }

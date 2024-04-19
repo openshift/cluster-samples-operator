@@ -75,11 +75,10 @@
 			}
 		},
 		{
-			"apiVersion": "apps/v1",
-			"kind": "Deployment",
+			"apiVersion": "apps.openshift.io/v1",
+			"kind": "DeploymentConfig",
 			"metadata": {
 				"annotations": {
-					"image.openshift.io/triggers": "[{\"from\":{\"kind\":\"ImageStreamTag\",\"name\":\"mariadb:${MARIADB_VERSION}\"},\"fieldPath\": \"spec.template.spec.containers[0].image\"}]",
 					"template.alpha.openshift.io/wait-for-ready": "true"
 				},
 				"name": "${DATABASE_SERVICE_NAME}"
@@ -87,9 +86,7 @@
 			"spec": {
 				"replicas": 1,
 				"selector": {
-					"matchLabels": {
-						"name": "${DATABASE_SERVICE_NAME}"
-					}
+					"name": "${DATABASE_SERVICE_NAME}"
 				},
 				"strategy": {
 					"type": "Recreate"
@@ -195,7 +192,26 @@
 							}
 						]
 					}
-				}
+				},
+				"triggers": [
+					{
+						"imageChangeParams": {
+							"automatic": true,
+							"containerNames": [
+								"mariadb"
+							],
+							"from": {
+								"kind": "ImageStreamTag",
+								"name": "mariadb:${MARIADB_VERSION}",
+								"namespace": "${NAMESPACE}"
+							}
+						},
+						"type": "ImageChange"
+					},
+					{
+						"type": "ConfigChange"
+					}
+				]
 			}
 		}
 	],
