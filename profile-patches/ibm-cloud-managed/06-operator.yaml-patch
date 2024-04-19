@@ -3,5 +3,8 @@
 - op: add
   path: /metadata/annotations/include.release.openshift.io~1ibm-cloud-managed
   value: "true"
+- op: add
+  path: /metadata/annotations/include.release.openshift.io~1hypershift
+  value: "true"
 - op: remove
   path: /spec/template/spec/nodeSelector
