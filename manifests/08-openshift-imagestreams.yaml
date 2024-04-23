@@ -59,6 +59,24 @@ kind: ImageStream
 apiVersion: image.openshift.io/v1
 metadata:
   namespace: openshift
+  name: installer-fips
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+spec:
+  tags:
+  - name: latest
+    importPolicy:
+      scheduled: true
+      importMode: PreserveOriginal
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-baremetal-installer:4.16
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  namespace: openshift
   name: installer-artifacts
   annotations:
     include.release.openshift.io/ibm-cloud-managed: "true"
