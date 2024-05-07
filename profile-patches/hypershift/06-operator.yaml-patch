@@ -1,0 +1,3 @@
+- op: add
+  path: /metadata/annotations/include.release.openshift.io~1hypershift
+  value: "true"

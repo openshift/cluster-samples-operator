@@ -5,6 +5,7 @@ metadata:
   namespace: openshift-cluster-samples-operator
   annotations:
     capability.openshift.io/name: openshift-samples
+    include.release.openshift.io/hypershift: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
 rules:
@@ -38,6 +39,7 @@ metadata:
   name: cluster-samples-operator
   annotations:
     capability.openshift.io/name: openshift-samples
+    include.release.openshift.io/hypershift: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
 rules:
@@ -66,6 +68,7 @@ metadata:
   name: system:openshift:cluster-samples-operator:cluster-reader
   annotations:
     capability.openshift.io/name: openshift-samples
+    include.release.openshift.io/hypershift: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
 rules:
@@ -88,6 +91,7 @@ metadata:
   namespace: openshift-cluster-samples-operator
   annotations:
     capability.openshift.io/name: openshift-samples
+    include.release.openshift.io/hypershift: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
 subjects:
@@ -106,6 +110,7 @@ metadata:
   name: cluster-samples-operator
   annotations:
     capability.openshift.io/name: openshift-samples
+    include.release.openshift.io/hypershift: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
 subjects:

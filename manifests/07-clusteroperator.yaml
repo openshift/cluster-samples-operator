@@ -4,6 +4,7 @@ metadata:
   name: openshift-samples
   annotations:
     capability.openshift.io/name: openshift-samples
+    include.release.openshift.io/hypershift: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
 spec: {}
