@@ -3,9 +3,13 @@ reviewers:
 - dperaza4dustbit
 - adambkaplan
 - fbm3307
+- mfrancisc
+- metlos
 approvers:
 - gabemontero
 - adambkaplan
 - dperaza4dustbit
 - fbm3307
+- mfrancisc
+- metlos
 component: Samples Operator
