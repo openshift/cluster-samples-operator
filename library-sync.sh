@@ -53,3 +53,23 @@ git add operator
 rm t.tar
 rm -rf library-master
 
+SUPPORTED="ruby python nodejs perl php httpd nginx eap java webserver dotnet golang"
+function reset_unsupported() {
+  for d in $(ls); do
+    if [[ "${SUPPORTED}" != *"${d}"* ]]; then
+      git reset HEAD -- "${d}"
+      # remove any changes from the working tree in this directory that reset left behind
+      git stash -u -- "${d}"
+      git stash drop
+    fi
+  done
+}
+
+ARCHS="ocp-x86_64 ocp-aarch64 ocp-ppc64le ocp-s390x okd-x86_64"
+pushd operator
+for arch in $ARCHS; do
+  pushd "${arch}"
+  reset_unsupported
+  popd # $arch
+done
+popd # operator
