@@ -4,11 +4,13 @@ package v1
 
 import (
 	"context"
+	json "encoding/json"
+	"fmt"
 	"time"
 
 	v1 "github.com/openshift/api/image/v1"
+	imagev1 "github.com/openshift/client-go/image/applyconfigurations/image/v1"
 	scheme "github.com/openshift/client-go/image/clientset/versioned/scheme"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -32,7 +34,9 @@ type ImageStreamInterface interface {
 	List(ctx context.Context, opts metav1.ListOptions) (*v1.ImageStreamList, error)
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
 	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.ImageStream, err error)
-	Secrets(ctx context.Context, imageStreamName string, options metav1.GetOptions) (*corev1.SecretList, error)
+	Apply(ctx context.Context, imageStream *imagev1.ImageStreamApplyConfiguration, opts metav1.ApplyOptions) (result *v1.ImageStream, err error)
+	ApplyStatus(ctx context.Context, imageStream *imagev1.ImageStreamApplyConfiguration, opts metav1.ApplyOptions) (result *v1.ImageStream, err error)
+	Secrets(ctx context.Context, imageStreamName string, options metav1.GetOptions) (*v1.SecretList, error)
 	Layers(ctx context.Context, imageStreamName string, options metav1.GetOptions) (*v1.ImageStreamLayers, error)
 
 	ImageStreamExpansion
@@ -182,9 +186,65 @@ func (c *imageStreams) Patch(ctx context.Context, name string, pt types.PatchTyp
 	return
 }
 
-// Secrets takes name of the imageStream, and returns the corresponding corev1.SecretList object, and an error if there is any.
-func (c *imageStreams) Secrets(ctx context.Context, imageStreamName string, options metav1.GetOptions) (result *corev1.SecretList, err error) {
-	result = &corev1.SecretList{}
+// Apply takes the given apply declarative configuration, applies it and returns the applied imageStream.
+func (c *imageStreams) Apply(ctx context.Context, imageStream *imagev1.ImageStreamApplyConfiguration, opts metav1.ApplyOptions) (result *v1.ImageStream, err error) {
+	if imageStream == nil {
+		return nil, fmt.Errorf("imageStream provided to Apply must not be nil")
+	}
+	patchOpts := opts.ToPatchOptions()
+	data, err := json.Marshal(imageStream)
+	if err != nil {
+		return nil, err
+	}
+	name := imageStream.Name
+	if name == nil {
+		return nil, fmt.Errorf("imageStream.Name must be provided to Apply")
+	}
+	result = &v1.ImageStream{}
+	err = c.client.Patch(types.ApplyPatchType).
+		Namespace(c.ns).
+		Resource("imagestreams").
+		Name(*name).
+		VersionedParams(&patchOpts, scheme.ParameterCodec).
+		Body(data).
+		Do(ctx).
+		Into(result)
+	return
+}
+
+// ApplyStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+func (c *imageStreams) ApplyStatus(ctx context.Context, imageStream *imagev1.ImageStreamApplyConfiguration, opts metav1.ApplyOptions) (result *v1.ImageStream, err error) {
+	if imageStream == nil {
+		return nil, fmt.Errorf("imageStream provided to Apply must not be nil")
+	}
+	patchOpts := opts.ToPatchOptions()
+	data, err := json.Marshal(imageStream)
+	if err != nil {
+		return nil, err
+	}
+
+	name := imageStream.Name
+	if name == nil {
+		return nil, fmt.Errorf("imageStream.Name must be provided to Apply")
+	}
+
+	result = &v1.ImageStream{}
+	err = c.client.Patch(types.ApplyPatchType).
+		Namespace(c.ns).
+		Resource("imagestreams").
+		Name(*name).
+		SubResource("status").
+		VersionedParams(&patchOpts, scheme.ParameterCodec).
+		Body(data).
+		Do(ctx).
+		Into(result)
+	return
+}
+
+// Secrets takes name of the imageStream, and returns the corresponding v1.SecretList object, and an error if there is any.
+func (c *imageStreams) Secrets(ctx context.Context, imageStreamName string, options metav1.GetOptions) (result *v1.SecretList, err error) {
+	result = &v1.SecretList{}
 	err = c.client.Get().
 		Namespace(c.ns).
 		Resource("imagestreams").
