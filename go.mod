@@ -1,6 +1,6 @@
 module github.com/openshift/cluster-samples-operator
 
-go 1.20
+go 1.22
 
 require (
 	github.com/google/gofuzz v1.2.0 // indirect
