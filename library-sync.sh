@@ -57,9 +57,9 @@ SUPPORTED="ruby python nodejs perl php httpd nginx eap java webserver dotnet gol
 function reset_unsupported() {
   for d in $(ls); do
     if [[ "${SUPPORTED}" != *"${d}"* ]]; then
-      git reset HEAD -- "${d}"
-      # remove any changes from the working tree in this directory that reset left behind
-      git stash -u -- "${d}"
+      git checkout HEAD -- "${d}"
+      # remove any changes from the working tree in this directory that checkout left behind
+      git stash -a -- "${d}"
       git stash drop
     fi
   done
