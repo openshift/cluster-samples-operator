@@ -53,7 +53,7 @@ git add operator
 rm t.tar
 rm -rf library-master
 
-SUPPORTED="ruby python nodejs perl php httpd nginx eap java webserver dotnet golang"
+SUPPORTED="ruby python nodejs perl php httpd nginx eap java webserver dotnet golang rails"
 function reset_unsupported() {
   for d in $(ls); do
     if [[ "${SUPPORTED}" != *"${d}"* ]]; then
