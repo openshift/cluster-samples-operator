@@ -2,20 +2,20 @@
 	"kind": "Template",
 	"apiVersion": "template.openshift.io/v1",
 	"metadata": {
-		"name": "postgresql-persistent",
+		"name": "mariadb-persistent",
 		"creationTimestamp": null,
 		"annotations": {
-			"description": "PostgreSQL database service, with persistent storage. For more information about using this template, including OpenShift considerations, see https://github.com/sclorg/postgresql-container/.\n\nNOTE: Scaling to more than one replica is not supported. You must have persistent volumes available in your cluster to use this template.",
-			"iconClass": "icon-postgresql",
-			"openshift.io/display-name": "PostgreSQL",
-			"openshift.io/documentation-url": "https://docs.okd.io/latest/using_images/db_images/postgresql.html",
-			"openshift.io/long-description": "This template provides a standalone PostgreSQL server with a database created.  The database is stored on persistent storage.  The database name, username, and password are chosen via parameters when provisioning this service.",
+			"description": "MariaDB database service, with persistent storage. For more information about using this template, including OpenShift considerations, see https://github.com/sclorg/mariadb-container/blob/master/10.3/root/usr/share/container-scripts/mysql/README.md.\n\nNOTE: Scaling to more than one replica is not supported. You must have persistent volumes available in your cluster to use this template.",
+			"iconClass": "icon-mariadb",
+			"openshift.io/display-name": "MariaDB",
+			"openshift.io/documentation-url": "https://github.com/sclorg/mariadb-container/blob/master/10.3/root/usr/share/container-scripts/mysql/README.md",
+			"openshift.io/long-description": "This template provides a standalone MariaDB server with a database created.  The database is stored on persistent storage.  The database name, username, and password are chosen via parameters when provisioning this service.",
 			"openshift.io/provider-display-name": "Red Hat, Inc.",
 			"openshift.io/support-url": "https://access.redhat.com",
-			"tags": "database,postgresql"
+			"tags": "database,mariadb"
 		}
 	},
-	"message": "The following service(s) have been created in your project: ${DATABASE_SERVICE_NAME}.\n\n       Username: ${POSTGRESQL_USER}\n       Password: ${POSTGRESQL_PASSWORD}\n  Database Name: ${POSTGRESQL_DATABASE}\n Connection URL: postgresql://${DATABASE_SERVICE_NAME}:5432/\n\nFor more information about using this template, including OpenShift considerations, see https://github.com/sclorg/postgresql-container/.",
+	"message": "The following service(s) have been created in your project: ${DATABASE_SERVICE_NAME}.\n\n       Username: ${MYSQL_USER}\n       Password: ${MYSQL_PASSWORD}\n  Database Name: ${MYSQL_DATABASE}\n Connection URL: mysql://${DATABASE_SERVICE_NAME}:3306/\n\nFor more information about using this template, including OpenShift considerations, see https://github.com/sclorg/mariadb-container/blob/master/10.3/root/usr/share/container-scripts/mysql/README.md.",
 	"objects": [
 		{
 			"apiVersion": "v1",
@@ -24,14 +24,16 @@
 				"annotations": {
 					"template.openshift.io/expose-database_name": "{.data['database-name']}",
 					"template.openshift.io/expose-password": "{.data['database-password']}",
+					"template.openshift.io/expose-root_password": "{.data['database-root-password']}",
 					"template.openshift.io/expose-username": "{.data['database-user']}"
 				},
 				"name": "${DATABASE_SERVICE_NAME}"
 			},
 			"stringData": {
-				"database-name": "${POSTGRESQL_DATABASE}",
-				"database-password": "${POSTGRESQL_PASSWORD}",
-				"database-user": "${POSTGRESQL_USER}"
+				"database-name": "${MYSQL_DATABASE}",
+				"database-password": "${MYSQL_PASSWORD}",
+				"database-root-password": "${MYSQL_ROOT_PASSWORD}",
+				"database-user": "${MYSQL_USER}"
 			}
 		},
 		{
@@ -39,28 +41,20 @@
 			"kind": "Service",
 			"metadata": {
 				"annotations": {
-					"template.openshift.io/expose-uri": "postgres://{.spec.clusterIP}:{.spec.ports[?(.name==\"postgresql\")].port}"
+					"template.openshift.io/expose-uri": "mysql://{.spec.clusterIP}:{.spec.ports[?(.name==\"mariadb\")].port}"
 				},
 				"name": "${DATABASE_SERVICE_NAME}"
 			},
 			"spec": {
 				"ports": [
 					{
-						"name": "postgresql",
-						"nodePort": 0,
-						"port": 5432,
-						"protocol": "TCP",
-						"targetPort": 5432
+						"name": "mariadb",
+						"port": 3306
 					}
 				],
 				"selector": {
 					"name": "${DATABASE_SERVICE_NAME}"
-				},
-				"sessionAffinity": "None",
-				"type": "ClusterIP"
-			},
-			"status": {
-				"loadBalancer": {}
+				}
 			}
 		},
 		{
@@ -85,7 +79,7 @@
 			"kind": "Deployment",
 			"metadata": {
 				"annotations": {
-					"image.openshift.io/triggers": "[{\"from\":{\"kind\":\"ImageStreamTag\",\"name\":\"postgresql:${POSTGRESQL_VERSION}\"},\"fieldPath\": \"spec.template.spec.containers[0].image\"}]",
+					"image.openshift.io/triggers": "[{\"from\":{\"kind\":\"ImageStreamTag\",\"name\":\"mariadb:${MARIADB_VERSION}\"},\"fieldPath\": \"spec.template.spec.containers[0].image\"}]",
 					"template.alpha.openshift.io/wait-for-ready": "true"
 				},
 				"name": "${DATABASE_SERVICE_NAME}"
@@ -109,10 +103,9 @@
 					"spec": {
 						"containers": [
 							{
-								"capabilities": {},
 								"env": [
 									{
-										"name": "POSTGRESQL_USER",
+										"name": "MYSQL_USER",
 										"valueFrom": {
 											"secretKeyRef": {
 												"key": "database-user",
@@ -121,7 +114,7 @@
 										}
 									},
 									{
-										"name": "POSTGRESQL_PASSWORD",
+										"name": "MYSQL_PASSWORD",
 										"valueFrom": {
 											"secretKeyRef": {
 												"key": "database-password",
@@ -130,7 +123,16 @@
 										}
 									},
 									{
-										"name": "POSTGRESQL_DATABASE",
+										"name": "MYSQL_ROOT_PASSWORD",
+										"valueFrom": {
+											"secretKeyRef": {
+												"key": "database-root-password",
+												"name": "${DATABASE_SERVICE_NAME}"
+											}
+										}
+									},
+									{
+										"name": "MYSQL_DATABASE",
 										"valueFrom": {
 											"secretKeyRef": {
 												"key": "database-name",
@@ -144,24 +146,28 @@
 								"livenessProbe": {
 									"exec": {
 										"command": [
-											"/usr/libexec/check-container",
-											"--live"
+											"/bin/sh",
+											"-i",
+											"-c",
+											"MYSQL_PWD=\"$MYSQL_PASSWORD\" mysqladmin -u $MYSQL_USER ping"
 										]
 									},
-									"initialDelaySeconds": 120,
-									"timeoutSeconds": 10
+									"initialDelaySeconds": 30,
+									"timeoutSeconds": 1
 								},
-								"name": "postgresql",
+								"name": "mariadb",
 								"ports": [
 									{
-										"containerPort": 5432,
-										"protocol": "TCP"
+										"containerPort": 3306
 									}
 								],
 								"readinessProbe": {
 									"exec": {
 										"command": [
-											"/usr/libexec/check-container"
+											"/bin/sh",
+											"-i",
+											"-c",
+											"MYSQL_PWD=\"$MYSQL_PASSWORD\" mysqladmin -u $MYSQL_USER ping"
 										]
 									},
 									"initialDelaySeconds": 5,
@@ -172,21 +178,14 @@
 										"memory": "${MEMORY_LIMIT}"
 									}
 								},
-								"securityContext": {
-									"capabilities": {},
-									"privileged": false
-								},
-								"terminationMessagePath": "/dev/termination-log",
 								"volumeMounts": [
 									{
-										"mountPath": "/var/lib/pgsql/data",
+										"mountPath": "/var/lib/mysql/data",
 										"name": "${DATABASE_SERVICE_NAME}-data"
 									}
 								]
 							}
 						],
-						"dnsPolicy": "ClusterFirst",
-						"restartPolicy": "Always",
 						"volumes": [
 							{
 								"name": "${DATABASE_SERVICE_NAME}-data",
@@ -197,8 +196,7 @@
 						]
 					}
 				}
-			},
-			"status": {}
+			}
 		}
 	],
 	"parameters": [
@@ -219,30 +217,45 @@
 			"name": "DATABASE_SERVICE_NAME",
 			"displayName": "Database Service Name",
 			"description": "The name of the OpenShift Service exposed for the database.",
-			"value": "postgresql",
+			"value": "mariadb",
 			"required": true
 		},
 		{
-			"name": "POSTGRESQL_USER",
-			"displayName": "PostgreSQL Connection Username",
-			"description": "Username for PostgreSQL user that will be used for accessing the database.",
+			"name": "MYSQL_USER",
+			"displayName": "MariaDB Connection Username",
+			"description": "Username for MariaDB user that will be used for accessing the database.",
 			"generate": "expression",
 			"from": "user[A-Z0-9]{3}",
 			"required": true
 		},
 		{
-			"name": "POSTGRESQL_PASSWORD",
-			"displayName": "PostgreSQL Connection Password",
-			"description": "Password for the PostgreSQL connection user.",
+			"name": "MYSQL_PASSWORD",
+			"displayName": "MariaDB Connection Password",
+			"description": "Password for the MariaDB connection user.",
 			"generate": "expression",
 			"from": "[a-zA-Z0-9]{16}",
 			"required": true
 		},
 		{
-			"name": "POSTGRESQL_DATABASE",
-			"displayName": "PostgreSQL Database Name",
-			"description": "Name of the PostgreSQL database accessed.",
+			"name": "MYSQL_ROOT_PASSWORD",
+			"displayName": "MariaDB root Password",
+			"description": "Password for the MariaDB root user.",
+			"generate": "expression",
+			"from": "[a-zA-Z0-9]{16}",
+			"required": true
+		},
+		{
+			"name": "MYSQL_DATABASE",
+			"displayName": "MariaDB Database Name",
+			"description": "Name of the MariaDB database accessed.",
 			"value": "sampledb",
+			"required": true
+		},
+		{
+			"name": "MARIADB_VERSION",
+			"displayName": "Version of MariaDB Image",
+			"description": "Version of MariaDB image to be used (10.3-el7, 10.3-el8, or latest).",
+			"value": "10.3-el8",
 			"required": true
 		},
 		{
@@ -251,16 +264,10 @@
 			"description": "Volume space available for data, e.g. 512Mi, 2Gi.",
 			"value": "1Gi",
 			"required": true
-		},
-		{
-			"name": "POSTGRESQL_VERSION",
-			"displayName": "Version of PostgreSQL Image",
-			"description": "Version of PostgreSQL image to be used (13-el8, 15-el8, or latest).",
-			"value": "15-el8",
-			"required": true
 		}
 	],
 	"labels": {
-		"template": "postgresql-persistent-template"
+		"app.openshift.io/runtime": "mariadb",
+		"template": "mariadb-persistent-template"
 	}
 }
