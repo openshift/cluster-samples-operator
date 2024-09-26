@@ -2,36 +2,32 @@
 	"kind": "Template",
 	"apiVersion": "template.openshift.io/v1",
 	"metadata": {
-		"name": "postgresql-persistent",
+		"name": "redis-persistent",
 		"creationTimestamp": null,
 		"annotations": {
-			"description": "PostgreSQL database service, with persistent storage. For more information about using this template, including OpenShift considerations, see https://github.com/sclorg/postgresql-container/.\n\nNOTE: Scaling to more than one replica is not supported. You must have persistent volumes available in your cluster to use this template.",
-			"iconClass": "icon-postgresql",
-			"openshift.io/display-name": "PostgreSQL",
-			"openshift.io/documentation-url": "https://docs.okd.io/latest/using_images/db_images/postgresql.html",
-			"openshift.io/long-description": "This template provides a standalone PostgreSQL server with a database created.  The database is stored on persistent storage.  The database name, username, and password are chosen via parameters when provisioning this service.",
+			"description": "Redis in-memory data structure store, with persistent storage. For more information about using this template, including OpenShift considerations, see https://github.com/sclorg/redis-container/blob/master/5.\n\nNOTE: You must have persistent volumes available in your cluster to use this template.",
+			"iconClass": "icon-redis",
+			"openshift.io/display-name": "Redis",
+			"openshift.io/documentation-url": "https://github.com/sclorg/redis-container/tree/master/5",
+			"openshift.io/long-description": "This template provides a standalone Redis server.  The data is stored on persistent storage.",
 			"openshift.io/provider-display-name": "Red Hat, Inc.",
 			"openshift.io/support-url": "https://access.redhat.com",
-			"tags": "database,postgresql"
+			"tags": "database,redis"
 		}
 	},
-	"message": "The following service(s) have been created in your project: ${DATABASE_SERVICE_NAME}.\n\n       Username: ${POSTGRESQL_USER}\n       Password: ${POSTGRESQL_PASSWORD}\n  Database Name: ${POSTGRESQL_DATABASE}\n Connection URL: postgresql://${DATABASE_SERVICE_NAME}:5432/\n\nFor more information about using this template, including OpenShift considerations, see https://github.com/sclorg/postgresql-container/.",
+	"message": "The following service(s) have been created in your project: ${DATABASE_SERVICE_NAME}.\n\n       Password: ${REDIS_PASSWORD}\n Connection URL: redis://${DATABASE_SERVICE_NAME}:6379/\n\nFor more information about using this template, including OpenShift considerations, see https://github.com/sclorg/redis-container/blob/master/5.",
 	"objects": [
 		{
 			"apiVersion": "v1",
 			"kind": "Secret",
 			"metadata": {
 				"annotations": {
-					"template.openshift.io/expose-database_name": "{.data['database-name']}",
-					"template.openshift.io/expose-password": "{.data['database-password']}",
-					"template.openshift.io/expose-username": "{.data['database-user']}"
+					"template.openshift.io/expose-password": "{.data['database-password']}"
 				},
 				"name": "${DATABASE_SERVICE_NAME}"
 			},
 			"stringData": {
-				"database-name": "${POSTGRESQL_DATABASE}",
-				"database-password": "${POSTGRESQL_PASSWORD}",
-				"database-user": "${POSTGRESQL_USER}"
+				"database-password": "${REDIS_PASSWORD}"
 			}
 		},
 		{
@@ -39,18 +35,18 @@
 			"kind": "Service",
 			"metadata": {
 				"annotations": {
-					"template.openshift.io/expose-uri": "postgres://{.spec.clusterIP}:{.spec.ports[?(.name==\"postgresql\")].port}"
+					"template.openshift.io/expose-uri": "redis://{.spec.clusterIP}:{.spec.ports[?(.name==\"redis\")].port}"
 				},
 				"name": "${DATABASE_SERVICE_NAME}"
 			},
 			"spec": {
 				"ports": [
 					{
-						"name": "postgresql",
+						"name": "redis",
 						"nodePort": 0,
-						"port": 5432,
+						"port": 6379,
 						"protocol": "TCP",
-						"targetPort": 5432
+						"targetPort": 6379
 					}
 				],
 				"selector": {
@@ -85,7 +81,7 @@
 			"kind": "Deployment",
 			"metadata": {
 				"annotations": {
-					"image.openshift.io/triggers": "[{\"from\":{\"kind\":\"ImageStreamTag\",\"name\":\"postgresql:${POSTGRESQL_VERSION}\"},\"fieldPath\": \"spec.template.spec.containers[0].image\"}]",
+					"image.openshift.io/triggers": "[{\"from\":{\"kind\":\"ImageStreamTag\",\"name\":\"redis:${REDIS_VERSION}\"},\"fieldPath\": \"spec.template.spec.containers[0].image\"}]",
 					"template.alpha.openshift.io/wait-for-ready": "true"
 				},
 				"name": "${DATABASE_SERVICE_NAME}"
@@ -112,28 +108,10 @@
 								"capabilities": {},
 								"env": [
 									{
-										"name": "POSTGRESQL_USER",
-										"valueFrom": {
-											"secretKeyRef": {
-												"key": "database-user",
-												"name": "${DATABASE_SERVICE_NAME}"
-											}
-										}
-									},
-									{
-										"name": "POSTGRESQL_PASSWORD",
+										"name": "REDIS_PASSWORD",
 										"valueFrom": {
 											"secretKeyRef": {
 												"key": "database-password",
-												"name": "${DATABASE_SERVICE_NAME}"
-											}
-										}
-									},
-									{
-										"name": "POSTGRESQL_DATABASE",
-										"valueFrom": {
-											"secretKeyRef": {
-												"key": "database-name",
 												"name": "${DATABASE_SERVICE_NAME}"
 											}
 										}
@@ -142,26 +120,26 @@
 								"image": " ",
 								"imagePullPolicy": "IfNotPresent",
 								"livenessProbe": {
-									"exec": {
-										"command": [
-											"/usr/libexec/check-container",
-											"--live"
-										]
+									"initialDelaySeconds": 30,
+									"tcpSocket": {
+										"port": 6379
 									},
-									"initialDelaySeconds": 120,
-									"timeoutSeconds": 10
+									"timeoutSeconds": 1
 								},
-								"name": "postgresql",
+								"name": "redis",
 								"ports": [
 									{
-										"containerPort": 5432,
+										"containerPort": 6379,
 										"protocol": "TCP"
 									}
 								],
 								"readinessProbe": {
 									"exec": {
 										"command": [
-											"/usr/libexec/check-container"
+											"/bin/sh",
+											"-i",
+											"-c",
+											"test \"$(redis-cli -h 127.0.0.1 -a $REDIS_PASSWORD ping)\" == \"PONG\""
 										]
 									},
 									"initialDelaySeconds": 5,
@@ -179,7 +157,7 @@
 								"terminationMessagePath": "/dev/termination-log",
 								"volumeMounts": [
 									{
-										"mountPath": "/var/lib/pgsql/data",
+										"mountPath": "/var/lib/redis/data",
 										"name": "${DATABASE_SERVICE_NAME}-data"
 									}
 								]
@@ -219,30 +197,15 @@
 			"name": "DATABASE_SERVICE_NAME",
 			"displayName": "Database Service Name",
 			"description": "The name of the OpenShift Service exposed for the database.",
-			"value": "postgresql",
+			"value": "redis",
 			"required": true
 		},
 		{
-			"name": "POSTGRESQL_USER",
-			"displayName": "PostgreSQL Connection Username",
-			"description": "Username for PostgreSQL user that will be used for accessing the database.",
-			"generate": "expression",
-			"from": "user[A-Z0-9]{3}",
-			"required": true
-		},
-		{
-			"name": "POSTGRESQL_PASSWORD",
-			"displayName": "PostgreSQL Connection Password",
-			"description": "Password for the PostgreSQL connection user.",
+			"name": "REDIS_PASSWORD",
+			"displayName": "Redis Connection Password",
+			"description": "Password for the Redis connection user.",
 			"generate": "expression",
 			"from": "[a-zA-Z0-9]{16}",
-			"required": true
-		},
-		{
-			"name": "POSTGRESQL_DATABASE",
-			"displayName": "PostgreSQL Database Name",
-			"description": "Name of the PostgreSQL database accessed.",
-			"value": "sampledb",
 			"required": true
 		},
 		{
@@ -253,14 +216,14 @@
 			"required": true
 		},
 		{
-			"name": "POSTGRESQL_VERSION",
-			"displayName": "Version of PostgreSQL Image",
-			"description": "Version of PostgreSQL image to be used (13-el8, 15-el8, or latest).",
-			"value": "15-el8",
+			"name": "REDIS_VERSION",
+			"displayName": "Version of Redis Image",
+			"description": "Version of Redis image to be used (5-el7, 5-el8, 6-el7, 6-el8, or latest).",
+			"value": "6-el8",
 			"required": true
 		}
 	],
 	"labels": {
-		"template": "postgresql-persistent-template"
+		"template": "redis-persistent-template"
 	}
 }
