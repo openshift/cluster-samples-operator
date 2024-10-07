@@ -3,6 +3,20 @@
 # utility script to gather template/imagestream content from https://github.com/openshift/library
 # and store it in this repo (cannot access other repos with dist git, and advised against git submodules
 
+# If the --okd CLI argument is supplied, this script only updates all the samples in the assets/operator/okd-x86_64.
+# When the argument is not supplied, it only updates the OCP samples.
+# It never updates both at the same time, so if you need that, you have to run the script twice.
+
+PROCESS_OKD="false"
+while [[ $# -gt 0 ]]; do
+  case $1 in
+  --okd)
+    PROCESS_OKD="true"
+    ;;
+  esac
+  shift
+done
+
 pushd assets
 wget https://github.com/openshift/library/archive/master.zip -O library.zip
 unzip library.zip
@@ -53,23 +67,43 @@ git add operator
 rm t.tar
 rm -rf library-master
 
+function reset_directory() {
+  git checkout HEAD -- "$1"
+  # remove any changes from the working tree in this directory that checkout left behind
+  git stash -a -- "$1"
+  git stash drop
+}
+
 SUPPORTED="ruby python nodejs perl php httpd nginx eap java webserver dotnet golang rails"
 function reset_unsupported() {
+  # there are no unsupported samples in OKD
+  if $PROCESS_OKD; then
+    return 0
+  fi
+
   for d in $(ls); do
     if [[ "${SUPPORTED}" != *"${d}"* ]]; then
-      git checkout HEAD -- "${d}"
-      # remove any changes from the working tree in this directory that checkout left behind
-      git stash -a -- "${d}"
-      git stash drop
+      reset_directory "${d}"
     fi
   done
 }
 
-ARCHS="ocp-x86_64 ocp-aarch64 ocp-ppc64le ocp-s390x okd-x86_64"
+ALL_ARCHS="ocp-x86_64 ocp-aarch64 ocp-ppc64le ocp-s390x okd-x86_64"
+if $PROCESS_OKD; then
+  SUPPORTED_ARCHS="okd-x86_64"
+else
+  SUPPORTED_ARCHS="ocp-x86_64 ocp-aarch64 ocp-ppc64le ocp-s390x"
+fi
+
 pushd operator
-for arch in $ARCHS; do
-  pushd "${arch}"
-  reset_unsupported
-  popd # $arch
+for arch in $ALL_ARCHS; do
+  if [[ "${SUPPORTED_ARCHS}" != *"${arch}"* ]]; then
+    reset_directory "${arch}"
+  else
+    pushd "${arch}"
+    reset_unsupported
+    popd # $arch
+  fi
 done
+
 popd # operator
