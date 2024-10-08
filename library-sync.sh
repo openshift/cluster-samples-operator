@@ -3,20 +3,71 @@
 # utility script to gather template/imagestream content from https://github.com/openshift/library
 # and store it in this repo (cannot access other repos with dist git, and advised against git submodules
 
-# If the --okd CLI argument is supplied, this script only updates all the samples in the assets/operator/okd-x86_64.
-# When the argument is not supplied, it only updates the OCP samples.
-# It never updates both at the same time, so if you need that, you have to run the script twice.
+# Without any commandline arguments, this script only updates the OCP supported samples. This behavior
+# can be modified using these commandline arguments:
+# * --okd - the OKD samples are updated
+# * --ocp - the OCP supported samples are updated
+# * --ocp-unsupported - all OCP samples are updated including the unsupported ones
 
+###########################################
+
+# process the commandline args
 PROCESS_OKD="false"
+PROCESS_OCP_UNSUPPORTED="false"
+if [[ $# -eq 0 ]]; then
+  PROCESS_OCP="true"
+else
+  PROCESS_OCP="false"
+fi
+
 while [[ $# -gt 0 ]]; do
   case $1 in
   --okd)
     PROCESS_OKD="true"
     ;;
+  --ocp)
+    PROCESS_OCP="true"
+    ;;
+  --ocp-unsupported)
+    PROCESS_OCP="true"
+    PROCESS_OCP_UNSUPPORTED="true"
+    ;;
   esac
   shift
 done
 
+# set up variables
+OCP_SUPPORTED_SAMPLES="ruby python nodejs perl php httpd nginx eap java webserver dotnet golang rails"
+OCP_ARCHS="ocp-x86_64 ocp-aarch64 ocp-ppc64le ocp-s390x"
+OKD_ARCHS="okd-x86_64"
+ALL_ARCHS="$OCP_ARCHS $OKD_ARCHS"
+if $PROCESS_OKD; then
+  if $PROCESS_OCP; then
+    SUPPORTED_ARCHS=$ALL_ARCHS
+  else
+    SUPPORTED_ARCHS=$OKD_ARCHS
+  fi
+else
+  SUPPORTED_ARCHS=$OCP_ARCHS
+fi
+
+# helper functions
+function reset_directory() {
+  git checkout HEAD -- "$1"
+  # remove any changes from the working tree in this directory that checkout left behind
+  git stash -a -- "$1"
+  git stash drop
+}
+
+function reset_ocp_unsupported() {
+  for d in $(ls); do
+    if [[ "${OCP_SUPPORTED_SAMPLES}" != *"${d}"* ]]; then
+      reset_directory "${d}"
+    fi
+  done
+}
+
+# process the openshift library
 pushd assets
 wget https://github.com/openshift/library/archive/master.zip -O library.zip
 unzip library.zip
@@ -67,42 +118,21 @@ git add operator
 rm t.tar
 rm -rf library-master
 
-function reset_directory() {
-  git checkout HEAD -- "$1"
-  # remove any changes from the working tree in this directory that checkout left behind
-  git stash -a -- "$1"
-  git stash drop
-}
-
-SUPPORTED="ruby python nodejs perl php httpd nginx eap java webserver dotnet golang rails"
-function reset_unsupported() {
-  # there are no unsupported samples in OKD
-  if $PROCESS_OKD; then
-    return 0
-  fi
-
-  for d in $(ls); do
-    if [[ "${SUPPORTED}" != *"${d}"* ]]; then
-      reset_directory "${d}"
-    fi
-  done
-}
-
-ALL_ARCHS="ocp-x86_64 ocp-aarch64 ocp-ppc64le ocp-s390x okd-x86_64"
-if $PROCESS_OKD; then
-  SUPPORTED_ARCHS="okd-x86_64"
-else
-  SUPPORTED_ARCHS="ocp-x86_64 ocp-aarch64 ocp-ppc64le ocp-s390x"
-fi
-
 pushd operator
 for arch in $ALL_ARCHS; do
-  if [[ "${SUPPORTED_ARCHS}" != *"${arch}"* ]]; then
-    reset_directory "${arch}"
+  if [[ "${SUPPORTED_ARCHS}" == *"${arch}"* ]]; then
+    # There are no unsupported samples in OKD, but we need
+    # to reset the unsupported samples in OCP.
+    if ! ${PROCESS_OCP_UNSUPPORTED}; then
+      if [[ "${OCP_ARCHS}" == *"${arch}"* ]]; then
+        pushd "${arch}"
+        reset_ocp_unsupported
+        popd # $arch
+      fi
+    fi
   else
-    pushd "${arch}"
-    reset_unsupported
-    popd # $arch
+    # we're not supposed to update this arch.
+    reset_directory "${arch}"
   fi
 done
 
