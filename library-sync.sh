@@ -7,13 +7,13 @@
 # can be modified using these commandline arguments:
 # * --okd - the OKD samples are updated
 # * --ocp - the OCP supported samples are updated
-# * --ocp-unsupported - all OCP samples are updated including the unsupported ones
+# * --ocp-all - all OCP samples are updated including the unsupported ones
 
 ###########################################
 
 # process the commandline args
 PROCESS_OKD="false"
-PROCESS_OCP_UNSUPPORTED="false"
+PROCESS_ALL_OCP_SAMPLES="false"
 if [[ $# -eq 0 ]]; then
   PROCESS_OCP="true"
 else
@@ -28,9 +28,9 @@ while [[ $# -gt 0 ]]; do
   --ocp)
     PROCESS_OCP="true"
     ;;
-  --ocp-unsupported)
+  --ocp-all)
     PROCESS_OCP="true"
-    PROCESS_OCP_UNSUPPORTED="true"
+    PROCESS_ALL_OCP_SAMPLES="true"
     ;;
   esac
   shift
@@ -43,12 +43,12 @@ OKD_ARCHS="okd-x86_64"
 ALL_ARCHS="$OCP_ARCHS $OKD_ARCHS"
 if $PROCESS_OKD; then
   if $PROCESS_OCP; then
-    SUPPORTED_ARCHS=$ALL_ARCHS
+    PROCESSED_ARCHS=$ALL_ARCHS
   else
-    SUPPORTED_ARCHS=$OKD_ARCHS
+    PROCESSED_ARCHS=$OKD_ARCHS
   fi
 else
-  SUPPORTED_ARCHS=$OCP_ARCHS
+  PROCESSED_ARCHS=$OCP_ARCHS
 fi
 
 # helper functions
@@ -120,10 +120,10 @@ rm -rf library-master
 
 pushd operator
 for arch in $ALL_ARCHS; do
-  if [[ "${SUPPORTED_ARCHS}" == *"${arch}"* ]]; then
+  if [[ "${PROCESSED_ARCHS}" == *"${arch}"* ]]; then
     # There are no unsupported samples in OKD, but we need
     # to reset the unsupported samples in OCP.
-    if ! ${PROCESS_OCP_UNSUPPORTED}; then
+    if ! ${PROCESS_ALL_OCP_SAMPLES}; then
       if [[ "${OCP_ARCHS}" == *"${arch}"* ]]; then
         pushd "${arch}"
         reset_ocp_unsupported
