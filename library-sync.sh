@@ -1,13 +1,18 @@
 #!/bin/bash
 
-# utility script to gather template/imagestream content from https://github.com/openshift/library
-# and store it in this repo (cannot access other repos with dist git, and advised against git submodules
-
-# Without any commandline arguments, this script only updates the OCP supported samples. This behavior
-# can be modified using these commandline arguments:
-# * --okd - the OKD samples are updated
-# * --ocp - the OCP supported samples are updated
-# * --ocp-all - all OCP samples are updated including the unsupported ones
+function print_help {
+  echo 'Usage: library-sync.sh [--okd][--ocp][--ocp-all][--help]'
+  echo
+  echo 'A simple tool to sync the samples from openshift/library to assets of the Samples Operator'
+  echo 'The default behavior (without any commandline arguments) is to update the OCP samples,'
+  echo 'that is as if "--ocp" was specified.'
+  echo
+  echo 'Comandline arguments:'
+  echo '--okd       the OKD samples are updated'
+  echo '--ocp       the OCP supported samples are updated'
+  echo '--ocp-all   all OCP samples are updated including the unsupported ones'
+  echo '--help      shows this help message and exits'
+}
 
 ###########################################
 
@@ -31,6 +36,9 @@ while [[ $# -gt 0 ]]; do
   --ocp-all)
     PROCESS_OCP="true"
     PROCESS_ALL_OCP_SAMPLES="true"
+    ;;
+  --help | -h)
+    print_help && exit 0
     ;;
   esac
   shift
