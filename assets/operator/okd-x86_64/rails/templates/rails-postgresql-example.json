@@ -155,6 +155,17 @@
 					}
 				},
 				"strategy": {
+					"recreateParams": {
+						"pre": {
+							"execNewPod": {
+								"command": [
+									"./migrate-database.sh"
+								],
+								"containerName": "${NAME}"
+							},
+							"failurePolicy": "Abort"
+						}
+					},
 					"type": "Recreate"
 				},
 				"template": {
@@ -380,7 +391,7 @@
 			"metadata": {
 				"annotations": {
 					"description": "Defines how to deploy the database",
-					"image.openshift.io/triggers": "[{\"from\":{\"kind\":\"ImageStreamTag\",\"name\":\"postgresql:${POSTGRESQL_VERSION}\", \"namespace\": \"${NAMESPACE}\"},\"fieldPath\": \"spec.template.spec.containers[0].image\"}]",
+					"image.openshift.io/triggers": "[{\"from\":{\"kind\":\"ImageStreamTag\",\"name\":\"postgresql:12-el8\", \"namespace\": \"openshift\"},\"fieldPath\": \"spec.template.spec.containers[0].image\"}]",
 					"template.alpha.openshift.io/wait-for-ready": "true"
 				},
 				"name": "${DATABASE_SERVICE_NAME}"
@@ -507,13 +518,6 @@
 			"displayName": "Ruby Version",
 			"description": "Version of Ruby image to be used (3.1-ubi8 by default).",
 			"value": "3.1-ubi8",
-			"required": true
-		},
-		{
-			"name": "POSTGRESQL_VERSION",
-			"displayName": "Postgresql Version",
-			"description": "Version of Postgresql image to be used (12-el8 by default).",
-			"value": "12-el8",
 			"required": true
 		},
 		{
