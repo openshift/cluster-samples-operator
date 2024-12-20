@@ -484,7 +484,6 @@ func (h *Handler) tbrInaccessible() bool {
 		return true
 	}
 	if h.imageConfigBlocksImageStreamCreation("registry.redhat.io") ||
-		h.imageConfigBlocksImageStreamCreation("registry.access.redhat.com") ||
 		h.imageConfigBlocksImageStreamCreation("quay.io") {
 		return true
 	}
