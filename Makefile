@@ -1,4 +1,4 @@
-REPO=openshift
+REPO=quay.io/aroyo/samples-operator
 GO_REQUIRED_MIN_VERSION = 1.13
 
 include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
@@ -18,7 +18,7 @@ build:
 build-image:
 	# save some time setting up the docker build context by deleting this first.
 	rm -f cluster-samples-operator        
-	docker build -t docker.io/$(REPO)/origin-cluster-samples-operator:latest .
+	podman build -t $(REPO)/origin-cluster-samples-operator:latest .
 
 test: test-unit test-e2e
 
