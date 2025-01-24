@@ -5,6 +5,8 @@ reviewers:
 - fbm3307
 - mfrancisc
 - metlos
+- shannon
+- aroyoredhat
 approvers:
 - gabemontero
 - adambkaplan
@@ -12,4 +14,6 @@ approvers:
 - fbm3307
 - mfrancisc
 - metlos
+- shannon
+- aroyoredhat
 component: Samples Operator
