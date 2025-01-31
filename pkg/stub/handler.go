@@ -342,33 +342,22 @@ func (h *Handler) updateCfgArch(cfg *v1.Config) *v1.Config {
 func redHatRegistriesFound(allowedRegistries map[string]bool) bool {
 	// Empty Sample Registry will be allowed as long as allowed registries contanis:
 	// - registry.redhat.io
-	// - registry.access.redhat.com
 	// - quay.io
 	return allowedRegistries["registry.redhat.io"] &&
-		allowedRegistries["registry.access.redhat.com"] &&
 		allowedRegistries["quay.io"]
 }
 
 func redHatRegistriesDomainFound(allowedDomains map[string]bool) bool {
 	// Empty Sample Registry will be allowed as long as allowed domains contanis:
 	// - registry.redhat.io
-	// - registry.access.redhat.com
 	// - quay.io
 	// or a domain combination that covers above registries
 	return (allowedDomains["registry.redhat.io"] &&
-		allowedDomains["registry.access.redhat.com"] &&
 		allowedDomains["quay.io"]) ||
-		(allowedDomains["registry.redhat.io"] &&
-			allowedDomains["access.redhat.com"] &&
-			allowedDomains["quay.io"]) ||
 		(allowedDomains["registry.redhat.io"] &&
 			allowedDomains["redhat.com"] &&
 			allowedDomains["quay.io"]) ||
 		(allowedDomains["redhat.io"] &&
-			allowedDomains["registry.access.redhat.com"] &&
-			allowedDomains["quay.io"]) ||
-		(allowedDomains["redhat.io"] &&
-			allowedDomains["access.redhat.com"] &&
 			allowedDomains["quay.io"]) ||
 		(allowedDomains["redhat.io"] &&
 			allowedDomains["redhat.com"] &&
@@ -489,7 +478,6 @@ func (h *Handler) tbrInaccessible() bool {
 		return true
 	}
 	if h.imageConfigBlocksImageStreamCreation("registry.redhat.io") ||
-		h.imageConfigBlocksImageStreamCreation("registry.access.redhat.com") ||
 		h.imageConfigBlocksImageStreamCreation("quay.io") {
 		return true
 	}
