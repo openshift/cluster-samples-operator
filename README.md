@@ -100,7 +100,7 @@ You can also use `configs.samples` for short.
 Check the status of the conditions. (See above for details on those conditions)
 
 While imagestream import failures no longer affect the state Samples reports to the CVO (that changes occurred in 4.6),
-the samples operator will fire Prometheus alerts per the rules defined in [https://github.com/openshift/cluster-samples-operator/blob/master/manifests/010-prometheus-rules.yaml](https://github.com/openshift/cluster-samples-operator/blob/master/manifests/010-prometheus-rules.yaml)
+the samples operator will fire Prometheus alerts per the rules defined in [https://github.com/openshift/cluster-samples-operator/blob/main/manifests/010-prometheus-rules.yaml](https://github.com/openshift/cluster-samples-operator/blob/main/manifests/010-prometheus-rules.yaml)
 
 The samples operator will also attempt to re-import the imagestreams on approximate 15 minute intervals.  Otherwise,
 a cluster admin can:
@@ -133,7 +133,7 @@ spec:
 
 # "In-payload" imagestreams 
 
-The imagestreams defined at (https://github.com/openshift/cluster-samples-operator/blob/master/manifests/08-openshift-imagestreams.yaml)[https://github.com/openshift/cluster-samples-operator/blob/master/manifests/08-openshift-imagestreams.yaml]
+The imagestreams defined at (https://github.com/openshift/cluster-samples-operator/blob/main/manifests/08-openshift-imagestreams.yaml)[https://github.com/openshift/cluster-samples-operator/blob/main/manifests/08-openshift-imagestreams.yaml]
 are not managed by the samples operator.  These are special imagestreams that point to images in the install payload, and their creation and updates are handled by the 
 [Cluster Version Operator](https://github.com/openshift/cluster-version-operator)
 
