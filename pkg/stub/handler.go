@@ -1151,8 +1151,6 @@ func (h *Handler) abortForDelete(cfg *v1.Config) bool {
 func (h *Handler) createSamples(cfg *v1.Config, updateIfPresent, registryChanged bool, unskippedStreams, unskippedTemplates map[string]bool) (bool, error) {
 	// first, got through the list and prime our upsert cache
 	// prior to any actual upserts
-	h.mapsMutex.Lock()
-	defer h.mapsMutex.Unlock()
 	imagestreams := []*imagev1.ImageStream{}
 	for _, fileName := range h.imagestreamFile {
 		if h.abortForDelete(cfg) {
