@@ -313,8 +313,8 @@ func (h *Handler) processImportStatus(is *imagev1.ImageStream, cfg *v1.Config) (
 			retryIfNeeded = true
 		} else {
 			// a little bit less than the 15 minute relist interval
-			tenMinutesAgo := now.Time.Add(-10 * time.Minute)
-			retryIfNeeded = lastRetryTime.Time.Before(tenMinutesAgo)
+			fiveMinutesAgo := now.Time.Add(-5 * time.Minute)
+			retryIfNeeded = lastRetryTime.Time.Before(fiveMinutesAgo)
 		}
 
 		tagsToPotentiallClearFromConfigMap := []string{}
