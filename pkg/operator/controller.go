@@ -400,13 +400,13 @@ func (c *Controller) commonInformerEventHandler(keygen queueKeyGen, wq workqueue
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			key := keygen.Key(o)
-			logrus.Debugf("add event to workqueue due to %s (add) via %#v", key, keygen)
+			logrus.Infof("add event to workqueue due to %s (add) via %#v", key, keygen)
 			// we pass key vs. obj to distinguish from delete
 			wq.Add(key)
 		},
 		UpdateFunc: func(o, n interface{}) {
 			key := keygen.Key(n)
-			logrus.Debugf("add event to workqueue due to %s (update) via %#v", key, keygen)
+			logrus.Infof("add event to workqueue due to %s (update) via %#v", key, keygen)
 			// we pass key vs. obj to distinguish from delete
 			wq.Add(key)
 		},
@@ -423,7 +423,7 @@ func (c *Controller) commonInformerEventHandler(keygen queueKeyGen, wq workqueue
 					logrus.Errorf("error decoding object tombstone, invalid type")
 					return
 				}
-				logrus.Debugf("recovered deleted object %q from tombstone", object.GetName())
+				logrus.Infof("recovered deleted object %q from tombstone", object.GetName())
 			}
 			_, stream := keygen.(*imagestreamQueueKeyGen)
 			if stream && sampcache.ImageStreamDeletePartOfMassDelete(object.GetName()) {
@@ -436,7 +436,7 @@ func (c *Controller) commonInformerEventHandler(keygen queueKeyGen, wq workqueue
 				return
 			}
 			key := keygen.Key(object)
-			logrus.Debugf("add event to workqueue due to %#v (delete) via %#v", key, keygen)
+			logrus.Infof("add event to workqueue due to %#v (delete) via %#v", key, keygen)
 			// but we pass in the actual object on delete so it can be leveraged by the
 			// event handling (objs without finalizers won't be accessible via get)
 			wq.Add(object)
