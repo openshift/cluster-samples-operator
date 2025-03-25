@@ -69,10 +69,10 @@ The samples resource maintains the following conditions in its status:
 # CVO Cluster Operator Status
 
 - Available
-- Failing
+- Degraded
 - Progressing
 
-See https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusteroperator.md#conditions for how these
+See https://github.com/openshift/enhancements/blob/master/dev-guide/cluster-version-operator/dev/clusteroperator.md#conditions for how these
 Cluster Operator status conditions are managed.
 
 # Disconnected mirroring assistance
@@ -133,8 +133,8 @@ spec:
 
 # "In-payload" imagestreams 
 
-The imagestreams defined at (https://github.com/openshift/cluster-samples-operator/blob/main/manifests/08-openshift-imagestreams.yaml)[https://github.com/openshift/cluster-samples-operator/blob/main/manifests/08-openshift-imagestreams.yaml]
-are not managed by the samples operator.  These are special imagestreams that point to images in the install payload, and their creation and updates are handled by the 
+The imagestreams defined at [https://github.com/openshift/cluster-samples-operator/blob/main/manifests/08-openshift-imagestreams.yaml](https://github.com/openshift/cluster-samples-operator/blob/main/manifests/08-openshift-imagestreams.yaml)
+are not managed by the samples operator. These are special imagestreams that point to images in the install payload, and their creation and updates are handled by the 
 [Cluster Version Operator](https://github.com/openshift/cluster-version-operator)
 
 # Development
