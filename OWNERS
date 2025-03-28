@@ -5,6 +5,7 @@ reviewers:
 - fbm3307
 - shannon
 - aroyoredhat
+- rhdmalone
 approvers:
 - gabemontero
 - adambkaplan
@@ -12,4 +13,5 @@ approvers:
 - fbm3307
 - shannon
 - aroyoredhat
-component: Samples
+- rhdmalone
+component: Samples Operator
