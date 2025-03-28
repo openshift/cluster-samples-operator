@@ -7,6 +7,7 @@ reviewers:
 - metlos
 - shannon
 - aroyoredhat
+- rhdmalone
 approvers:
 - gabemontero
 - adambkaplan
@@ -16,4 +17,5 @@ approvers:
 - metlos
 - shannon
 - aroyoredhat
+- rhdmalone
 component: Samples Operator
