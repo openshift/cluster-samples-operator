@@ -53,7 +53,7 @@ func TestWrongSampleResourceName(t *testing.T) {
 
 func TestWithDist(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -73,7 +73,7 @@ func TestWithArchDist(t *testing.T) {
 		t.Errorf("arch set to %s instead of %s", cfg.Spec.Architectures[0], runtime.GOARCH)
 	}
 
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -108,7 +108,7 @@ func TestManagementState(t *testing.T) {
 	h, cfg, event := setup()
 	iskeys := getISKeys()
 	tkeys := getTKeys()
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 	cfg.Spec.ManagementState = operatorsv1api.Unmanaged
 
 	err := h.Handle(event)
@@ -199,7 +199,7 @@ func TestSkipped(t *testing.T) {
 	cfg.Status.SkippedImagestreams = iskeys
 	cfg.Status.SkippedTemplates = tkeys
 
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
@@ -610,7 +610,7 @@ func TestTBRInaccessibleBit(t *testing.T) {
 func TestProcessed(t *testing.T) {
 	h, cfg, event := setup()
 	event.Object = cfg
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 
 	// initial boostrap creation of samples
 	h.Handle(event)
@@ -712,7 +712,7 @@ func TestProcessed(t *testing.T) {
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	h.crdwrapper.Update(cfg)
 	// reset operator image to clear out previous registry image override
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 
 	err = h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
@@ -744,7 +744,7 @@ func TestProcessed(t *testing.T) {
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	h.crdwrapper.Update(cfg)
 	// reset operator image to clear out previous registry image override
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 
 	err = h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
@@ -775,7 +775,7 @@ func TestProcessed(t *testing.T) {
 	fakecfgmapclient.configMaps = map[string]*corev1.ConfigMap{}
 	h.crdwrapper.Update(cfg)
 	// reset operator image to clear out previous registry image override
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 
 	err = h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
@@ -800,7 +800,7 @@ func TestProcessed(t *testing.T) {
 
 func TestImageStreamEvent(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -926,7 +926,7 @@ func TestImageStreamEvent(t *testing.T) {
 
 func TestImageStreamErrorRetry(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -1070,7 +1070,7 @@ func TestImageStreamErrorRetry(t *testing.T) {
 
 func TestTemplateEvent(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -1110,7 +1110,7 @@ func setup() (Handler, *v1.Config, util.Event) {
 
 func TestTemplateRemovedFromPayload(t *testing.T) {
 	h, _, _ := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 
 	_, filePath, doUpsert, err := h.prepSamplesWatchEvent("template", "no-longer-exists", map[string]string{}, false)
 	switch {
@@ -1125,7 +1125,7 @@ func TestTemplateRemovedFromPayload(t *testing.T) {
 
 func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 	h, cfg, _ := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 	errors := util.Condition(cfg, v1.ImportImageErrorsExist)
 	util.ConditionUpdate(cfg, errors)
 	cm := &corev1.ConfigMap{}
@@ -1196,7 +1196,7 @@ func TestImageStreamRemovedFromPayloadWithProgressingErrors(t *testing.T) {
 func TestImageStreamCreateErrorDegradedReason(t *testing.T) {
 	err := kerrors.NewServiceUnavailable("BadService")
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	fakeisclient.geterrors = map[string]error{"foo": err}
 	h.Handle(event)
@@ -1216,7 +1216,7 @@ func TestImageGetError(t *testing.T) {
 	for _, iserr := range errors {
 		h, cfg, event := setup()
 
-		mimic(&h, x86ContentRootDir)
+		mimic(&h, getContentRootDir())
 
 		fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 		fakeisclient.geterrors = map[string]error{"foo": iserr}
@@ -1239,7 +1239,7 @@ func TestImageUpdateError(t *testing.T) {
 
 	h, cfg, event := setup()
 
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 
 	fakeisclient := h.imageclientwrapper.(*fakeImageStreamClientWrapper)
 	fakeisclient.upserterrors = map[string]error{"foo": kerrors.NewServiceUnavailable("upsertstreamerror")}
@@ -1404,8 +1404,8 @@ func TestImageStreamImportError(t *testing.T) {
 	}
 	for _, is := range streams {
 		h, cfg, _ := setup()
-		mimic(&h, x86ContentRootDir)
-		dir := h.GetBaseDir(v1.X86Architecture, cfg)
+		mimic(&h, getContentRootDir())
+		dir := getBaseDir(&h, cfg)
 		files, _ := h.Filefinder.List(dir)
 		h.processFiles(dir, files, cfg)
 
@@ -1494,8 +1494,8 @@ func TestImageStreamTagImportErrorRecovery(t *testing.T) {
 		},
 	}
 	h, cfg, _ := setup()
-	mimic(&h, x86ContentRootDir)
-	dir := h.GetBaseDir(v1.X86Architecture, cfg)
+	mimic(&h, getContentRootDir())
+	dir := getBaseDir(&h, cfg)
 	files, _ := h.Filefinder.List(dir)
 	h.processFiles(dir, files, cfg)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
@@ -1576,8 +1576,8 @@ func TestImageStreamImportErrorRecovery(t *testing.T) {
 		},
 	}
 	h, cfg, _ := setup()
-	mimic(&h, x86ContentRootDir)
-	dir := h.GetBaseDir(v1.X86Architecture, cfg)
+	mimic(&h, getContentRootDir())
+	dir := getBaseDir(&h, cfg)
 	files, _ := h.Filefinder.List(dir)
 	h.processFiles(dir, files, cfg)
 	importError := util.Condition(cfg, v1.ImportImageErrorsExist)
@@ -1660,7 +1660,7 @@ func TestTemplateGetError(t *testing.T) {
 	for _, terr := range errors {
 		h, cfg, event := setup()
 
-		mimic(&h, x86ContentRootDir)
+		mimic(&h, getContentRootDir())
 
 		faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 		faketclient.geterrors = map[string]error{"bo": terr}
@@ -1682,7 +1682,7 @@ func TestTemplateGetError(t *testing.T) {
 func TestTemplateUpsertError(t *testing.T) {
 	h, cfg, event := setup()
 
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 
 	faketclient := h.templateclientwrapper.(*fakeTemplateClientWrapper)
 	faketclient.upserterrors = map[string]error{"bo": kerrors.NewServiceUnavailable("upsertstreamerror")}
@@ -1706,7 +1706,7 @@ func TestDeletedCR(t *testing.T) {
 
 func TestSameCR(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 	cfg.ResourceVersion = "a"
 
 	statuses := []corev1.ConditionStatus{corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -1728,7 +1728,7 @@ func TestSameCR(t *testing.T) {
 func TestBadTopDirList(t *testing.T) {
 	h, cfg, event := setup()
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
-	fakefinder.errors = map[string]error{x86ContentRootDir: fmt.Errorf("badtopdir")}
+	fakefinder.errors = map[string]error{getContentRootDir(): fmt.Errorf("badtopdir")}
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -1737,9 +1737,9 @@ func TestBadTopDirList(t *testing.T) {
 
 func TestBadSubDirList(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 	fakefinder := h.Filefinder.(*fakeResourceFileLister)
-	fakefinder.errors = map[string]error{x86ContentRootDir + "/imagestreams": fmt.Errorf("badsubdir")}
+	fakefinder.errors = map[string]error{getContentRootDir() + "/imagestreams": fmt.Errorf("badsubdir")}
 	err := h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	statuses := []corev1.ConditionStatus{corev1.ConditionUnknown, corev1.ConditionTrue, corev1.ConditionTrue, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse, corev1.ConditionFalse}
@@ -1752,7 +1752,7 @@ func TestBadSubDirList(t *testing.T) {
 
 func TestBadTopLevelStatus(t *testing.T) {
 	h, cfg, event := setup()
-	mimic(&h, x86ContentRootDir)
+	mimic(&h, getContentRootDir())
 	fakestatus := h.crdwrapper.(*fakeCRDWrapper)
 	fakestatus.updateerr = fmt.Errorf("badsdkupdate")
 	err := h.Handle(event)
@@ -1778,6 +1778,27 @@ func getISKeys() []string {
 
 func getTKeys() []string {
 	return []string{"bo", "go"}
+}
+
+func getContentRootDir() string {
+	// returns the content root dir
+	// by default, the content root dir is x86ContentRootDir (as before). However, for an ARM chip, the content root dir is armContentRootDir
+	// this change fixes some failing unit tests on a Macbook with an ARM chip
+	if runtime.GOARCH == v1.ARMArchitecture {
+		return armContentRootDir
+	}
+	return x86ContentRootDir
+}
+
+func getBaseDir(h *Handler, cfg *v1.Config) string {
+	// returns the base dir
+	// by default, the base dir is x86ContentRootDir (as before). However, for an ARM chip, the base dir is armContentRootDir
+	// this change fixes some failing unit tests on a Macbook with an ARM chip
+	arch := v1.X86Architecture
+	if runtime.GOARCH == v1.ARMArchitecture {
+		arch = v1.ARMArchitecture
+	}
+	return h.GetBaseDir(arch, cfg)
 }
 
 func mimic(h *Handler, topdir string) {
