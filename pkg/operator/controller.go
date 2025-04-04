@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
+	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	sampopapi "github.com/openshift/api/samples/v1"
 	templatev1 "github.com/openshift/api/template/v1"
@@ -465,7 +466,15 @@ func (c *Controller) configMapInformerEventHandler() cache.ResourceEventHandlerF
 	return c.commonInformerEventHandler(&configMapQueueKeyGen{}, c.cfgMapWorkqueue)
 }
 
-func (c *Controller) clusterOperatorInformerEventHandler() cache.ResourceEventHandlerFuncs {
+func (c *Controller) clusterOperatorInformerEventHandler() cache.ResourceEventHandler {
 	// enqueue the config instead, so the conditions can be refreshed if needed
-	return c.commonInformerEventHandler(&clusterOperatorQueueKeyGen{}, c.crWorkqueue)
+	return &cache.FilteringResourceEventHandler{
+		FilterFunc: func(obj any) bool {
+			if co, ok := obj.(*configv1.ClusterOperator); ok {
+				return co.Name == "openshift-samples"
+			}
+			return false
+		},
+		Handler: c.commonInformerEventHandler(&clusterOperatorQueueKeyGen{}, c.crWorkqueue),
+	}
 }
