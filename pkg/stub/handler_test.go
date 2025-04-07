@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -102,6 +103,33 @@ func TestWithBadArch(t *testing.T) {
 	h.Handle(event)
 	cfg, _ = h.crdwrapper.Get(cfg.Name)
 	invalidConfig(t, "architecture bad unsupported", util.Condition(cfg, v1.ConfigurationValid))
+}
+
+func TestSortingImageStream(t *testing.T) {
+	h, _, _ := setup()
+	fakeCmClient := h.configmapclientwrapper.(*fakeConfigMapClientWrapper)
+	for k := range fakeCmClient.configMaps {
+		delete(fakeCmClient.configMaps, k)
+	}
+
+	unsortedImageStreamNames := []string{"nodejs", "openshift-service-ca.crt", "php", "nginx", " ", "", "apache12.2", "kube-root-ca.crt", "apache12.1"}
+	if sort.SliceIsSorted(unsortedImageStreamNames, func(i, j int) bool { return unsortedImageStreamNames[i] < unsortedImageStreamNames[j] }) {
+		t.Fatalf("TestSortingImageStream - unsortedImageStreamNames should not be sorted initially")
+	}
+
+	for _, imageStreamName := range unsortedImageStreamNames {
+		fakeCmClient.configMaps[imageStreamName] = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: imageStreamName,
+			},
+			Data: map[string]string{imageStreamName: "could not import"},
+		}
+	}
+	// activeImageStreams should now return a sorted list of image stream names
+	sortedStreams := h.activeImageStreams()
+	if !sort.SliceIsSorted(sortedStreams, func(i, j int) bool { return sortedStreams[i] < sortedStreams[j] }) {
+		t.Fatalf("TestSortingImageStream - the call to activeImageStreams does not return sorted values")
+	}
 }
 
 func TestManagementState(t *testing.T) {

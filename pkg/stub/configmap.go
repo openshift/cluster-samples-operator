@@ -2,6 +2,8 @@ package stub
 
 import (
 	"fmt"
+	"slices"
+
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -109,6 +111,7 @@ func (h *Handler) activeImageStreams() []string {
 		}
 		streams = append(streams, cm.Name)
 	}
+	slices.Sort(streams)
 	return streams
 }
 
