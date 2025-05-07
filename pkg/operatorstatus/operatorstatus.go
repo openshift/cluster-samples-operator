@@ -13,9 +13,9 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 	v1 "github.com/openshift/api/samples/v1"
 	templatev1 "github.com/openshift/api/template/v1"
-	imagev1 "github.com/openshift/api/image/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 
 	"github.com/openshift/cluster-samples-operator/pkg/metrics"
@@ -199,6 +199,7 @@ func (o *ClusterOperatorHandler) setOperatorStatus(condtype configv1.ClusterStat
 
 			return o.ClusterOperatorWrapper.Create(state)
 		}
+
 		modified := o.updateOperatorCondition(state, &configv1.ClusterOperatorStatusCondition{
 			Type:               condtype,
 			Status:             status,
@@ -241,21 +242,20 @@ func (o *ClusterOperatorHandler) updateOperatorCondition(op *configv1.ClusterOpe
 	conditions := []configv1.ClusterOperatorStatusCondition{}
 
 	for _, c := range op.Status.Conditions {
-		if condition.Type != c.Type {
+		if condition.Type == c.Type {
+			if condition.Status != c.Status {
+				modified = true
+			} else {
+				condition.LastTransitionTime = c.LastTransitionTime
+			}
+			if condition.Message != c.Message || condition.Reason != c.Reason {
+				modified = true
+			}
+			conditions = append(conditions, *condition)
+			found = true
+		} else {
 			conditions = append(conditions, c)
-			continue
 		}
-		if condition.Status != c.Status {
-			modified = true
-		}
-		if condition.Message != c.Message {
-			modified = true
-		}
-		if condition.Reason != c.Reason {
-			modified = true
-		}
-		conditions = append(conditions, *condition)
-		found = true
 	}
 
 	if !found {
