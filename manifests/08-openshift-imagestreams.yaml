@@ -145,29 +145,6 @@ spec:
         kind: DockerImage
         name: quay.io/openshift/origin-oauth-proxy-samples:v4.4
 ---
-# we have to remove imagestreams here not via deletion, but per a CVO annotation
-# in order to properly conform with its conventions
-kind: ImageStream
-apiVersion: image.openshift.io/v1
-metadata:
-  namespace: openshift
-  name: hello-openshift
-  annotations:
-    release.openshift.io/delete: "true"
-    include.release.openshift.io/ibm-cloud-managed: "true"
-    include.release.openshift.io/self-managed-high-availability: "true"
-spec:
-  lookupPolicy:
-    local: true
-  tags:
-    - name: latest
-      importPolicy:
-        scheduled: true
-        importMode: PreserveOriginal
-      from:
-        kind: DockerImage
-        name: quay.io/openshift/origin-hello-openshift:latest
----
 kind: ImageStream
 apiVersion: image.openshift.io/v1
 metadata:
