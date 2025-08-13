@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -434,7 +435,7 @@ func verifyImageStreamsPresent(t *testing.T, content map[string]bool, timeToComp
 			if timeToCompare != nil && is.CreationTimestamp.Before(timeToCompare) {
 				errstr := fmt.Sprintf("imagestream %s was created at %#v which is still created before time to compare %#v", is.Name, is.CreationTimestamp, timeToCompare)
 				t.Log(errstr)
-				return false, fmt.Errorf(errstr)
+				return false, errors.New(errstr)
 			}
 			isv, ok := is.Annotations[samplesapi.SamplesVersionAnnotation]
 			if !ok {
@@ -484,7 +485,7 @@ func verifyTemplatesPresent(t *testing.T, content map[string]bool, timeToCompare
 			if timeToCompare != nil && template.CreationTimestamp.Before(timeToCompare) {
 				errstr := fmt.Sprintf("template %s was created at %#v which is still created before time to compare %#v", template.Name, template.CreationTimestamp, timeToCompare)
 				t.Log(errstr)
-				return false, fmt.Errorf(errstr)
+				return false, errors.New(errstr)
 			}
 			tv, ok := template.Annotations[samplesapi.SamplesVersionAnnotation]
 			if !ok {
