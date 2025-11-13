@@ -15,7 +15,7 @@ spec:
     metadata:
       annotations:
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
-        openshift.io/required-scc: restricted-v2
+        openshift.io/required-scc: restricted-v3
       labels:
         name: cluster-samples-operator
     spec:
@@ -23,6 +23,7 @@ spec:
       shareProcessNamespace: true
       nodeSelector:
         node-role.kubernetes.io/master: ""
+      hostUsers: false
       priorityClassName: "system-cluster-critical"
       securityContext:
         runAsNonRoot: true
