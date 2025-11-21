@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        openshift.io/required-scc: restricted-v2
+        openshift.io/required-scc: restricted-v3
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       labels:
         name: cluster-samples-operator
@@ -72,6 +72,7 @@ spec:
             drop:
             - ALL
         terminationMessagePolicy: FallbackToLogsOnError
+      hostUsers: false
       priorityClassName: system-cluster-critical
       securityContext:
         runAsNonRoot: true
