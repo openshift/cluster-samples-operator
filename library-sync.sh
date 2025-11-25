@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # set up variables
-OCP_SUPPORTED_SAMPLES="ruby python nodejs perl php httpd nginx eap java webserver dotnet golang rails"
+OCP_SUPPORTED_SAMPLES="ruby python nodejs perl php httpd nginx eap java webserver dotnet golang rails postgresql"
 OCP_ARCHS="ocp-x86_64 ocp-aarch64 ocp-ppc64le ocp-s390x"
 OKD_ARCHS="okd-x86_64"
 ALL_ARCHS="$OCP_ARCHS $OKD_ARCHS"
