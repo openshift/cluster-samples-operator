@@ -3,7 +3,6 @@ package stub
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"time"
 
@@ -158,7 +157,7 @@ type DefaultImageStreamFromFileGetter struct {
 }
 
 func (g *DefaultImageStreamFromFileGetter) Get(fullFilePath string) (is *imagev1.ImageStream, err error) {
-	isjsonfile, err := ioutil.ReadFile(fullFilePath)
+	isjsonfile, err := os.ReadFile(fullFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +182,7 @@ type DefaultTemplateFromFileGetter struct {
 }
 
 func (g *DefaultTemplateFromFileGetter) Get(fullFilePath string) (t *templatev1.Template, err error) {
-	tjsonfile, err := ioutil.ReadFile(fullFilePath)
+	tjsonfile, err := os.ReadFile(fullFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -207,8 +206,19 @@ type DefaultResourceFileLister struct {
 }
 
 func (g *DefaultResourceFileLister) List(dir string) (files []os.FileInfo, err error) {
-	files, err = ioutil.ReadDir(dir)
-	return files, err
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	files = make([]os.FileInfo, 0, len(entries))
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, info)
+	}
+	return files, nil
 
 }
 
