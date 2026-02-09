@@ -22,3 +22,4 @@ spec:
   selector:
     matchLabels:
       name: cluster-samples-operator
+  serviceDiscoveryRole: EndpointSlice
