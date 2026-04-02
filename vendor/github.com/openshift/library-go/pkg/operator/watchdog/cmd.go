@@ -3,7 +3,7 @@ package watchdog
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"k8s.io/utils/clock"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -40,7 +40,10 @@ type FileWatcherOptions struct {
 
 	// Namespace to report events to
 	Namespace string
-	recorder  events.Recorder
+
+	Clock clock.PassiveClock
+
+	recorder events.Recorder
 
 	// Interval specifies how aggressive we want to be in file checks
 	Interval time.Duration
@@ -71,6 +74,7 @@ type FileWatcherOptions struct {
 
 func NewFileWatcherOptions() *FileWatcherOptions {
 	return &FileWatcherOptions{
+		Clock:                  clock.RealClock{},
 		findPidByNameFn:        FindProcessByName,
 		processExistsFn:        ProcessExists,
 		addProcPrefixToFilesFn: addProcPrefixToFiles,
@@ -87,9 +91,10 @@ func NewFileWatcherOptions() *FileWatcherOptions {
 // This command should be used as a side-car to a container which will react to file changes in the main container
 // and terminate the main container process in case a change is observed.
 // TODO: If the main container start before the watchdog side-car container (image pull) there might be a case
-// 		 the watchdog won't react to a changed file (simply because it is not running yet). In that case the main process
-//       will not be reloaded. However, the operator image should be pulled on master node and therefore chances to hit this
-//       case are minimal.
+//
+//			 the watchdog won't react to a changed file (simply because it is not running yet). In that case the main process
+//	      will not be reloaded. However, the operator image should be pulled on master node and therefore chances to hit this
+//	      case are minimal.
 func NewFileWatcherWatchdog() *cobra.Command {
 	o := NewFileWatcherOptions()
 
@@ -155,7 +160,7 @@ func (o *FileWatcherOptions) Complete() error {
 	var eventTarget *v1.ObjectReference
 	err = retry.RetryOnConnectionErrors(ctx, func(context.Context) (bool, error) {
 		var clientErr error
-		eventTarget, clientErr = events.GetControllerReferenceForCurrentPod(kubeClient, o.Namespace, nil)
+		eventTarget, clientErr = events.GetControllerReferenceForCurrentPod(ctx, kubeClient, o.Namespace, nil)
 		if clientErr != nil {
 			return false, clientErr
 		}
@@ -164,7 +169,7 @@ func (o *FileWatcherOptions) Complete() error {
 	if err != nil {
 		klog.Warningf("unable to get owner reference (falling back to namespace): %v", err)
 	}
-	o.recorder = events.NewRecorder(kubeClient.CoreV1().Events(o.Namespace), "file-change-watchdog", eventTarget)
+	o.recorder = events.NewRecorder(kubeClient.CoreV1().Events(o.Namespace), "file-change-watchdog", eventTarget, o.Clock)
 
 	return nil
 }
@@ -201,7 +206,7 @@ func (o *FileWatcherOptions) runPidObserver(ctx context.Context, pidObservedCh c
 		}
 		if len(o.PidFile) > 0 {
 			// attempt to find the PID by pid file
-			bs, err := ioutil.ReadFile(o.PidFile)
+			bs, err := os.ReadFile(o.PidFile)
 			if err != nil {
 				klog.Warningf("Unable to read pid file %s: %v", o.PidFile, err)
 			} else {
@@ -247,7 +252,7 @@ func readInitialFileContent(files []string) (map[string][]byte, error) {
 		if _, err := os.Stat(name); os.IsNotExist(err) {
 			continue
 		}
-		content, err := ioutil.ReadFile(name)
+		content, err := os.ReadFile(name)
 		if err != nil {
 			return nil, err
 		}
