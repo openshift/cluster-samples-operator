@@ -3,13 +3,13 @@
 package v1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	samplesv1 "github.com/openshift/api/samples/v1"
+	apisamplesv1 "github.com/openshift/api/samples/v1"
 	versioned "github.com/openshift/client-go/samples/clientset/versioned"
 	internalinterfaces "github.com/openshift/client-go/samples/informers/externalversions/internalinterfaces"
-	v1 "github.com/openshift/client-go/samples/listers/samples/v1"
+	samplesv1 "github.com/openshift/client-go/samples/listers/samples/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -20,7 +20,7 @@ import (
 // Configs.
 type ConfigInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ConfigLister
+	Lister() samplesv1.ConfigLister
 }
 
 type configInformer struct {
@@ -40,21 +40,33 @@ func NewConfigInformer(client versioned.Interface, resyncPeriod time.Duration, i
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredConfigInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SamplesV1().Configs().List(context.TODO(), options)
+				return client.SamplesV1().Configs().List(context.Background(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SamplesV1().Configs().Watch(context.TODO(), options)
+				return client.SamplesV1().Configs().Watch(context.Background(), options)
 			},
-		},
-		&samplesv1.Config{},
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SamplesV1().Configs().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SamplesV1().Configs().Watch(ctx, options)
+			},
+		}, client),
+		&apisamplesv1.Config{},
 		resyncPeriod,
 		indexers,
 	)
@@ -65,9 +77,9 @@ func (f *configInformer) defaultInformer(client versioned.Interface, resyncPerio
 }
 
 func (f *configInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&samplesv1.Config{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisamplesv1.Config{}, f.defaultInformer)
 }
 
-func (f *configInformer) Lister() v1.ConfigLister {
-	return v1.NewConfigLister(f.Informer().GetIndexer())
+func (f *configInformer) Lister() samplesv1.ConfigLister {
+	return samplesv1.NewConfigLister(f.Informer().GetIndexer())
 }

@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/image/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/tools/cache"
+	imagev1 "github.com/openshift/api/image/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // ImageStreamLister helps list ImageStreams.
@@ -14,7 +14,7 @@ import (
 type ImageStreamLister interface {
 	// List lists all ImageStreams in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.ImageStream, err error)
+	List(selector labels.Selector) (ret []*imagev1.ImageStream, err error)
 	// ImageStreams returns an object that can list and get ImageStreams.
 	ImageStreams(namespace string) ImageStreamNamespaceLister
 	ImageStreamListerExpansion
@@ -22,25 +22,17 @@ type ImageStreamLister interface {
 
 // imageStreamLister implements the ImageStreamLister interface.
 type imageStreamLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*imagev1.ImageStream]
 }
 
 // NewImageStreamLister returns a new ImageStreamLister.
 func NewImageStreamLister(indexer cache.Indexer) ImageStreamLister {
-	return &imageStreamLister{indexer: indexer}
-}
-
-// List lists all ImageStreams in the indexer.
-func (s *imageStreamLister) List(selector labels.Selector) (ret []*v1.ImageStream, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ImageStream))
-	})
-	return ret, err
+	return &imageStreamLister{listers.New[*imagev1.ImageStream](indexer, imagev1.Resource("imagestream"))}
 }
 
 // ImageStreams returns an object that can list and get ImageStreams.
 func (s *imageStreamLister) ImageStreams(namespace string) ImageStreamNamespaceLister {
-	return imageStreamNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return imageStreamNamespaceLister{listers.NewNamespaced[*imagev1.ImageStream](s.ResourceIndexer, namespace)}
 }
 
 // ImageStreamNamespaceLister helps list and get ImageStreams.
@@ -48,36 +40,15 @@ func (s *imageStreamLister) ImageStreams(namespace string) ImageStreamNamespaceL
 type ImageStreamNamespaceLister interface {
 	// List lists all ImageStreams in the indexer for a given namespace.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.ImageStream, err error)
+	List(selector labels.Selector) (ret []*imagev1.ImageStream, err error)
 	// Get retrieves the ImageStream from the indexer for a given namespace and name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.ImageStream, error)
+	Get(name string) (*imagev1.ImageStream, error)
 	ImageStreamNamespaceListerExpansion
 }
 
 // imageStreamNamespaceLister implements the ImageStreamNamespaceLister
 // interface.
 type imageStreamNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all ImageStreams in the indexer for a given namespace.
-func (s imageStreamNamespaceLister) List(selector labels.Selector) (ret []*v1.ImageStream, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ImageStream))
-	})
-	return ret, err
-}
-
-// Get retrieves the ImageStream from the indexer for a given namespace and name.
-func (s imageStreamNamespaceLister) Get(name string) (*v1.ImageStream, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("imagestream"), name)
-	}
-	return obj.(*v1.ImageStream), nil
+	listers.ResourceIndexer[*imagev1.ImageStream]
 }

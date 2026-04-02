@@ -14,6 +14,10 @@ type AuthenticationListerExpansion interface{}
 // BuildLister.
 type BuildListerExpansion interface{}
 
+// ClusterImagePolicyListerExpansion allows custom methods to be added to
+// ClusterImagePolicyLister.
+type ClusterImagePolicyListerExpansion interface{}
+
 // ClusterOperatorListerExpansion allows custom methods to be added to
 // ClusterOperatorLister.
 type ClusterOperatorListerExpansion interface{}
@@ -38,6 +42,26 @@ type FeatureGateListerExpansion interface{}
 // ImageLister.
 type ImageListerExpansion interface{}
 
+// ImageContentPolicyListerExpansion allows custom methods to be added to
+// ImageContentPolicyLister.
+type ImageContentPolicyListerExpansion interface{}
+
+// ImageDigestMirrorSetListerExpansion allows custom methods to be added to
+// ImageDigestMirrorSetLister.
+type ImageDigestMirrorSetListerExpansion interface{}
+
+// ImagePolicyListerExpansion allows custom methods to be added to
+// ImagePolicyLister.
+type ImagePolicyListerExpansion interface{}
+
+// ImagePolicyNamespaceListerExpansion allows custom methods to be added to
+// ImagePolicyNamespaceLister.
+type ImagePolicyNamespaceListerExpansion interface{}
+
+// ImageTagMirrorSetListerExpansion allows custom methods to be added to
+// ImageTagMirrorSetLister.
+type ImageTagMirrorSetListerExpansion interface{}
+
 // InfrastructureListerExpansion allows custom methods to be added to
 // InfrastructureLister.
 type InfrastructureListerExpansion interface{}
@@ -46,9 +70,17 @@ type InfrastructureListerExpansion interface{}
 // IngressLister.
 type IngressListerExpansion interface{}
 
+// InsightsDataGatherListerExpansion allows custom methods to be added to
+// InsightsDataGatherLister.
+type InsightsDataGatherListerExpansion interface{}
+
 // NetworkListerExpansion allows custom methods to be added to
 // NetworkLister.
 type NetworkListerExpansion interface{}
+
+// NodeListerExpansion allows custom methods to be added to
+// NodeLister.
+type NodeListerExpansion interface{}
 
 // OAuthListerExpansion allows custom methods to be added to
 // OAuthLister.
