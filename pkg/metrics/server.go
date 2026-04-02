@@ -2,10 +2,13 @@ package metrics
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
-	"time"
 
+	v1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
@@ -16,45 +19,93 @@ var (
 	tlsKey = "/etc/secrets/tls.key"
 )
 
-// BuildServer creates the http.Server struct
-func BuildServer(port int) *http.Server {
-	if port <= 0 {
-		logrus.Error("invalid port for metric server")
-		return nil
+// MetricsServer controls a http server capable of serving prometheus metrics
+// through https connections. A metric server is configured by means of a
+// v1.GenericControllerConfig object.
+type MetricsServer struct {
+	bindAddress string
+	tlsConfig   *tls.Config
+	httpServer  *http.Server
+}
+
+// NewServer returns a new metrics server configured according to the provided
+// GenericControllerConfig. If no bind port is configured then the http
+// server will listen on MetricsPort constant. If the configuration
+// does not provide certificate paths then tlsCRT and tlsKey variables
+// are used as default location.
+func NewServer(cfg *v1.GenericControllerConfig) (*MetricsServer, error) {
+	bindAddress := fmt.Sprintf(":%d", MetricsPort)
+	if len(cfg.ServingInfo.BindAddress) != 0 {
+		bindAddress = cfg.ServingInfo.BindAddress
 	}
 
-	bindAddr := fmt.Sprintf(":%d", port)
+	minTLS, err := crypto.TLSVersion(cfg.ServingInfo.MinTLSVersion)
+	if err != nil {
+		return nil, fmt.Errorf("invalid min tls version: %w", err)
+	}
+
+	var suites []uint16
+	for _, suiteString := range cfg.ServingInfo.CipherSuites {
+		suite, err := crypto.CipherSuite(suiteString)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cipher suite: %w", err)
+		}
+		suites = append(suites, suite)
+	}
+
 	router := http.NewServeMux()
 	router.Handle("/metrics", promhttp.Handler())
-	srv := &http.Server{
-		Addr:    bindAddr,
-		Handler: router,
+
+	crt, key := tlsCRT, tlsKey
+	if len(cfg.ServingInfo.CertFile) != 0 {
+		crt = cfg.ServingInfo.CertFile
+	}
+	if len(cfg.ServingInfo.KeyFile) != 0 {
+		key = cfg.ServingInfo.KeyFile
 	}
 
-	return srv
-}
-
-// StopServer stops the server; for tls secret rotation
-func StopServer(srv *http.Server) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		logrus.Warningf("Problem shutting down HTTP server: %s", err.Error())
+	certificate, err := tls.LoadX509KeyPair(crt, key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load certificates: %w", err)
 	}
+
+	return &MetricsServer{
+		bindAddress: bindAddress,
+		httpServer:  &http.Server{Handler: router},
+		tlsConfig: &tls.Config{
+			CipherSuites: suites,
+			MinVersion:   minTLS,
+			Certificates: []tls.Certificate{certificate},
+		},
+	}, nil
 }
 
-// RunServer starts the metrics server.
-func RunServer(srv *http.Server, stopCh <-chan struct{}) {
+// Start starts the metrics server on a go routine. Fails during bind stage
+// are immediately returned.
+func (m *MetricsServer) Start() error {
+	listener, err := net.Listen("tcp", m.bindAddress)
+	if err != nil {
+		return fmt.Errorf("failed to listen: %w", err)
+	}
+
 	go func() {
-		err := srv.ListenAndServeTLS(tlsCRT, tlsKey)
-		if err != nil && err != http.ErrServerClosed {
-			logrus.Errorf("error starting metrics server: %v", err)
+		if err := m.httpServer.Serve(
+			tls.NewListener(listener, m.tlsConfig),
+		); err != nil && err != http.ErrServerClosed {
+			logrus.Errorf("failed to serve metrics: %s", err)
 		}
 	}()
-	<-stopCh
-	if err := srv.Close(); err != nil {
-		logrus.Errorf("error closing metrics server: %v", err)
+
+	return nil
+}
+
+// Stop stops the underlying http server. This function waits for the server to
+// gracefully exit (it might take a while).
+func (m *MetricsServer) Stop(ctx context.Context) error {
+	if err := m.httpServer.Shutdown(ctx); err != nil {
+		return fmt.Errorf("failed to shutdown http server: %w", err)
 	}
+	return nil
 }
 
 // Degraded sets the metric that indicates if the operator is in degraded

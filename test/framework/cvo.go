@@ -37,6 +37,7 @@ func DisableCVOForOperator(operatorClient *configv1client.ConfigV1Client) error 
 
 	var changed bool
 	cv.Spec.Overrides, changed = addCompomentOverride(cv.Spec.Overrides, configv1.ComponentOverride{
+		Group:     "apps",
 		Kind:      "Deployment",
 		Namespace: samplesapi.OperatorNamespace,
 		Name:      "cluster-samples-operator",

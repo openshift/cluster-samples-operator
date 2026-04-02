@@ -21,7 +21,9 @@ spec:
         name: cluster-samples-operator
     spec:
       containers:
-      - command:
+      - args:
+        - --config=/var/run/configmaps/samples-operator-config/config.yaml
+        command:
         - cluster-samples-operator
         env:
         - name: WATCH_NAMESPACE
@@ -51,11 +53,15 @@ spec:
         volumeMounts:
         - mountPath: /etc/secrets
           name: samples-operator-tls
+        - mountPath: /var/run/configmaps/samples-operator-config
+          name: samples-operator-config
       - args:
         - --namespace=openshift-cluster-samples-operator
         - --process-name=cluster-samples-operator
         - --termination-grace-period=30s
-        - --files=/etc/secrets/tls.crt,/etc/secrets/tls.key
+        - --files=/etc/secrets/tls.crt
+        - --files=/etc/secrets/tls.key
+        - --files=/var/run/configmaps/samples-operator-config/config.yaml
         command:
         - cluster-samples-operator-watch
         - file-watcher-watchdog
@@ -72,6 +78,11 @@ spec:
             drop:
             - ALL
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/secrets
+          name: samples-operator-tls
+        - mountPath: /var/run/configmaps/samples-operator-config
+          name: samples-operator-config
       priorityClassName: system-cluster-critical
       securityContext:
         runAsNonRoot: true
@@ -95,3 +106,6 @@ spec:
       - name: samples-operator-tls
         secret:
           secretName: samples-operator-tls
+      - configMap:
+          name: samples-operator-config
+        name: samples-operator-config
