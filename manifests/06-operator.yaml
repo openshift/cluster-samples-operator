@@ -44,6 +44,9 @@ spec:
       - name: samples-operator-tls
         secret:
           secretName: samples-operator-tls
+      - name: samples-operator-config
+        configMap:
+          name: samples-operator-config
       containers:
       - name: cluster-samples-operator
         image: quay.io/openshift/origin-cluster-samples-operator:latest
@@ -52,6 +55,8 @@ spec:
           name: metrics
         command:
         - cluster-samples-operator
+        args:
+        - --config=/var/run/configmaps/samples-operator-config/config.yaml
         resources:
           requests:
             memory: 50Mi
@@ -66,6 +71,8 @@ spec:
         volumeMounts:
         - name: samples-operator-tls
           mountPath: /etc/secrets
+        - name: samples-operator-config
+          mountPath: /var/run/configmaps/samples-operator-config
         env:
           - name: WATCH_NAMESPACE
             valueFrom:
@@ -84,7 +91,9 @@ spec:
         - --namespace=openshift-cluster-samples-operator
         - --process-name=cluster-samples-operator
         - --termination-grace-period=30s
-        - --files=/etc/secrets/tls.crt,/etc/secrets/tls.key
+        - --files=/etc/secrets/tls.crt
+        - --files=/etc/secrets/tls.key
+        - --files=/var/run/configmaps/samples-operator-config/config.yaml
         imagePullPolicy: IfNotPresent
         terminationMessagePolicy: FallbackToLogsOnError
         resources:
@@ -96,3 +105,8 @@ spec:
           capabilities:
             drop:
             - ALL
+        volumeMounts:
+        - name: samples-operator-tls
+          mountPath: /etc/secrets
+        - name: samples-operator-config
+          mountPath: /var/run/configmaps/samples-operator-config

@@ -3,12 +3,32 @@ include $(addprefix $(dir $(lastword $(MAKEFILE_LIST))), \
 	../../lib/tmp.mk \
 )
 
+##############
+# DEPRECATED #
+##############
+# This utility is hard to maintain due to the need to continuously build and release binaries for
+# multiple platforms and versions. Instead it is recommended that you:
+# - Vendor the sigs.k8s.io/controller-tools repository.
+# - Write a local rule to (lazily) build the controller-gen binary from the vendored repo.
+# For example:
+#
+# CONTROLLER_GEN_SRC := $(shell realpath vendor/sigs.k8s.io/controller-tools/cmd/controller-gen)
+# CONTROLLER_GEN := $(shell go list -f '{{.Target}}' $(CONTROLLER_GEN_SRC))
+# $(CONTROLLER_GEN): $(CONTROLLER_GEN_SRC)
+# 	go install $(CONTROLLER_GEN_SRC)
+#
+# This allows you to upgrade versions simply by revendoring controller-tools:
+# - Bump the semver in your go.mod
+# - go mod tidy
+# - go mod vendor
+##############
+
 # NOTE: The release binary specified here needs to be built properly so that
 # `--version` works correctly. Just using `go build` will result in it
 # reporting `(devel)`. To build for a given platform:
 # 	GOOS=xxx GOARCH=yyy go install sigs.k8s.io/controller-tools/cmd/controller-gen@$version
 # e.g.
-# 	GOOS=darwin GOARCH=amd64 go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.6.0
+# 	GOOS=darwin GOARCH=amd64 go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.9.2
 #
 # If GOOS and GOARCH match your current go env, this will install the binary at
 # 	$(go env GOPATH)/bin/controller-gen
@@ -16,7 +36,7 @@ include $(addprefix $(dir $(lastword $(MAKEFILE_LIST))), \
 # 	$(go env GOPATH)/bin/${GOOS}_${GOARCH}/conroller-gen
 # e.g.
 # 	/home/efried/.gvm/pkgsets/go1.16/global/bin/darwin_amd64/controller-gen
-CONTROLLER_GEN_VERSION ?=v0.6.0
+CONTROLLER_GEN_VERSION ?=v0.9.2
 CONTROLLER_GEN ?=$(PERMANENT_TMP_GOPATH)/bin/controller-gen-$(CONTROLLER_GEN_VERSION)
 ifneq "" "$(wildcard $(CONTROLLER_GEN))"
 _controller_gen_installed_version = $(shell $(CONTROLLER_GEN) --version | awk '{print $$2}')

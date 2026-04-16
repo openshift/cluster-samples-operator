@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/template/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/tools/cache"
+	templatev1 "github.com/openshift/api/template/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // TemplateLister helps list Templates.
@@ -14,7 +14,7 @@ import (
 type TemplateLister interface {
 	// List lists all Templates in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.Template, err error)
+	List(selector labels.Selector) (ret []*templatev1.Template, err error)
 	// Templates returns an object that can list and get Templates.
 	Templates(namespace string) TemplateNamespaceLister
 	TemplateListerExpansion
@@ -22,25 +22,17 @@ type TemplateLister interface {
 
 // templateLister implements the TemplateLister interface.
 type templateLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*templatev1.Template]
 }
 
 // NewTemplateLister returns a new TemplateLister.
 func NewTemplateLister(indexer cache.Indexer) TemplateLister {
-	return &templateLister{indexer: indexer}
-}
-
-// List lists all Templates in the indexer.
-func (s *templateLister) List(selector labels.Selector) (ret []*v1.Template, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.Template))
-	})
-	return ret, err
+	return &templateLister{listers.New[*templatev1.Template](indexer, templatev1.Resource("template"))}
 }
 
 // Templates returns an object that can list and get Templates.
 func (s *templateLister) Templates(namespace string) TemplateNamespaceLister {
-	return templateNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return templateNamespaceLister{listers.NewNamespaced[*templatev1.Template](s.ResourceIndexer, namespace)}
 }
 
 // TemplateNamespaceLister helps list and get Templates.
@@ -48,36 +40,15 @@ func (s *templateLister) Templates(namespace string) TemplateNamespaceLister {
 type TemplateNamespaceLister interface {
 	// List lists all Templates in the indexer for a given namespace.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.Template, err error)
+	List(selector labels.Selector) (ret []*templatev1.Template, err error)
 	// Get retrieves the Template from the indexer for a given namespace and name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.Template, error)
+	Get(name string) (*templatev1.Template, error)
 	TemplateNamespaceListerExpansion
 }
 
 // templateNamespaceLister implements the TemplateNamespaceLister
 // interface.
 type templateNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all Templates in the indexer for a given namespace.
-func (s templateNamespaceLister) List(selector labels.Selector) (ret []*v1.Template, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.Template))
-	})
-	return ret, err
-}
-
-// Get retrieves the Template from the indexer for a given namespace and name.
-func (s templateNamespaceLister) Get(name string) (*v1.Template, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("template"), name)
-	}
-	return obj.(*v1.Template), nil
+	listers.ResourceIndexer[*templatev1.Template]
 }

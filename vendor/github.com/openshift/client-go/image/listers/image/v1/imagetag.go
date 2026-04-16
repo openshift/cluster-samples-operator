@@ -3,10 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/image/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/tools/cache"
+	imagev1 "github.com/openshift/api/image/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // ImageTagLister helps list ImageTags.
@@ -14,7 +14,7 @@ import (
 type ImageTagLister interface {
 	// List lists all ImageTags in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.ImageTag, err error)
+	List(selector labels.Selector) (ret []*imagev1.ImageTag, err error)
 	// ImageTags returns an object that can list and get ImageTags.
 	ImageTags(namespace string) ImageTagNamespaceLister
 	ImageTagListerExpansion
@@ -22,25 +22,17 @@ type ImageTagLister interface {
 
 // imageTagLister implements the ImageTagLister interface.
 type imageTagLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*imagev1.ImageTag]
 }
 
 // NewImageTagLister returns a new ImageTagLister.
 func NewImageTagLister(indexer cache.Indexer) ImageTagLister {
-	return &imageTagLister{indexer: indexer}
-}
-
-// List lists all ImageTags in the indexer.
-func (s *imageTagLister) List(selector labels.Selector) (ret []*v1.ImageTag, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ImageTag))
-	})
-	return ret, err
+	return &imageTagLister{listers.New[*imagev1.ImageTag](indexer, imagev1.Resource("imagetag"))}
 }
 
 // ImageTags returns an object that can list and get ImageTags.
 func (s *imageTagLister) ImageTags(namespace string) ImageTagNamespaceLister {
-	return imageTagNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return imageTagNamespaceLister{listers.NewNamespaced[*imagev1.ImageTag](s.ResourceIndexer, namespace)}
 }
 
 // ImageTagNamespaceLister helps list and get ImageTags.
@@ -48,36 +40,15 @@ func (s *imageTagLister) ImageTags(namespace string) ImageTagNamespaceLister {
 type ImageTagNamespaceLister interface {
 	// List lists all ImageTags in the indexer for a given namespace.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1.ImageTag, err error)
+	List(selector labels.Selector) (ret []*imagev1.ImageTag, err error)
 	// Get retrieves the ImageTag from the indexer for a given namespace and name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1.ImageTag, error)
+	Get(name string) (*imagev1.ImageTag, error)
 	ImageTagNamespaceListerExpansion
 }
 
 // imageTagNamespaceLister implements the ImageTagNamespaceLister
 // interface.
 type imageTagNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all ImageTags in the indexer for a given namespace.
-func (s imageTagNamespaceLister) List(selector labels.Selector) (ret []*v1.ImageTag, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ImageTag))
-	})
-	return ret, err
-}
-
-// Get retrieves the ImageTag from the indexer for a given namespace and name.
-func (s imageTagNamespaceLister) Get(name string) (*v1.ImageTag, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1.Resource("imagetag"), name)
-	}
-	return obj.(*v1.ImageTag), nil
+	listers.ResourceIndexer[*imagev1.ImageTag]
 }
