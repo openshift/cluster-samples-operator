@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -108,7 +108,7 @@ func dumpPod(t *testing.T) {
 				if err != nil {
 					t.Fatalf("error getting pod logs for container %s: %s", container.Name, err.Error())
 				}
-				b, err := ioutil.ReadAll(readCloser)
+				b, err := io.ReadAll(readCloser)
 				if err != nil {
 					t.Fatalf("error reading pod stream %s", err.Error())
 				}

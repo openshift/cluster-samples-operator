@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"runtime"
@@ -1267,7 +1266,7 @@ func getImageClient(restconfig *restclient.Config) (*imagev1client.ImageV1Client
 }
 
 func GetNamespace() string {
-	b, _ := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/" + corev1.ServiceAccountNamespaceKey)
+	b, _ := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/" + corev1.ServiceAccountNamespaceKey)
 	return string(b)
 }
 
