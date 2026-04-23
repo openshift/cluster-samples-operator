@@ -3,8 +3,10 @@
 package v1
 
 import (
-	v1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/client-go/config/clientset/versioned/scheme"
+	http "net/http"
+
+	configv1 "github.com/openshift/api/config/v1"
+	scheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
 	rest "k8s.io/client-go/rest"
 )
 
@@ -13,15 +15,22 @@ type ConfigV1Interface interface {
 	APIServersGetter
 	AuthenticationsGetter
 	BuildsGetter
+	ClusterImagePoliciesGetter
 	ClusterOperatorsGetter
 	ClusterVersionsGetter
 	ConsolesGetter
 	DNSesGetter
 	FeatureGatesGetter
 	ImagesGetter
+	ImageContentPoliciesGetter
+	ImageDigestMirrorSetsGetter
+	ImagePoliciesGetter
+	ImageTagMirrorSetsGetter
 	InfrastructuresGetter
 	IngressesGetter
+	InsightsDataGathersGetter
 	NetworksGetter
+	NodesGetter
 	OAuthsGetter
 	OperatorHubsGetter
 	ProjectsGetter
@@ -44,6 +53,10 @@ func (c *ConfigV1Client) Authentications() AuthenticationInterface {
 
 func (c *ConfigV1Client) Builds() BuildInterface {
 	return newBuilds(c)
+}
+
+func (c *ConfigV1Client) ClusterImagePolicies() ClusterImagePolicyInterface {
+	return newClusterImagePolicies(c)
 }
 
 func (c *ConfigV1Client) ClusterOperators() ClusterOperatorInterface {
@@ -70,6 +83,22 @@ func (c *ConfigV1Client) Images() ImageInterface {
 	return newImages(c)
 }
 
+func (c *ConfigV1Client) ImageContentPolicies() ImageContentPolicyInterface {
+	return newImageContentPolicies(c)
+}
+
+func (c *ConfigV1Client) ImageDigestMirrorSets() ImageDigestMirrorSetInterface {
+	return newImageDigestMirrorSets(c)
+}
+
+func (c *ConfigV1Client) ImagePolicies(namespace string) ImagePolicyInterface {
+	return newImagePolicies(c, namespace)
+}
+
+func (c *ConfigV1Client) ImageTagMirrorSets() ImageTagMirrorSetInterface {
+	return newImageTagMirrorSets(c)
+}
+
 func (c *ConfigV1Client) Infrastructures() InfrastructureInterface {
 	return newInfrastructures(c)
 }
@@ -78,8 +107,16 @@ func (c *ConfigV1Client) Ingresses() IngressInterface {
 	return newIngresses(c)
 }
 
+func (c *ConfigV1Client) InsightsDataGathers() InsightsDataGatherInterface {
+	return newInsightsDataGathers(c)
+}
+
 func (c *ConfigV1Client) Networks() NetworkInterface {
 	return newNetworks(c)
+}
+
+func (c *ConfigV1Client) Nodes() NodeInterface {
+	return newNodes(c)
 }
 
 func (c *ConfigV1Client) OAuths() OAuthInterface {
@@ -103,12 +140,24 @@ func (c *ConfigV1Client) Schedulers() SchedulerInterface {
 }
 
 // NewForConfig creates a new ConfigV1Client for the given config.
+// NewForConfig is equivalent to NewForConfigAndClient(c, httpClient),
+// where httpClient was generated with rest.HTTPClientFor(c).
 func NewForConfig(c *rest.Config) (*ConfigV1Client, error) {
 	config := *c
-	if err := setConfigDefaults(&config); err != nil {
+	setConfigDefaults(&config)
+	httpClient, err := rest.HTTPClientFor(&config)
+	if err != nil {
 		return nil, err
 	}
-	client, err := rest.RESTClientFor(&config)
+	return NewForConfigAndClient(&config, httpClient)
+}
+
+// NewForConfigAndClient creates a new ConfigV1Client for the given config and http client.
+// Note the http client provided takes precedence over the configured transport values.
+func NewForConfigAndClient(c *rest.Config, h *http.Client) (*ConfigV1Client, error) {
+	config := *c
+	setConfigDefaults(&config)
+	client, err := rest.RESTClientForConfigAndClient(&config, h)
 	if err != nil {
 		return nil, err
 	}
@@ -130,17 +179,15 @@ func New(c rest.Interface) *ConfigV1Client {
 	return &ConfigV1Client{c}
 }
 
-func setConfigDefaults(config *rest.Config) error {
-	gv := v1.SchemeGroupVersion
+func setConfigDefaults(config *rest.Config) {
+	gv := configv1.SchemeGroupVersion
 	config.GroupVersion = &gv
 	config.APIPath = "/apis"
-	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
+	config.NegotiatedSerializer = rest.CodecFactoryForGeneratedClient(scheme.Scheme, scheme.Codecs).WithoutConversion()
 
 	if config.UserAgent == "" {
 		config.UserAgent = rest.DefaultKubernetesUserAgent()
 	}
-
-	return nil
 }
 
 // RESTClient returns a RESTClient that is used to communicate
