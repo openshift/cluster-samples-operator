@@ -1,6 +1,6 @@
 module github.com/openshift/cluster-samples-operator
 
-go 1.25.0
+go 1.25.1
 
 require (
 	github.com/openshift/api v0.0.0-20260317165824-54a3998d81eb
@@ -8,7 +8,7 @@ require (
 	github.com/openshift/client-go v0.0.0-20260317180604-743f664b82d1
 	github.com/openshift/library-go v0.0.0-20260326200317-12d8376369b7
 	github.com/prometheus/client_golang v1.23.2
-	github.com/prometheus/client_model v0.6.2
+	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.66.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.0
