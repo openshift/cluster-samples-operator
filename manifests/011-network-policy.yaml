@@ -1,0 +1,88 @@
+# NetworkPolicy for the openshift-cluster-samples-operator namespace.
+#
+# This operator is a core component that owns the entire namespace, so we use
+# a namespace-wide default deny and then add back only the traffic that is
+# required:
+#   - Egress to cluster DNS (openshift-dns, port 5353)
+#   - Egress to the Kubernetes API server (must be allow-all because the API
+#     server runs on the host network and its IP/port cannot be targeted by NP)
+#   - Ingress to the metrics endpoint (port 60000/TCP) from any pod (Prometheus)
+#
+# Health-check probes from the kubelet are not affected by NetworkPolicy.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: openshift-cluster-samples-operator
+  annotations:
+    capability.openshift.io/name: openshift-samples
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-dns
+  namespace: openshift-cluster-samples-operator
+  annotations:
+    capability.openshift.io/name: openshift-samples
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+spec:
+  podSelector: {}
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openshift-dns
+    ports:
+    - protocol: TCP
+      port: 5353
+    - protocol: UDP
+      port: 5353
+  policyTypes:
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-api-server
+  namespace: openshift-cluster-samples-operator
+  annotations:
+    capability.openshift.io/name: openshift-samples
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+spec:
+  podSelector:
+    matchLabels:
+      name: cluster-samples-operator
+  egress:
+  - {}
+  policyTypes:
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-metrics
+  namespace: openshift-cluster-samples-operator
+  annotations:
+    capability.openshift.io/name: openshift-samples
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+spec:
+  podSelector:
+    matchLabels:
+      name: cluster-samples-operator
+  ingress:
+  - ports:
+    - protocol: TCP
+      port: 60000
+  policyTypes:
+  - Ingress
