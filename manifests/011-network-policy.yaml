@@ -4,9 +4,10 @@
 # a namespace-wide default deny and then add back only the traffic that is
 # required:
 #   - Egress to cluster DNS (openshift-dns, port 5353)
-#   - Egress to the Kubernetes API server (must be allow-all because the API
-#     server runs on the host network and its IP/port cannot be targeted by NP)
-#   - Ingress to the metrics endpoint (port 60000/TCP) from any pod (Prometheus)
+#   - Egress for the operator pod (must be allow-all because the API server
+#     runs on the host network and its IP/port cannot be targeted by NP, and
+#     the operator needs to reach external registries for ImageStream imports)
+#   - Ingress to the metrics endpoint (port 60000/TCP) from openshift-monitoring
 #
 # Health-check probes from the kubelet are not affected by NetworkPolicy.
 ---
@@ -52,7 +53,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-egress-to-api-server
+  name: allow-operator-egress
   namespace: openshift-cluster-samples-operator
   annotations:
     capability.openshift.io/name: openshift-samples
@@ -81,7 +82,11 @@ spec:
     matchLabels:
       name: cluster-samples-operator
   ingress:
-  - ports:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openshift-monitoring
+    ports:
     - protocol: TCP
       port: 60000
   policyTypes:
