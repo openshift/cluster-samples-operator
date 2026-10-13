@@ -296,3 +296,15 @@ func TestImageStreamImportRetry(t *testing.T) {
 		testQueryCounterMetric(t, MetricsPort, i, importRetryQuery)
 	}
 }
+
+func TestWithInvalidCurves(t *testing.T) {
+	keyPath, certPath, cleanupCerts := generateTempCertificates(t)
+	defer cleanupCerts()
+
+	cfg := buildTestConfig(MetricsPort, certPath, keyPath)
+	cfg.ServingInfo.CurvePreferences = []int32{int32(tls.X25519), 1}
+
+	if _, err := NewServer(cfg); err == nil {
+		t.Fatal("expected error when starting server with invalid curves")
+	}
+}
