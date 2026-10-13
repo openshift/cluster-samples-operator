@@ -2,10 +2,11 @@ package metrics
 
 import (
 	"bytes"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"net/http"
 	"strings"
 	"testing"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -333,9 +334,14 @@ func TestMetrics(t *testing.T) {
 
 		registry.MustRegister(&sc)
 
+		request, err := http.NewRequest(http.MethodGet, "", nil)
+		if err != nil {
+			t.Fatalf("failed to create fake http request: %s", err)
+		}
+
 		h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{ErrorHandling: promhttp.PanicOnError})
 		rw := &fakeResponseWriter{header: http.Header{}}
-		h.ServeHTTP(rw, &http.Request{})
+		h.ServeHTTP(rw, request)
 
 		respStr := rw.String()
 
