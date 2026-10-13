@@ -12,16 +12,45 @@ import (
 	templatev1 "github.com/openshift/client-go/template/listers/template/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	watch "k8s.io/apimachinery/pkg/watch"
 	cache "k8s.io/client-go/tools/cache"
 )
 
 // BrokerTemplateInstanceInformer provides access to a shared informer and lister for
-// BrokerTemplateInstances.
+// BrokerTemplateInstances. Prefer using the type-safe variant (see [TypedBrokerTemplateInstanceInformer]).
 type BrokerTemplateInstanceInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() templatev1.BrokerTemplateInstanceLister
 }
+
+// TypedBrokerTemplateInstanceInformer provides access to a shared informer and lister for
+// BrokerTemplateInstances, including the type-safe TypedInformer variant.
+// It is a superset of BrokerTemplateInstanceInformer.
+type TypedBrokerTemplateInstanceInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() BrokerTemplateInstanceIndexInformer
+	Lister() templatev1.BrokerTemplateInstanceLister
+}
+
+// BrokerTemplateInstanceIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type BrokerTemplateInstanceIndexInformer cache.TypedSharedIndexInformer[*apitemplatev1.BrokerTemplateInstance]
+
+// BrokerTemplateInstanceHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for BrokerTemplateInstance.
+type BrokerTemplateInstanceHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*apitemplatev1.BrokerTemplateInstance]
+
+// BrokerTemplateInstanceDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for BrokerTemplateInstance.
+type BrokerTemplateInstanceDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*apitemplatev1.BrokerTemplateInstance]
+
+// BrokerTemplateInstanceFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for BrokerTemplateInstance.
+type BrokerTemplateInstanceFilteringHandler = cache.TypedFilteringResourceEventHandler[*apitemplatev1.BrokerTemplateInstance]
+
+// BrokerTemplateInstanceIndexers is a specialization of [cache.TypedIndexers] for BrokerTemplateInstance.
+type BrokerTemplateInstanceIndexers = cache.TypedIndexers[*apitemplatev1.BrokerTemplateInstance]
+
+// DeletedBrokerTemplateInstance is a specialization of [cache.DeletedObject] for BrokerTemplateInstance.
+type DeletedBrokerTemplateInstance = cache.DeletedObject[*apitemplatev1.BrokerTemplateInstance]
 
 type brokerTemplateInstanceInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -31,55 +60,132 @@ type brokerTemplateInstanceInformer struct {
 // NewBrokerTemplateInstanceInformer constructs a new informer for BrokerTemplateInstance type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedBrokerTemplateInstanceInformer]).
 func NewBrokerTemplateInstanceInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredBrokerTemplateInstanceInformer(client, resyncPeriod, indexers, nil)
+	return NewBrokerTemplateInstanceInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedBrokerTemplateInstanceInformer constructs a new informer for BrokerTemplateInstance type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedBrokerTemplateInstanceInformer(client versioned.Interface, resyncPeriod time.Duration, indexers BrokerTemplateInstanceIndexers) BrokerTemplateInstanceIndexInformer {
+	return NewTypedBrokerTemplateInstanceInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredBrokerTemplateInstanceInformer constructs a new informer for BrokerTemplateInstance type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredBrokerTemplateInstanceInformer]).
 func NewFilteredBrokerTemplateInstanceInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return cache.NewSharedIndexInformer(
+	return NewTypedBrokerTemplateInstanceInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredBrokerTemplateInstanceInformer constructs a new informer for BrokerTemplateInstance type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredBrokerTemplateInstanceInformer(client versioned.Interface, resyncPeriod time.Duration, indexers BrokerTemplateInstanceIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) BrokerTemplateInstanceIndexInformer {
+	return NewTypedBrokerTemplateInstanceInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
+}
+
+// NewBrokerTemplateInstanceInformerWithOptions constructs a new informer for BrokerTemplateInstance type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedBrokerTemplateInstanceInformerWithOptions]).
+func NewBrokerTemplateInstanceInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedBrokerTemplateInstanceInformerWithOptions(client, options)
+}
+
+// NewTypedBrokerTemplateInstanceInformerWithOptions constructs a new informer for BrokerTemplateInstance type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedBrokerTemplateInstanceInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) BrokerTemplateInstanceIndexInformer {
+	gvr := schema.GroupVersionResource{Group: "template.openshift.io", Version: "v1", Resource: "brokertemplateinstances"}
+	identifier := options.InformerName.WithResource(gvr)
+	tweakListOptions := options.TweakListOptions
+	return cache.NewTypedSharedIndexInformer[*apitemplatev1.BrokerTemplateInstance](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
-					tweakListOptions(&options)
+					tweakListOptions(&opts)
 				}
-				return client.TemplateV1().BrokerTemplateInstances().List(context.Background(), options)
+				return client.TemplateV1().BrokerTemplateInstances().List(context.Background(), opts)
 			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
-					tweakListOptions(&options)
+					tweakListOptions(&opts)
 				}
-				return client.TemplateV1().BrokerTemplateInstances().Watch(context.Background(), options)
+				return client.TemplateV1().BrokerTemplateInstances().Watch(context.Background(), opts)
 			},
-			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+			ListWithContextFunc: func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
-					tweakListOptions(&options)
+					tweakListOptions(&opts)
 				}
-				return client.TemplateV1().BrokerTemplateInstances().List(ctx, options)
+				return client.TemplateV1().BrokerTemplateInstances().List(ctx, opts)
 			},
-			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+			WatchFuncWithContext: func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
-					tweakListOptions(&options)
+					tweakListOptions(&opts)
 				}
-				return client.TemplateV1().BrokerTemplateInstances().Watch(ctx, options)
+				return client.TemplateV1().BrokerTemplateInstances().Watch(ctx, opts)
 			},
 		}, client),
 		&apitemplatev1.BrokerTemplateInstance{},
-		resyncPeriod,
-		indexers,
-	)
+		cache.SharedIndexInformerOptions{
+			ResyncPeriod: options.ResyncPeriod,
+			Indexers:     options.Indexers,
+			Identifier:   identifier,
+		},
+	))
 }
 
 func (f *brokerTemplateInstanceInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredBrokerTemplateInstanceInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+	return NewTypedBrokerTemplateInstanceInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *brokerTemplateInstanceInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apitemplatev1.BrokerTemplateInstance{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *brokerTemplateInstanceInformer) TypedInformer() BrokerTemplateInstanceIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apitemplatev1.BrokerTemplateInstance](f.factory.InformerFor(&apitemplatev1.BrokerTemplateInstance{}, f.defaultInformer))
 }
 
 func (f *brokerTemplateInstanceInformer) Lister() templatev1.BrokerTemplateInstanceLister {
 	return templatev1.NewBrokerTemplateInstanceLister(f.Informer().GetIndexer())
+}
+
+// ToTypedBrokerTemplateInstanceInformer converts an untyped informer into a TypedBrokerTemplateInstanceInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *BrokerTemplateInstance. If that is not the case, calling type-safe methods of the returned
+// TypedBrokerTemplateInstanceInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedBrokerTemplateInstanceInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedBrokerTemplateInstanceInformer(informer BrokerTemplateInstanceInformer) TypedBrokerTemplateInstanceInformer {
+	if informer, ok := informer.(TypedBrokerTemplateInstanceInformer); ok {
+		return informer
+	}
+	return &brokerTemplateInstanceTypedInformerAdapter{informer}
+}
+
+type brokerTemplateInstanceTypedInformerAdapter struct {
+	BrokerTemplateInstanceInformer
+}
+
+func (a *brokerTemplateInstanceTypedInformerAdapter) TypedInformer() BrokerTemplateInstanceIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*apitemplatev1.BrokerTemplateInstance](a.Informer())
+}
+
+// ToBrokerTemplateInstanceIndexInformer converts an untyped informer into a BrokerTemplateInstanceIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *BrokerTemplateInstance. If that is not the case, calling type-safe methods of the returned
+// BrokerTemplateInstanceIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a BrokerTemplateInstanceIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToBrokerTemplateInstanceIndexInformer(informer cache.SharedIndexInformer) BrokerTemplateInstanceIndexInformer {
+	if informer, ok := informer.(BrokerTemplateInstanceIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*apitemplatev1.BrokerTemplateInstance](informer)
 }
