@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 
 	v1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/crypto"
@@ -69,13 +70,26 @@ func NewServer(cfg *v1.GenericControllerConfig) (*MetricsServer, error) {
 		return nil, fmt.Errorf("failed to load certificates: %w", err)
 	}
 
+	var curvePreferences []tls.CurveID
+	if qt := len(cfg.ServingInfo.CurvePreferences); qt > 0 {
+		supported, _ := crypto.TLSGroupsToCurveIDs(crypto.ValidTLSGroups())
+		for _, cpref := range cfg.ServingInfo.CurvePreferences {
+			cid := tls.CurveID(cpref)
+			if !slices.Contains(supported, cid) {
+				return nil, fmt.Errorf("invalid curve preference %d", cpref)
+			}
+			curvePreferences = append(curvePreferences, cid)
+		}
+	}
+
 	return &MetricsServer{
 		bindAddress: bindAddress,
 		httpServer:  &http.Server{Handler: router},
 		tlsConfig: &tls.Config{
-			CipherSuites: suites,
-			MinVersion:   minTLS,
-			Certificates: []tls.Certificate{certificate},
+			CipherSuites:     suites,
+			MinVersion:       minTLS,
+			Certificates:     []tls.Certificate{certificate},
+			CurvePreferences: curvePreferences,
 		},
 	}, nil
 }

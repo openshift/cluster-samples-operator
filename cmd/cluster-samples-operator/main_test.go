@@ -132,6 +132,29 @@ servingInfo:
 			},
 			expectError: false,
 		},
+		{
+			name: "curve preferences field",
+			configContent: `apiVersion: config.openshift.io/v1
+kind: GenericControllerConfig
+servingInfo:
+  bindAddress: "127.0.0.1:6443"
+  minTLSVersion: VersionTLS12
+  curvePreferences:
+  - 23
+  - 24
+  - 25
+`,
+			expected: &configv1.GenericControllerConfig{
+				ServingInfo: configv1.HTTPServingInfo{
+					ServingInfo: configv1.ServingInfo{
+						BindAddress:      "127.0.0.1:6443",
+						MinTLSVersion:    "VersionTLS12",
+						CurvePreferences: []int32{23, 24, 25},
+					},
+				},
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tc := range testCases {
