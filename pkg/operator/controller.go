@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metaapi "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
@@ -118,7 +119,7 @@ func NewController() (*Controller, error) {
 
 	configClient := configclient.NewForConfigOrDie(kubeconfig)
 
-	c.kubeOCNSInformerFactory = kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncDuration, kubeinformers.WithNamespace("openshift-config"))
+	c.kubeOCNSInformerFactory = newConfigNamespaceSecretInformerFactory(kubeClient)
 	c.imageInformerFactory = imageinformers.NewSharedInformerFactoryWithOptions(imageClient, defaultResyncDuration, imageinformers.WithNamespace("openshift"))
 	c.templateInformerFactory = templateinformers.NewSharedInformerFactoryWithOptions(templateClient, defaultResyncDuration, templateinformers.WithNamespace("openshift"))
 	c.sampopInformerFactory = sampopinformers.NewSharedInformerFactory(sampopClient, defaultResyncDuration)
@@ -163,6 +164,16 @@ func NewController() (*Controller, error) {
 	}
 
 	return c, nil
+}
+
+func newConfigNamespaceSecretInformerFactory(client kubeset.Interface) kubeinformers.SharedInformerFactory {
+	return kubeinformers.NewSharedInformerFactoryWithOptions(client, defaultResyncDuration,
+		kubeinformers.WithNamespace("openshift-config"),
+		// A Role restricted by resourceNames requires the same field selector on list and watch.
+		kubeinformers.WithTweakListOptions(func(options *metaapi.ListOptions) {
+			options.FieldSelector = fields.OneTermEqualSelector("metadata.name", "pull-secret").String()
+		}),
+	)
 }
 
 func (c *Controller) Run(stopCh <-chan struct{}) error {
