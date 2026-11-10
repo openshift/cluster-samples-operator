@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metaapi "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
@@ -20,7 +21,9 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	sampopapi "github.com/openshift/api/samples/v1"
 	templatev1 "github.com/openshift/api/template/v1"
+	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	imageset "github.com/openshift/client-go/image/clientset/versioned"
 	imageinformers "github.com/openshift/client-go/image/informers/externalversions"
 	sampleclientv1 "github.com/openshift/client-go/samples/clientset/versioned"
@@ -49,17 +52,19 @@ type Controller struct {
 	ocSecWorkqueue  workqueue.RateLimitingInterface
 	cfgMapWorkqueue workqueue.RateLimitingInterface
 
-	crInformer     cache.SharedIndexInformer
-	isInformer     cache.SharedIndexInformer
-	tInformer      cache.SharedIndexInformer
-	ocSecInformer  cache.SharedIndexInformer
-	cfgMapInformer cache.SharedIndexInformer
+	crInformer              cache.SharedIndexInformer
+	isInformer              cache.SharedIndexInformer
+	tInformer               cache.SharedIndexInformer
+	ocSecInformer           cache.SharedIndexInformer
+	cfgMapInformer          cache.SharedIndexInformer
+	clusterOperatorInformer cache.SharedIndexInformer
 
 	kubeOCNSInformerFactory kubeinformers.SharedInformerFactory
 	imageInformerFactory    imageinformers.SharedInformerFactory
 	templateInformerFactory templateinformers.SharedInformerFactory
 	sampopInformerFactory   sampopinformers.SharedInformerFactory
 	cfgMapInformerFactory   kubeinformers.SharedInformerFactory
+	configInformerFactory   configinformers.SharedInformerFactory
 
 	listers *sampopclient.Listers
 
@@ -111,11 +116,14 @@ func NewController() (*Controller, error) {
 		return nil, err
 	}
 
-	c.kubeOCNSInformerFactory = kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncDuration, kubeinformers.WithNamespace("openshift-config"))
+	configClient := configclient.NewForConfigOrDie(kubeconfig)
+
+	c.kubeOCNSInformerFactory = newConfigNamespaceSecretInformerFactory(kubeClient)
 	c.imageInformerFactory = imageinformers.NewSharedInformerFactoryWithOptions(imageClient, defaultResyncDuration, imageinformers.WithNamespace("openshift"))
 	c.templateInformerFactory = templateinformers.NewSharedInformerFactoryWithOptions(templateClient, defaultResyncDuration, templateinformers.WithNamespace("openshift"))
 	c.sampopInformerFactory = sampopinformers.NewSharedInformerFactory(sampopClient, defaultResyncDuration)
 	c.cfgMapInformerFactory = kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncDuration, kubeinformers.WithNamespace(sampopapi.OperatorNamespace))
+	c.configInformerFactory = configinformers.NewSharedInformerFactory(configClient, defaultResyncDuration)
 
 	// A note on the fact we are listening on secrets in the openshift-config namespace, even though we no longer
 	// copy that secret to the openshift namespace for imagestream import
@@ -145,6 +153,9 @@ func NewController() (*Controller, error) {
 	c.cfgMapInformer.AddEventHandler(c.configMapInformerEventHandler())
 	c.listers.ConfigMaps = c.cfgMapInformerFactory.Core().V1().ConfigMaps().Lister().ConfigMaps(sampopapi.OperatorNamespace)
 
+	c.clusterOperatorInformer = c.configInformerFactory.Config().V1().ClusterOperators().Informer()
+	c.clusterOperatorInformer.AddEventHandler(c.clusterOperatorInformerEventHandler())
+
 	c.handlerStub, err = stub.NewSamplesOperatorHandler(kubeconfig,
 		c.listers)
 	if err != nil {
@@ -152,6 +163,16 @@ func NewController() (*Controller, error) {
 	}
 
 	return c, nil
+}
+
+func newConfigNamespaceSecretInformerFactory(client kubeset.Interface) kubeinformers.SharedInformerFactory {
+	return kubeinformers.NewSharedInformerFactoryWithOptions(client, defaultResyncDuration,
+		kubeinformers.WithNamespace("openshift-config"),
+		// A Role restricted by resourceNames requires the same field selector on list and watch.
+		kubeinformers.WithTweakListOptions(func(options *metaapi.ListOptions) {
+			options.FieldSelector = fields.OneTermEqualSelector("metadata.name", "pull-secret").String()
+		}),
+	)
 }
 
 func (c *Controller) Run(stopCh <-chan struct{}) error {
@@ -166,6 +187,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) error {
 	c.sampopInformerFactory.Start(stopCh)
 	c.kubeOCNSInformerFactory.Start(stopCh)
 	c.cfgMapInformerFactory.Start(stopCh)
+	c.configInformerFactory.Start(stopCh)
 
 	logrus.Println("waiting for informer caches to sync")
 	if !cache.WaitForCacheSync(stopCh,
@@ -173,6 +195,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) error {
 		c.tInformer.HasSynced,
 		c.crInformer.HasSynced,
 		c.ocSecInformer.HasSynced,
+		c.clusterOperatorInformer.HasSynced,
 		c.cfgMapInformer.HasSynced) {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
@@ -335,6 +358,12 @@ func (c *configMapQueueKeyGen) Key(o interface{}) string {
 	return configMap.Name
 }
 
+type clusterOperatorQueueKeyGen struct{}
+
+func (c *clusterOperatorQueueKeyGen) Key(o interface{}) string {
+	return "cluster"
+}
+
 // WORK QUEUE LOOP
 
 type queueWorker struct {
@@ -445,4 +474,9 @@ func (c *Controller) templateInformerEventHandler() cache.ResourceEventHandlerFu
 
 func (c *Controller) configMapInformerEventHandler() cache.ResourceEventHandlerFuncs {
 	return c.commonInformerEventHandler(&configMapQueueKeyGen{}, c.cfgMapWorkqueue)
+}
+
+func (c *Controller) clusterOperatorInformerEventHandler() cache.ResourceEventHandlerFuncs {
+	// enqueue the config instead, so the conditions can be refreshed if needed
+	return c.commonInformerEventHandler(&clusterOperatorQueueKeyGen{}, c.crWorkqueue)
 }
