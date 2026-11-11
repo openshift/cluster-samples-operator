@@ -12,6 +12,8 @@ rules:
   - ""
   resources:
   - secrets
+  resourceNames:
+  - pull-secret
   verbs:
   - get
   - list
